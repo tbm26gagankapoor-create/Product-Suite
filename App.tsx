@@ -16,7 +16,7 @@ import UserManagementView from './components/UserManagementView';
 import { ThemeProvider } from './context/ThemeContext';
 import { ProjectDataProvider, useProjectData } from './context/ProjectDataContext';
 import { ToastProvider } from './context/ToastContext';
-import { supabase } from './lib/supabaseClient';
+import { api } from './lib/api';
 
 export type View = 'home' | 'project' | 'project-list' | 'settings' | 'teams' | 'my-tasks' | 'sprints' | 'profile' | 'users';
 export type AuthView = 'login' | 'forgot-password' | 'reset-password';
@@ -37,25 +37,21 @@ const AppContent: React.FC = () => {
 
   // Check for password reset URL on mount
   useEffect(() => {
-    const hash = window.location.hash;
     const pathname = window.location.pathname;
 
-    // Supabase sends recovery tokens in URL hash or redirects to /update-password
-    if (hash.includes('type=recovery') || pathname.includes('update-password')) {
+    // Check for password reset URL
+    if (pathname.includes('update-password') || pathname.includes('reset-password')) {
       setAuthView('reset-password');
     }
   }, []);
 
-  // Auth Listener
+  // Auth Check - Uses local backend
   useEffect(() => {
     const checkAuth = async () => {
-      // Check Supabase session
-      const { data: { session } } = await supabase.auth.getSession();
+      // Check local session from localStorage
+      const { data: { session } } = await api.auth.getSession();
 
-      // Check localStorage session (for bcrypt users)
-      const localSession = localStorage.getItem('infinia_session_user');
-
-      if (session || localSession) {
+      if (session) {
         setIsAuthenticated(true);
         refreshData();
       }
@@ -64,23 +60,6 @@ const AppContent: React.FC = () => {
     };
 
     checkAuth();
-
-    // Listen for Supabase auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        setIsAuthenticated(true);
-        refreshData();
-      } else if (event === 'SIGNED_OUT') {
-        // Only sign out if localStorage session is also gone
-        if (!localStorage.getItem('infinia_session_user')) {
-          setIsAuthenticated(false);
-        }
-      } else if (event === 'PASSWORD_RECOVERY') {
-        setAuthView('reset-password');
-      }
-    });
-
-    return () => subscription.unsubscribe();
   }, [refreshData]);
 
   const handleProjectSelect = (projectId: string) => {
@@ -89,8 +68,7 @@ const AppContent: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    localStorage.removeItem('infinia_session_user');
+    await api.auth.signOut();
     setIsAuthenticated(false);
   };
 
@@ -99,7 +77,7 @@ const AppContent: React.FC = () => {
           case 'home': return <Home onViewChange={(view) => setCurrentView(view)} />;
           case 'project': return <ProjectView activeProject={activeProject} />;
           case 'project-list': return <ProjectList onProjectSelect={handleProjectSelect} />;
-          case 'sprints': return <SprintsView />;
+          case 'sprints': return <SprintsView onProjectSelect={handleProjectSelect} />;
           case 'settings': return <SettingsView />;
           case 'teams': return <TeamsView />;
           case 'my-tasks': return <MyTasksView />;

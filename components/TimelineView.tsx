@@ -1,36 +1,44 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import { 
-  Plus, 
-  Filter, 
-  Settings, 
-  MoreHorizontal, 
-  CheckCircle2, 
-  Circle, 
-  ZoomIn, 
-  Palette, 
-  ChevronRight, 
-  ChevronDown, 
-  Layers, 
-  Calendar as CalendarIcon, 
-  User as UserIcon, 
-  AlertCircle, 
-  ArrowUp 
+import {
+  Plus,
+  Filter,
+  ChevronRight,
+  ChevronDown,
+  Layers,
+  Calendar as CalendarIcon,
+  AlertCircle,
+  CheckCircle2,
+  ArrowUp
 } from 'lucide-react';
 import { Task, User } from '../types';
 import { COLUMNS } from '../constants';
 import TaskDetailModal from './TaskDetailModal';
 import { useProjectData } from '../context/ProjectDataContext';
 
+// Import new timeline components
+import TimelineHeader from './timeline/TimelineHeader';
+import GradientTaskBar from './timeline/GradientTaskBar';
+import TodayIndicator from './timeline/TodayIndicator';
+import {
+  TimeScale,
+  TIMELINE_CONSTANTS,
+  getColWidth,
+  generateDateRange,
+  isWeekend,
+  getTodayIndex,
+  TASK_GRADIENTS
+} from '../utils/timelineUtils';
+
 interface GanttTask {
   id: string;
   title: string;
-  columnId: string; // Use columnId directly instead of mapped status
-  startDate: string; // YYYY-MM-DD
-  endDate: string;   // YYYY-MM-DD
+  columnId: string;
+  startDate: string;
+  endDate: string;
   assignee?: User;
   dependencies?: string[];
-  originalTask?: Task; // Store reference to full task
+  originalTask?: Task;
   isSubtask?: boolean;
 }
 
@@ -46,9 +54,8 @@ interface TimelineViewProps {
     onTaskUpdate: (task: Task) => void;
 }
 
-const COL_WIDTH = 56;
-const ROW_HEIGHT = 48;
-const SIDEBAR_WIDTH = 380;
+const ROW_HEIGHT = TIMELINE_CONSTANTS.ROW_HEIGHT;
+const SIDEBAR_WIDTH = TIMELINE_CONSTANTS.SIDEBAR_WIDTH;
 
 const getValidDate = (dateStr?: string, defaultOffset = 0): string => {
     if (dateStr) return new Date(dateStr).toISOString().split('T')[0];
@@ -59,12 +66,16 @@ const getValidDate = (dateStr?: string, defaultOffset = 0): string => {
 
 const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
   const { sprints } = useProjectData();
-  const [viewDate] = useState(new Date()); 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  
+
+  // Scale State
+  const [scale, setScale] = useState<TimeScale>('day');
+  const colWidth = getColWidth(scale);
+
   // Grouping State
   const [groupBy, setGroupBy] = useState<'sprint' | 'epic'>('sprint');
   const [isGroupDropdownOpen, setIsGroupDropdownOpen] = useState(false);
+  const [isScaleDropdownOpen, setIsScaleDropdownOpen] = useState(false);
 
   // Interaction State
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -80,9 +91,8 @@ const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
   // Transform Tasks into Gantt Groups based on GroupBy setting
   const data: GanttGroup[] = useMemo(() => {
       const groups: GanttGroup[] = [];
-      
+
       if (groupBy === 'sprint') {
-          // Group 1: Sprints
           sprints.forEach(sprint => {
               const sprintTasks = tasks.filter(t => t.sprintId === sprint.id);
               if (sprintTasks.length > 0) {
@@ -94,8 +104,8 @@ const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
                           id: t.id,
                           title: t.title,
                           columnId: t.columnId,
-                          startDate: getValidDate(t.startDate), 
-                          endDate: getValidDate(t.dueDate, 5), 
+                          startDate: getValidDate(t.startDate),
+                          endDate: getValidDate(t.dueDate, 5),
                           assignee: t.assignee,
                           originalTask: t
                       }))
@@ -103,7 +113,6 @@ const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
               }
           });
 
-          // Group 2: Backlog / Unscheduled
           const backlogTasks = tasks.filter(t => !t.sprintId);
           if (backlogTasks.length > 0) {
               groups.push({
@@ -114,7 +123,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
                       id: t.id,
                       title: t.title,
                       columnId: t.columnId,
-                      startDate: getValidDate(t.startDate, 7), 
+                      startDate: getValidDate(t.startDate, 7),
                       endDate: getValidDate(t.dueDate, 12),
                       assignee: t.assignee,
                       originalTask: t
@@ -122,13 +131,11 @@ const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
               });
           }
       } else {
-          // Group by Epic (Feature)
           const features = tasks.filter(t => t.type === 'feature' || t.type === 'epic');
-          // Find orphans
           const featureIds = new Set(features.map(f => f.id));
-          const orphans = tasks.filter(t => 
-              t.type !== 'feature' && 
-              t.type !== 'epic' && 
+          const orphans = tasks.filter(t =>
+              t.type !== 'feature' &&
+              t.type !== 'epic' &&
               (!t.parentEpicId || !featureIds.has(t.parentEpicId))
           );
 
@@ -138,7 +145,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
                   const parentStart = new Date(getValidDate(feature.startDate));
                   const start = st.startDate ? new Date(st.startDate) : new Date(parentStart);
                   if (!st.startDate) start.setDate(parentStart.getDate() + (idx * 2));
-                  
+
                   const end = st.dueDate ? new Date(st.dueDate) : new Date(start);
                   if (!st.dueDate) end.setDate(start.getDate() + 3);
 
@@ -181,8 +188,8 @@ const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
                       id: t.id,
                       title: t.title,
                       columnId: t.columnId,
-                      startDate: getValidDate(t.startDate, 3), 
-                      endDate: getValidDate(t.dueDate, 8), 
+                      startDate: getValidDate(t.startDate, 3),
+                      endDate: getValidDate(t.dueDate, 8),
                       assignee: t.assignee,
                       originalTask: t
                   }))
@@ -193,36 +200,15 @@ const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
       return groups;
   }, [tasks, groupBy, sprints]);
 
-  // Generate Date Range for the View
+  // Generate Date Range for the View based on scale
   const dates = useMemo(() => {
     const start = new Date();
-    start.setDate(start.getDate() - 5); 
-    const days = [];
-    for (let i = 0; i < 30; i++) {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      days.push(d);
-    }
-    return days;
-  }, []);
+    start.setDate(start.getDate() - 5);
+    const count = scale === 'day' ? 30 : scale === 'week' ? 12 : 6;
+    return generateDateRange(start, scale, count);
+  }, [scale]);
 
-  const getStatusColor = (columnId: string, type: 'bg' | 'text' | 'border') => {
-    switch (columnId) {
-      case 'done': // Green
-        return type === 'bg' ? 'bg-emerald-500' : type === 'text' ? 'text-emerald-600' : 'border-emerald-600';
-      case 'testing': // Orange/Yellow
-        return type === 'bg' ? 'bg-amber-500' : type === 'text' ? 'text-amber-600' : 'border-amber-600';
-      case 'inprogress': // Blue
-        return type === 'bg' ? 'bg-blue-600' : type === 'text' ? 'text-blue-600' : 'border-blue-600';
-      case 'blocked': // Red
-        return type === 'bg' ? 'bg-red-500' : type === 'text' ? 'text-red-600' : 'border-red-600';
-      case 'idea': // Purple
-        return type === 'bg' ? 'bg-purple-500' : type === 'text' ? 'text-purple-600' : 'border-purple-600';
-      case 'todo': // Slate
-      default: 
-        return type === 'bg' ? 'bg-slate-400' : type === 'text' ? 'text-slate-500' : 'border-slate-500';
-    }
-  };
+  const todayIndex = getTodayIndex(dates);
 
   const getStatusBadgeStyles = (id: string) => {
       switch(id) {
@@ -236,20 +222,25 @@ const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
       }
   };
 
+  const getStatusDotColor = (columnId: string) => {
+    const gradient = TASK_GRADIENTS[columnId] || TASK_GRADIENTS.todo;
+    return gradient.from;
+  };
+
   const calculateBarPosition = (start: string, end: string) => {
     const startDate = new Date(start);
     const endDate = new Date(end);
     const viewStart = dates[0];
-    
+
     const diffTimeStart = startDate.getTime() - viewStart.getTime();
     const startOffsetDays = Math.ceil(diffTimeStart / (1000 * 60 * 60 * 24));
-    
+
     const durationTime = endDate.getTime() - startDate.getTime();
-    const durationDays = Math.max(1, Math.ceil(durationTime / (1000 * 60 * 60 * 24)) + 1); 
+    const durationDays = Math.max(1, Math.ceil(durationTime / (1000 * 60 * 60 * 24)) + 1);
 
     return {
-      left: startOffsetDays * COL_WIDTH,
-      width: durationDays * COL_WIDTH
+      left: startOffsetDays * colWidth,
+      width: durationDays * colWidth
     };
   };
 
@@ -278,30 +269,37 @@ const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
     }
   });
 
+  const scaleLabels: Record<TimeScale, string> = {
+    day: 'Days',
+    week: 'Weeks',
+    month: 'Months'
+  };
+
   return (
     <div className="flex flex-col h-full bg-white dark:bg-[#0B0C0E] transition-colors duration-200 text-[#172B4D] dark:text-gray-100 relative">
-      
+
       {/* Top Toolbar */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-[#1F2128]">
-        <button className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-colors">
+        <button className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-700 hover:to-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:shadow-lg transition-all">
           <Plus size={16} strokeWidth={3} /> Add work
         </button>
 
         <div className="flex items-center gap-3 text-sm">
           <button className="px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-[#1F2128] rounded-md text-gray-500 font-medium transition-colors">Today</button>
           <div className="h-4 w-px bg-gray-300 dark:bg-gray-700"></div>
-          
+
+          {/* Group By Dropdown */}
           <div className="relative">
-              <button 
+              <button
                 onClick={() => setIsGroupDropdownOpen(!isGroupDropdownOpen)}
                 className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-[#1F2128] rounded-md text-gray-600 dark:text-gray-300 font-medium transition-colors"
               >
-                <Layers size={16} /> Group by: {groupBy === 'sprint' ? 'Sprint' : 'Epic'} <ChevronDown size={14} />
+                <Layers size={16} /> Group: {groupBy === 'sprint' ? 'Sprint' : 'Epic'} <ChevronDown size={14} />
               </button>
               {isGroupDropdownOpen && (
                   <div className="absolute top-full left-0 mt-2 w-40 bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#1F2128] rounded-xl shadow-xl z-50 overflow-hidden">
-                      <button onClick={() => { setGroupBy('sprint'); setIsGroupDropdownOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-[#1F2128]">Sprint</button>
-                      <button onClick={() => { setGroupBy('epic'); setIsGroupDropdownOpen(false); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-[#1F2128]">Epic</button>
+                      <button onClick={() => { setGroupBy('sprint'); setIsGroupDropdownOpen(false); }} className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-[#1F2128] ${groupBy === 'sprint' ? 'bg-gray-50 dark:bg-[#1F2128]' : ''}`}>Sprint</button>
+                      <button onClick={() => { setGroupBy('epic'); setIsGroupDropdownOpen(false); }} className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-[#1F2128] ${groupBy === 'epic' ? 'bg-gray-50 dark:bg-[#1F2128]' : ''}`}>Epic</button>
                   </div>
               )}
           </div>
@@ -309,56 +307,79 @@ const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
           <button className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-[#1F2128] rounded-md text-gray-600 dark:text-gray-300 font-medium transition-colors">
             <Filter size={16} /> Filter
           </button>
+
           <div className="h-4 w-px bg-gray-300 dark:bg-gray-700"></div>
-          <button className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-[#1F2128] rounded-md text-gray-600 dark:text-gray-300 font-medium transition-colors">
-            <ZoomIn size={16} /> Scale: Days
-          </button>
+
+          {/* Scale Toggle */}
+          <div className="flex items-center gap-1 bg-gray-100 dark:bg-[#1F2128] rounded-lg p-1">
+            {(['day', 'week', 'month'] as TimeScale[]).map((s) => (
+              <button
+                key={s}
+                onClick={() => setScale(s)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                  scale === s
+                    ? 'bg-white dark:bg-[#2D2F36] text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                }`}
+              >
+                {scaleLabels[s]}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* Gantt Area */}
       <div className="flex-1 overflow-hidden relative flex flex-col">
-        
+
         <div className="flex-1 overflow-auto relative custom-scrollbar flex" ref={scrollContainerRef}>
-          
+
           {/* Sidebar (Fixed Left) */}
           <div className="sticky left-0 z-20 bg-white dark:bg-[#0B0C0E] border-r border-gray-200 dark:border-[#1F2128] flex-shrink-0" style={{ width: SIDEBAR_WIDTH }}>
-             <div className="sticky top-0 z-30 bg-white dark:bg-[#0B0C0E] border-b border-gray-200 dark:border-[#1F2128] h-[60px] flex items-center px-4 shadow-sm">
-                <div className="flex w-full text-xs font-bold text-gray-400 uppercase tracking-wider">
+             {/* Sidebar Header - matches timeline header height */}
+             <div className="sticky top-0 z-30 bg-white dark:bg-[#0B0C0E] border-b border-gray-200 dark:border-[#1F2128] flex flex-col justify-end shadow-sm" style={{ height: scale === 'day' ? 76 : 60 }}>
+                <div className="flex w-full text-xs font-bold text-gray-400 uppercase tracking-wider px-4 pb-2">
                    <div className="flex-1">Task Name</div>
-                   <div className="w-28 text-center">Status</div>
+                   <div className="w-24 text-center">Status</div>
                 </div>
              </div>
 
              <div className="relative">
                 {visibleRows.map((row, idx) => (
-                  <div 
-                    key={idx} 
+                  <div
+                    key={idx}
                     className={`flex items-center px-4 border-b border-gray-100 dark:border-[#1F2128]/50 hover:bg-gray-50 dark:hover:bg-[#1F2128]/30 transition-colors group ${row.type === 'group' ? 'bg-gray-50/50 dark:bg-[#15171E]/50' : ''}`}
                     style={{ height: ROW_HEIGHT }}
                   >
                     {row.type === 'group' ? (
                       <>
                         <div className="flex-1 flex items-center gap-2 font-bold text-sm text-[#172B4D] dark:text-white cursor-pointer select-none" onClick={() => toggleGroup(row.data.id)}>
-                           <div className={`p-0.5 rounded hover:bg-gray-200 dark:hover:bg-[#2D2F36] transition-transform ${!collapsedGroups.includes(row.data.id) ? 'rotate-90' : ''}`}>
+                           <div className={`p-0.5 rounded hover:bg-gray-200 dark:hover:bg-[#2D2F36] transition-transform duration-200 ${!collapsedGroups.includes(row.data.id) ? 'rotate-90' : ''}`}>
                               <ChevronRight size={14} />
                            </div>
                            {row.data.title}
+                           <span className="text-[10px] font-normal text-gray-400 ml-1">({row.data.tasks.length})</span>
                         </div>
-                        <div className="w-28"></div>
+                        <div className="w-24"></div>
                       </>
                     ) : row.data.isPlaceholder ? (
-                      <div className="flex-1 pl-8 text-gray-400 text-sm hover:text-indigo-600 cursor-pointer flex items-center gap-2">
+                      <div className="flex-1 pl-8 text-gray-400 text-sm hover:text-indigo-600 cursor-pointer flex items-center gap-2 transition-colors">
                          <Plus size={14} /> Add task
                       </div>
                     ) : (
                       <>
-                        <div className="flex-1 flex items-center gap-3 pl-8 min-w-0 pr-4">
+                        <div className="flex-1 flex items-center gap-3 pl-6 min-w-0 pr-4">
                            {row.data.isSubtask && <div className="w-3 h-px bg-gray-300 dark:bg-gray-600 mr-1 flex-shrink-0"></div>}
-                           <div className={`w-2 h-2 rounded-full ${getStatusColor(row.data.columnId, 'bg')}`}></div>
+                           <div
+                             className="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-sm"
+                             style={{ backgroundColor: getStatusDotColor(row.data.columnId) }}
+                           />
                            <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{row.data.title}</span>
+                           {row.data.originalTask?.priority === 'HIGH' && (
+                             <ArrowUp size={12} className="text-red-500 flex-shrink-0" />
+                           )}
                         </div>
-                        <div className="w-28 flex-shrink-0 flex justify-center">
+                        <div className="w-24 flex-shrink-0 flex justify-center">
                             <span className={`text-[9px] px-2 py-0.5 rounded border uppercase font-bold tracking-wider ${getStatusBadgeStyles(row.data.columnId)}`}>
                                 {COLUMNS.find(c => c.id === row.data.columnId)?.title || row.data.columnId}
                             </span>
@@ -372,43 +393,33 @@ const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
 
           {/* Timeline (Right) */}
           <div className="flex-1 min-w-[1200px] relative">
-             <div className="sticky top-0 z-20 bg-white dark:bg-[#0B0C0E] border-b border-gray-200 dark:border-[#1F2128] h-[60px] flex">
-                {dates.map((date, i) => {
-                    const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-                    const isToday = date.toDateString() === viewDate.toDateString();
-                    return (
-                      <div 
-                        key={i} 
-                        className={`flex-shrink-0 border-r border-gray-100 dark:border-[#1F2128] flex flex-col items-center justify-center text-xs ${isWeekend ? 'bg-gray-50/50 dark:bg-[#15171E]/50' : ''} ${isToday ? 'bg-purple-50 dark:bg-purple-900/10' : ''}`}
-                        style={{ width: COL_WIDTH }}
-                      >
-                         <span className={`font-bold ${isToday ? 'text-purple-600 dark:text-purple-400' : 'text-[#172B4D] dark:text-white'}`}>{date.getDate()}</span>
-                         <span className={`text-[9px] uppercase ${isToday ? 'text-purple-500 dark:text-purple-400' : 'text-gray-400'}`}>{date.toLocaleDateString(undefined, { weekday: 'narrow' })}</span>
-                      </div>
-                   );
-                })}
-             </div>
+             {/* Timeline Header */}
+             <TimelineHeader dates={dates} colWidth={colWidth} scale={scale} />
 
              {/* Grid & Bars */}
              <div className="relative">
-                {/* Vertical Grid Lines */}
+                {/* Vertical Grid Lines with Weekend Shading */}
                 <div className="absolute inset-0 flex pointer-events-none">
-                   {dates.map((d, i) => (
-                      <div 
-                        key={i} 
-                        className={`flex-shrink-0 border-r border-gray-100 dark:border-[#1F2128]/50 h-full ${d.getDay() === 0 || d.getDay() === 6 ? 'bg-gray-50/80 dark:bg-[#15171E]/50' : ''}`}
-                        style={{ width: COL_WIDTH }}
-                      ></div>
-                   ))}
+                   {dates.map((d, i) => {
+                      const weekend = isWeekend(d);
+                      return (
+                        <div
+                          key={i}
+                          className={`flex-shrink-0 border-r border-gray-100 dark:border-[#1F2128]/50 h-full transition-colors ${weekend ? 'bg-gray-100/80 dark:bg-[#15171E]/70' : ''}`}
+                          style={{ width: colWidth, height: visibleRows.length * ROW_HEIGHT }}
+                        />
+                      );
+                   })}
                 </div>
 
-                {/* Today Line */}
-                <div 
-                    className="absolute top-0 bottom-0 border-l-2 border-dashed border-purple-500 z-10 pointer-events-none opacity-60"
-                    style={{ left: (dates.findIndex(d => d.toDateString() === viewDate.toDateString()) * COL_WIDTH) + (COL_WIDTH / 2), height: visibleRows.length * ROW_HEIGHT }}
-                >
-                    <div className="absolute -top-1.5 -left-[5px] w-2 h-2 rounded-full bg-purple-500"></div>
-                </div>
+                {/* Today Indicator */}
+                {todayIndex !== null && (
+                  <TodayIndicator
+                    leftPosition={(todayIndex * colWidth) + (colWidth / 2)}
+                    height={visibleRows.length * ROW_HEIGHT + 40}
+                    showLabel={true}
+                  />
+                )}
 
                 {/* Task Bars */}
                 <div className="relative z-10 py-0">
@@ -417,43 +428,16 @@ const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
                          {row.type === 'task' && !row.data.isPlaceholder && (
                             (() => {
                                const { left, width } = calculateBarPosition(row.data.startDate, row.data.endDate);
-                               const statusColorBg = getStatusColor(row.data.columnId, 'bg');
-                               const statusColorBorder = getStatusColor(row.data.columnId, 'border');
-                               
-                               return (
-                                   <div 
-                                      className={`absolute top-1/2 -translate-y-1/2 h-8 rounded-lg shadow-sm border ${statusColorBorder} border-opacity-50 hover:brightness-110 transition-all cursor-pointer group flex items-center`}
-                                      style={{ 
-                                          left, 
-                                          width,
-                                          backgroundColor: row.data.columnId === 'inprogress' ? 'transparent' : undefined,
-                                      }}
-                                      onClick={() => setSelectedTask(row.data.originalTask)}
-                                      onMouseEnter={(e) => handleMouseEnter(e, row.data.originalTask, width)}
-                                      onMouseLeave={handleMouseLeave}
-                                   >
-                                      {/* Background for "In Progress" to simulate % fill */}
-                                      {row.data.columnId === 'inprogress' ? (
-                                          <div className="absolute inset-0 rounded-md overflow-hidden bg-blue-100 dark:bg-blue-900/20">
-                                              <div className="h-full bg-blue-500 dark:bg-blue-600 w-2/3 opacity-80"></div>
-                                          </div>
-                                      ) : (
-                                          <div className={`absolute inset-0 rounded-md opacity-90 ${statusColorBg}`}></div>
-                                      )}
 
-                                      {/* Content Overlay */}
-                                      <div className="relative z-10 px-2 flex items-center justify-between w-full">
-                                          {width > 60 && <span className="text-[10px] font-bold text-white whitespace-nowrap truncate drop-shadow-sm">{row.data.title}</span>}
-                                          {/* Assignee Avatar at end of bar */}
-                                          {row.data.assignee && (
-                                              <img 
-                                                src={row.data.assignee.avatarUrl} 
-                                                className="w-5 h-5 rounded-full border border-white dark:border-[#15171E] shadow-sm ml-auto"
-                                                alt="Assignee" 
-                                              />
-                                          )}
-                                      </div>
-                                   </div>
+                               return (
+                                 <GradientTaskBar
+                                   task={row.data}
+                                   left={left}
+                                   width={width}
+                                   onClick={() => setSelectedTask(row.data.originalTask)}
+                                   onMouseEnter={(e) => handleMouseEnter(e, row.data.originalTask, width)}
+                                   onMouseLeave={handleMouseLeave}
+                                 />
                                );
                             })()
                          )}
@@ -470,27 +454,27 @@ const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
 
       {/* Task Hover Preview Card (Rich Tooltip) */}
       {hoveredTask && (
-          <div 
+          <div
             className="fixed z-50 bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#2D2F36] rounded-xl shadow-2xl p-4 w-80 pointer-events-none animate-in fade-in zoom-in-95 duration-200"
-            style={{ 
+            style={{
                 left: Math.min(window.innerWidth - 340, hoveredTask.x + (hoveredTask.width / 2) - 160),
-                top: hoveredTask.y - 140 
+                top: hoveredTask.y - 140
             }}
           >
               <div className="flex items-start gap-3 mb-3">
-                  <div className={`p-2 rounded-lg ${hoveredTask.task.priority === 'HIGH' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
+                  <div className={`p-2 rounded-lg ${hoveredTask.task.priority === 'HIGH' ? 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400'}`}>
                       {hoveredTask.task.priority === 'HIGH' ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
                   </div>
-                  <div>
+                  <div className="flex-1 min-w-0">
                       <h4 className="font-bold text-sm text-[#172B4D] dark:text-white leading-snug">{hoveredTask.task.title}</h4>
-                      <p className="text-xs text-gray-500 mt-1 line-clamp-2">{hoveredTask.task.description ? hoveredTask.task.description.replace(/<[^>]*>/g, '') : "No description provided."}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{hoveredTask.task.description ? hoveredTask.task.description.replace(/<[^>]*>/g, '') : "No description provided."}</p>
                   </div>
               </div>
-              
+
               <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-[#2D2F36]">
                   <div className="flex items-center gap-2">
                       <CalendarIcon size={12} className="text-gray-400" />
-                      <span className="text-xs text-gray-500">{hoveredTask.task.dueDate ? new Date(hoveredTask.task.dueDate).toLocaleDateString() : 'No due date'}</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">{hoveredTask.task.dueDate ? new Date(hoveredTask.task.dueDate).toLocaleDateString() : 'No due date'}</span>
                   </div>
                   {hoveredTask.task.assignee && (
                       <div className="flex items-center gap-2">
@@ -503,9 +487,9 @@ const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
       )}
 
       {selectedTask && (
-        <TaskDetailModal 
-            task={selectedTask} 
-            isOpen={!!selectedTask} 
+        <TaskDetailModal
+            task={selectedTask}
+            isOpen={!!selectedTask}
             onClose={() => setSelectedTask(null)}
             onUpdate={onTaskUpdate}
         />

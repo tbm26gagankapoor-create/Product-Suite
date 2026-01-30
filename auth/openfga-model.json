@@ -1,0 +1,271 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user"
+    },
+    {
+      "type": "platform",
+      "relations": {
+        "admin": {
+          "this": {}
+        },
+        "can_read": {
+          "computedUserset": {
+            "relation": "admin"
+          }
+        },
+        "can_write": {
+          "computedUserset": {
+            "relation": "admin"
+          }
+        },
+        "can_manage": {
+          "computedUserset": {
+            "relation": "admin"
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "admin": {
+            "directly_related_user_types": [
+              { "type": "user" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "tenant",
+      "relations": {
+        "platform": {
+          "this": {}
+        },
+        "admin": {
+          "this": {}
+        },
+        "member": {
+          "union": {
+            "child": [
+              { "this": {} },
+              { "computedUserset": { "relation": "admin" } }
+            ]
+          }
+        },
+        "can_read": {
+          "computedUserset": {
+            "relation": "member"
+          }
+        },
+        "can_write": {
+          "computedUserset": {
+            "relation": "member"
+          }
+        },
+        "can_manage": {
+          "computedUserset": {
+            "relation": "admin"
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "platform": {
+            "directly_related_user_types": [
+              { "type": "platform" }
+            ]
+          },
+          "admin": {
+            "directly_related_user_types": [
+              { "type": "user" }
+            ]
+          },
+          "member": {
+            "directly_related_user_types": [
+              { "type": "user" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "workspace",
+      "relations": {
+        "tenant": {
+          "this": {}
+        },
+        "admin": {
+          "union": {
+            "child": [
+              { "this": {} },
+              {
+                "tupleToUserset": {
+                  "tupleset": { "relation": "tenant" },
+                  "computedUserset": { "relation": "can_manage" }
+                }
+              }
+            ]
+          }
+        },
+        "member": {
+          "union": {
+            "child": [
+              { "this": {} },
+              { "computedUserset": { "relation": "admin" } }
+            ]
+          }
+        },
+        "viewer": {
+          "union": {
+            "child": [
+              { "this": {} },
+              { "computedUserset": { "relation": "member" } }
+            ]
+          }
+        },
+        "can_read": {
+          "computedUserset": {
+            "relation": "viewer"
+          }
+        },
+        "can_write": {
+          "computedUserset": {
+            "relation": "member"
+          }
+        },
+        "can_manage": {
+          "computedUserset": {
+            "relation": "admin"
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "tenant": {
+            "directly_related_user_types": [
+              { "type": "tenant" }
+            ]
+          },
+          "admin": {
+            "directly_related_user_types": [
+              { "type": "user" }
+            ]
+          },
+          "member": {
+            "directly_related_user_types": [
+              { "type": "user" }
+            ]
+          },
+          "viewer": {
+            "directly_related_user_types": [
+              { "type": "user" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "task",
+      "relations": {
+        "workspace": {
+          "this": {}
+        },
+        "reporter": {
+          "this": {}
+        },
+        "assignee": {
+          "this": {}
+        },
+        "can_read": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "reporter" } },
+              { "computedUserset": { "relation": "assignee" } },
+              {
+                "tupleToUserset": {
+                  "tupleset": { "relation": "workspace" },
+                  "computedUserset": { "relation": "can_read" }
+                }
+              }
+            ]
+          }
+        },
+        "can_comment": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "reporter" } },
+              { "computedUserset": { "relation": "assignee" } }
+            ]
+          }
+        },
+        "can_manage_stages": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "reporter" } },
+              { "computedUserset": { "relation": "assignee" } }
+            ]
+          }
+        },
+        "can_manage_fields": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "reporter" } },
+              {
+                "tupleToUserset": {
+                  "tupleset": { "relation": "workspace" },
+                  "computedUserset": { "relation": "can_manage" }
+                }
+              }
+            ]
+          }
+        },
+        "can_delete": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "reporter" } },
+              {
+                "tupleToUserset": {
+                  "tupleset": { "relation": "workspace" },
+                  "computedUserset": { "relation": "can_manage" }
+                }
+              }
+            ]
+          }
+        },
+        "can_assign": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "reporter" } },
+              {
+                "tupleToUserset": {
+                  "tupleset": { "relation": "workspace" },
+                  "computedUserset": { "relation": "can_manage" }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "workspace": {
+            "directly_related_user_types": [
+              { "type": "workspace" }
+            ]
+          },
+          "reporter": {
+            "directly_related_user_types": [
+              { "type": "user" }
+            ]
+          },
+          "assignee": {
+            "directly_related_user_types": [
+              { "type": "user" }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

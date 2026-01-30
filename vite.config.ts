@@ -7,5 +7,14 @@ export default defineConfig({
     'process.env': {
       API_KEY: process.env.API_KEY
     }
-  }
+  },
+  server: {
+    port: 5173,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+    },
+  },
 });

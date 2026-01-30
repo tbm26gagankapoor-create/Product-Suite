@@ -1,5 +1,6 @@
-
-import { PostgrestError } from '@supabase/supabase-js';
+/**
+ * Helper Utilities
+ */
 
 export interface ApiResponse<T> {
   data: T | null;
@@ -7,12 +8,12 @@ export interface ApiResponse<T> {
 }
 
 export const handleResponse = <T>(
-  data: T | null, 
-  error: PostgrestError | null
+  data: T | null,
+  error: any | null
 ): ApiResponse<T> => {
   if (error) {
-    console.error('Supabase API Error:', error.message, error.details);
-    return { data: null, error: error.message };
+    console.error('API Error:', error.message || error, error.details);
+    return { data: null, error: error.message || String(error) };
   }
   return { data, error: null };
 };

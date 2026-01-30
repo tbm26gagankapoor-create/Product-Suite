@@ -1,0 +1,154 @@
+{
+  "description": "Example authorization tuples demonstrating the RBAC model",
+  "tuples": [
+    {
+      "comment": "Platform admin - has full platform access",
+      "user": "user:platform-admin-1",
+      "relation": "admin",
+      "object": "platform:main"
+    },
+    {
+      "comment": "Tenant admin - manages organization 'acme'",
+      "user": "user:tenant-admin-1",
+      "relation": "admin",
+      "object": "tenant:acme"
+    },
+    {
+      "comment": "Tenant member - belongs to organization 'acme'",
+      "user": "user:developer-1",
+      "relation": "member",
+      "object": "tenant:acme"
+    },
+    {
+      "comment": "Link tenant to platform",
+      "user": "platform:main",
+      "relation": "platform",
+      "object": "tenant:acme"
+    },
+    {
+      "comment": "Link workspace to tenant",
+      "user": "tenant:acme",
+      "relation": "tenant",
+      "object": "workspace:project-alpha"
+    },
+    {
+      "comment": "Workspace admin - direct assignment",
+      "user": "user:project-lead-1",
+      "relation": "admin",
+      "object": "workspace:project-alpha"
+    },
+    {
+      "comment": "Workspace member - can read and write",
+      "user": "user:developer-2",
+      "relation": "member",
+      "object": "workspace:project-alpha"
+    },
+    {
+      "comment": "Workspace viewer - read-only access",
+      "user": "user:stakeholder-1",
+      "relation": "viewer",
+      "object": "workspace:project-alpha"
+    },
+    {
+      "comment": "Link task to workspace",
+      "user": "workspace:project-alpha",
+      "relation": "workspace",
+      "object": "task:task-001"
+    },
+    {
+      "comment": "Task reporter - created the task, full control",
+      "user": "user:developer-1",
+      "relation": "reporter",
+      "object": "task:task-001"
+    },
+    {
+      "comment": "Task assignee - can comment and manage stages",
+      "user": "user:developer-2",
+      "relation": "assignee",
+      "object": "task:task-001"
+    }
+  ],
+  "expected_permissions": {
+    "platform-admin-1": {
+      "platform:main": ["can_read", "can_write", "can_manage"]
+    },
+    "tenant-admin-1": {
+      "tenant:acme": ["can_read", "can_write", "can_manage"],
+      "workspace:project-alpha": ["can_read", "can_write", "can_manage"]
+    },
+    "developer-1 (reporter)": {
+      "task:task-001": [
+        "can_read",
+        "can_comment",
+        "can_manage_stages",
+        "can_manage_fields",
+        "can_delete",
+        "can_assign"
+      ]
+    },
+    "developer-2 (assignee)": {
+      "task:task-001": [
+        "can_read",
+        "can_comment",
+        "can_manage_stages"
+      ]
+    },
+    "project-lead-1 (workspace admin)": {
+      "task:task-001": [
+        "can_read",
+        "can_manage_fields",
+        "can_delete",
+        "can_assign"
+      ]
+    },
+    "stakeholder-1 (workspace viewer)": {
+      "task:task-001": [
+        "can_read"
+      ]
+    }
+  },
+  "permission_matrix": {
+    "task": {
+      "reporter": {
+        "can_read": true,
+        "can_comment": true,
+        "can_manage_stages": true,
+        "can_manage_fields": true,
+        "can_delete": true,
+        "can_assign": true
+      },
+      "assignee": {
+        "can_read": true,
+        "can_comment": true,
+        "can_manage_stages": true,
+        "can_manage_fields": false,
+        "can_delete": false,
+        "can_assign": false
+      },
+      "workspace_admin": {
+        "can_read": true,
+        "can_comment": false,
+        "can_manage_stages": false,
+        "can_manage_fields": true,
+        "can_delete": true,
+        "can_assign": true
+      },
+      "workspace_member": {
+        "can_read": true,
+        "can_comment": false,
+        "can_manage_stages": false,
+        "can_manage_fields": false,
+        "can_delete": false,
+        "can_assign": false
+      },
+      "workspace_viewer": {
+        "can_read": true,
+        "can_comment": false,
+        "can_manage_stages": false,
+        "can_manage_fields": false,
+        "can_delete": false,
+        "can_assign": false
+      }
+    }
+  }
+}

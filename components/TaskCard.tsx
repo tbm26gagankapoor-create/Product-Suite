@@ -11,10 +11,30 @@ import {
   CheckCircle2,
   Clock,
   Wrench,
-  DollarSign
+  DollarSign,
+  SignalHigh,
+  SignalMedium,
+  SignalLow,
+  AlertTriangle
 } from 'lucide-react';
 import { Task } from '../types';
 import { useProjectData } from '../context/ProjectDataContext';
+
+// Priority configuration with icons and colors
+const PRIORITY_CONFIG: Record<string, { icon: any; color: string; bg: string; label: string }> = {
+  'HIGH': { icon: SignalHigh, color: 'text-red-500', bg: 'bg-red-500/10', label: 'High' },
+  'MEDIUM': { icon: SignalMedium, color: 'text-amber-500', bg: 'bg-amber-500/10', label: 'Medium' },
+  'LOW': { icon: SignalLow, color: 'text-blue-500', bg: 'bg-blue-500/10', label: 'Low' },
+};
+
+// Work type configuration with colors
+const TYPE_CONFIG: Record<string, { icon: any; color: string; bg: string; label: string }> = {
+  'epic': { icon: Hexagon, color: 'text-purple-500', bg: 'bg-purple-500/10', label: 'Epic' },
+  'feature': { icon: Rocket, color: 'text-pink-500', bg: 'bg-pink-500/10', label: 'Feature' },
+  'bug': { icon: Bug, color: 'text-red-500', bg: 'bg-red-500/10', label: 'Bug' },
+  'story': { icon: Bookmark, color: 'text-emerald-500', bg: 'bg-emerald-500/10', label: 'Story' },
+  'task': { icon: CheckSquare, color: 'text-blue-500', bg: 'bg-blue-500/10', label: 'Task' },
+};
 
 interface TaskCardProps {
   task: Task;
@@ -24,14 +44,10 @@ interface TaskCardProps {
   onUpdate?: (task: Task) => void;
 }
 
-const getWorkTypeIcon = (type?: string) => {
-    switch(type) {
-        case 'epic': return <Hexagon size={14} className="text-purple-400 dark:text-purple-400" fill="currentColor" fillOpacity={0.15} />;
-        case 'feature': return <Rocket size={14} className="text-pink-400 dark:text-pink-400" />;
-        case 'bug': return <Bug size={14} className="text-red-400 dark:text-red-400" />;
-        case 'story': return <Bookmark size={14} className="text-emerald-400 dark:text-emerald-400" />;
-        case 'task': default: return <CheckSquare size={14} className="text-blue-400 dark:text-blue-400" />;
-    }
+const getWorkTypeIcon = (type?: string, size: number = 14) => {
+    const config = TYPE_CONFIG[type || 'task'] || TYPE_CONFIG['task'];
+    const TypeIcon = config.icon;
+    return <TypeIcon size={size} className={config.color} />;
 };
 
 const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, isSelected, onToggleSelection, onClick, onUpdate }) => {
@@ -226,26 +242,41 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, isSelected, onTogg
 
         <div className="p-4 flex flex-col gap-3">
             
-            {/* Header: ID, Priority */}
+            {/* Header: Type Badge, ID, Priority */}
             <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider group-hover:text-blue-500 transition-colors">
-                    {id}
-                </span>
+                <div className="flex items-center gap-2">
+                    {/* Type Badge */}
+                    {(() => {
+                        const typeConfig = TYPE_CONFIG[displayWorkType] || TYPE_CONFIG['task'];
+                        const TypeIcon = typeConfig.icon;
+                        return (
+                            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${typeConfig.bg}`}>
+                                <TypeIcon size={12} className={typeConfig.color} />
+                                <span className={`text-[10px] font-semibold ${typeConfig.color}`}>{typeConfig.label}</span>
+                            </div>
+                        );
+                    })()}
+                    <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 group-hover:text-blue-500 transition-colors">
+                        {id}
+                    </span>
+                </div>
 
-                {priority && (
-                    <div className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wider bg-gray-100 dark:bg-[#2D2F36] text-gray-600 dark:text-gray-300">
-                        <span>{priority}</span>
-                    </div>
-                )}
+                {priority && (() => {
+                    const priorityConfig = PRIORITY_CONFIG[priority] || PRIORITY_CONFIG['MEDIUM'];
+                    const PriorityIcon = priorityConfig.icon;
+                    return (
+                        <div className={`flex items-center gap-1 px-2 py-1 rounded-md ${priorityConfig.bg}`}>
+                            <PriorityIcon size={12} className={priorityConfig.color} />
+                        </div>
+                    );
+                })()}
             </div>
 
             {/* Blocked Indicator */}
             {isBlocked && (
                 <div className="flex items-center gap-1.5" title={`Blocked by: ${blockerTasks.map(t => t.id).join(', ')}`}>
-                    <span className="text-[9px] font-medium bg-gray-100 dark:bg-[#2D2F36] text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-[4px] flex items-center gap-1">
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
+                    <span className="text-[10px] font-semibold bg-red-500/10 text-red-500 px-2.5 py-1 rounded-md flex items-center gap-1.5">
+                        <AlertTriangle size={12} />
                         Blocked
                     </span>
                 </div>
@@ -254,8 +285,9 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, isSelected, onTogg
             {/* Jira-style Epic Label */}
             {parentEpic && (
                 <div>
-                    <span className="inline-block max-w-full truncate text-[9px] font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-[#2D2F36] px-2 py-0.5 rounded-[4px] leading-tight">
-                        {parentEpic.title}
+                    <span className="inline-flex items-center gap-1.5 max-w-full text-[10px] font-medium text-purple-600 dark:text-purple-400 bg-purple-500/10 px-2 py-1 rounded-md leading-tight">
+                        <Hexagon size={10} className="flex-shrink-0" />
+                        <span className="truncate">{parentEpic.title}</span>
                     </span>
                 </div>
             )}
@@ -281,7 +313,7 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, isSelected, onTogg
             {tags && tags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                     {tags.map((tag, i) => (
-                        <span key={i} className="px-2 py-0.5 rounded text-[9px] font-bold bg-gray-50 dark:bg-[#1F2128] text-gray-500 dark:text-gray-400 border border-gray-100 dark:border-white/5">
+                        <span key={i} className="px-2 py-1 rounded-md text-[10px] font-medium bg-gray-100 dark:bg-[#1F2128] text-gray-600 dark:text-gray-400 border border-gray-200/50 dark:border-white/5">
                             {tag.label}
                         </span>
                     ))}
@@ -320,41 +352,40 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, isSelected, onTogg
             )}
 
             {/* Footer Metadata */}
-            <div className="flex items-center justify-between mt-1 pt-3 border-t border-gray-50 dark:border-white/5">
-                
-                {/* Left: Work Type, Points, Due Date */}
-                <div className="flex items-center gap-3 text-gray-400 dark:text-gray-500">
-                    
-                    {/* Type & Points */}
-                    <div className="flex items-center gap-1.5" title={`${displayWorkType} - ${points || 0} pts`}>
-                        {getWorkTypeIcon(displayWorkType)}
-                        {points !== undefined && points > 0 && (
-                            <span className="text-[10px] font-bold">{points}</span>
-                        )}
-                    </div>
+            <div className="flex items-center justify-between mt-2 pt-3 border-t border-gray-100 dark:border-white/5">
+
+                {/* Left: Points & Due Date */}
+                <div className="flex items-center gap-2">
+                    {/* Points Badge */}
+                    {points !== undefined && points > 0 && (
+                        <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-gray-100 dark:bg-[#1F2128]" title={`${points} story points`}>
+                            <CheckSquare size={11} className="text-gray-400" />
+                            <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400">{points}</span>
+                        </div>
+                    )}
 
                     {/* Due Date */}
                     {dueDate && (
-                        <div className={`flex items-center gap-1 text-[10px] font-medium ${new Date(dueDate) < new Date() ? 'text-red-400 dark:text-red-400' : 'text-gray-400 dark:text-gray-500'}`} title="Due Date">
-                            <Clock size={12} strokeWidth={1.5} />
-                            <span>{new Date(dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                        <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${new Date(dueDate) < new Date() ? 'bg-red-500/10 text-red-500' : 'bg-gray-100 dark:bg-[#1F2128] text-gray-500 dark:text-gray-400'}`} title="Due Date">
+                            <Clock size={11} />
+                            <span className="text-[10px] font-medium">{new Date(dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
                         </div>
                     )}
                 </div>
 
-                {/* Right: Assignee with Name */}
-                <div className="flex items-center gap-2 pl-2">
+                {/* Right: Assignee */}
+                <div className="flex items-center gap-2">
                     {assignee ? (
-                        <div className="relative group/assignee">
-                            <img 
-                                src={assignee.avatarUrl} 
+                        <div className="relative group/assignee" title={assignee.name}>
+                            <img
+                                src={assignee.avatarUrl}
                                 alt={assignee.name}
-                                className="w-6 h-6 rounded-full object-cover border border-white dark:border-[#15171E] ring-1 ring-gray-100 dark:ring-white/10" 
+                                className="w-7 h-7 rounded-full object-cover border-2 border-white dark:border-[#15171E] shadow-sm"
                             />
                         </div>
                     ) : (
-                        <div className="w-6 h-6 rounded-full border border-dashed border-gray-300 dark:border-gray-600 flex items-center justify-center">
-                            <span className="text-[8px] text-gray-400">?</span>
+                        <div className="w-7 h-7 rounded-full bg-gray-100 dark:bg-[#1F2128] border border-dashed border-gray-300 dark:border-gray-600 flex items-center justify-center" title="Unassigned">
+                            <span className="text-[9px] text-gray-400 font-medium">?</span>
                         </div>
                     )}
                 </div>

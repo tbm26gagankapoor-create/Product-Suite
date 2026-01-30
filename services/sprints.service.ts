@@ -1,16 +1,23 @@
+/**
+ * Sprints Service - Uses Local Backend
+ * All Supabase calls have been replaced with local backend API calls
+ */
 
-import { supabase } from '../lib/supabase';
-import { 
-  Sprint, 
-  SprintInsert, 
-  SprintUpdate, 
-  SprintWithStats, 
-  Task, 
-  TaskType,
-  PaginationParams,
-  Project
-} from '../types/database.types';
-import { activityService } from './activity.service';
+import { api } from '../lib/api';
+import { Sprint } from '../types';
+
+const API_BASE = '/api/v1';
+
+function getAuthHeaders(): HeadersInit {
+  const token = localStorage.getItem('infinia_token');
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
 
 export interface SprintFilters {
   projectId?: string;
@@ -19,182 +26,95 @@ export interface SprintFilters {
 }
 
 export class SprintsService {
-  // Get all sprints with optional filters and pagination
-  async getAll(filters?: SprintFilters, pagination?: PaginationParams): Promise<{ data: Sprint[]; count: number }> {
-    let query = supabase.from('sprints').select('*', { count: 'exact' });
+  // Get all sprints with optional filters
+  async getAll(filters?: SprintFilters, pagination?: { page?: number; limit?: number }): Promise<{ data: any[]; count: number }> {
+    const sprints = await api.getSprints();
+    let filtered = sprints;
 
     if (filters?.projectId) {
-      query = query.eq('project_id', filters.projectId);
+      filtered = filtered.filter(s => s.projectId === filters.projectId);
     }
-
     if (filters?.status) {
-      if (Array.isArray(filters.status)) {
-        query = query.in('status', filters.status);
-      } else {
-        query = query.eq('status', filters.status);
-      }
+      const statuses = Array.isArray(filters.status) ? filters.status : [filters.status];
+      filtered = filtered.filter(s => statuses.includes(s.status));
     }
-
     if (filters?.search) {
-      query = query.ilike('name', `%${filters.search}%`);
+      const search = filters.search.toLowerCase();
+      filtered = filtered.filter(s => s.name.toLowerCase().includes(search));
     }
 
-    if (pagination?.page && pagination?.limit) {
-      const from = (pagination.page - 1) * pagination.limit;
-      const to = from + pagination.limit - 1;
-      query = query.range(from, to);
-    }
-
-    // Default order: Active first, then Planned by start date, then Completed desc
-    query = query.order('status', { ascending: true }).order('start_date', { ascending: true });
-
-    const { data, error, count } = await query;
-    
-    if (error) throw error;
-    return { data: data || [], count: count || 0 };
+    return { data: filtered, count: filtered.length };
   }
 
   // Get sprints for a specific project
-  async getByProject(projectId: string): Promise<Sprint[]> {
-    const { data, error } = await supabase
-      .from('sprints')
-      .select('*')
-      .eq('project_id', projectId)
-      .order('start_date', { ascending: false });
-      
-    if (error) throw error;
-    return data || [];
-  }
-
-  // Get sprint by ID with full stats (aggregated on client side since no simple RPC)
-  async getById(id: string): Promise<SprintWithStats | null> {
-    const { data: sprint, error } = await supabase
-      .from('sprints')
-      .select(`
-        *,
-        project:projects (*)
-      `)
-      .eq('id', id)
-      .single();
-
-    if (error) return null;
-
-    // Fetch tasks to calculate stats
-    const stats = await this.getStats(id);
-
-    return {
-      ...sprint,
-      project: sprint.project as Project, // Cast join result
-      ...stats
-    };
-  }
-
-  // Get active sprint for a project
-  async getActiveSprint(projectId: string): Promise<Sprint | null> {
-    const { data, error } = await supabase
-      .from('sprints')
-      .select('*')
-      .eq('project_id', projectId)
-      .eq('status', 'active')
-      .single();
-      
-    if (error) return null;
+  async getByProject(projectId: string): Promise<any[]> {
+    const { data } = await this.getAll({ projectId });
     return data;
   }
 
-  // Create new sprint
-  async create(data: SprintInsert): Promise<Sprint> {
-    const { data: sprint, error } = await supabase
-      .from('sprints')
-      .insert(data)
-      .select()
-      .single();
-      
-    if (error) throw error;
-
-    await activityService.log({
-        entityType: 'sprint',
-        entityId: sprint.id,
-        action: 'created'
+  // Get sprint by ID
+  async getById(id: string): Promise<any | null> {
+    const response = await fetch(`${API_BASE}/sprints/${id}`, {
+      headers: getAuthHeaders(),
     });
+    const data = await response.json();
+    return data.success ? data.data : null;
+  }
 
-    return sprint;
+  // Get active sprint for a project
+  async getActiveSprint(projectId: string): Promise<any | null> {
+    const response = await fetch(`${API_BASE}/sprints/project/${projectId}/active`, {
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json();
+    return data.success ? data.data : null;
+  }
+
+  // Create new sprint
+  async create(sprint: Partial<Sprint>): Promise<Sprint> {
+    return api.createSprint(sprint as Sprint);
   }
 
   // Update sprint
-  async update(id: string, data: SprintUpdate): Promise<Sprint> {
-    const { data: sprint, error } = await supabase
-      .from('sprints')
-      .update(data)
-      .eq('id', id)
-      .select()
-      .single();
-      
-    if (error) throw error;
-
-    await activityService.log({
-        entityType: 'sprint',
-        entityId: id,
-        action: 'updated'
+  async update(id: string, updates: Partial<Sprint>): Promise<any> {
+    const response = await fetch(`${API_BASE}/sprints/${id}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updates),
     });
-
-    return sprint;
+    const data = await response.json();
+    if (!data.success) throw new Error(data.error || 'Failed to update sprint');
+    return data.data;
   }
 
   // Delete sprint
   async delete(id: string, moveTasksToBacklog: boolean = true): Promise<void> {
-    if (moveTasksToBacklog) {
-      // Move tasks to backlog (null sprint_id)
-      const { error: taskError } = await supabase
-        .from('tasks')
-        .update({ sprint_id: null })
-        .eq('sprint_id', id);
-        
-      if (taskError) throw taskError;
-    }
-
-    const { error } = await supabase.from('sprints').delete().eq('id', id);
-    if (error) throw error;
+    await fetch(`${API_BASE}/sprints/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
   }
 
   // Start sprint
-  async startSprint(id: string): Promise<Sprint> {
-    const sprint = await this.getById(id);
-    if (!sprint) throw new Error("Sprint not found");
-
-    // Check if there's already an active sprint for this project
-    const active = await this.getActiveSprint(sprint.project_id);
-    if (active && active.id !== id) {
-      throw new Error("Another sprint is already active for this project. Complete it first.");
-    }
-
-    return this.update(id, { status: 'active' });
+  async startSprint(id: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/sprints/${id}/start`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json();
+    if (!data.success) throw new Error(data.error || 'Failed to start sprint');
+    return data.data;
   }
 
   // Complete sprint
-  async completeSprint(id: string, moveIncompleteTo: string | 'backlog' = 'backlog'): Promise<Sprint> {
-    // 1. Find incomplete tasks
-    const { data: incompleteTasks } = await supabase
-      .from('tasks')
-      .select('id')
-      .eq('sprint_id', id)
-      .neq('column_id', 'done');
-
-    if (incompleteTasks && incompleteTasks.length > 0) {
-      const ids = incompleteTasks.map(t => t.id);
-      const targetSprintId = moveIncompleteTo === 'backlog' ? null : moveIncompleteTo;
-      
-      // 2. Move them
-      const { error: moveError } = await supabase
-        .from('tasks')
-        .update({ sprint_id: targetSprintId })
-        .in('id', ids);
-        
-      if (moveError) throw moveError;
-    }
-
-    // 3. Mark sprint as completed
-    return this.update(id, { status: 'completed' });
+  async completeSprint(id: string, moveIncompleteTo: string | 'backlog' = 'backlog'): Promise<any> {
+    const response = await fetch(`${API_BASE}/sprints/${id}/complete`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json();
+    if (!data.success) throw new Error(data.error || 'Failed to complete sprint');
+    return data.data;
   }
 
   // Get sprint statistics
@@ -204,120 +124,87 @@ export class SprintsService {
     totalPoints: number;
     completedPoints: number;
     tasksByStatus: Record<string, number>;
-    tasksByType: Record<TaskType, number>;
+    tasksByType: Record<string, number>;
     velocity: number;
   }> {
-    const { data: tasks, error } = await supabase
-      .from('tasks')
-      .select('column_id, points, type')
-      .eq('sprint_id', sprintId);
+    const sprint = await this.getById(sprintId);
+    if (!sprint) {
+      return {
+        totalTasks: 0,
+        completedTasks: 0,
+        totalPoints: 0,
+        completedPoints: 0,
+        tasksByStatus: {},
+        tasksByType: {},
+        velocity: 0
+      };
+    }
 
-    if (error) throw error;
-
-    const stats = {
-      totalTasks: 0,
-      completedTasks: 0,
-      totalPoints: 0,
-      completedPoints: 0,
-      tasksByStatus: {} as Record<string, number>,
-      tasksByType: {} as Record<TaskType, number>,
-      velocity: 0
+    return {
+      totalTasks: sprint.total_tasks || 0,
+      completedTasks: sprint.completed_tasks || 0,
+      totalPoints: sprint.total_points || 0,
+      completedPoints: sprint.completed_points || 0,
+      tasksByStatus: {},
+      tasksByType: {},
+      velocity: sprint.completed_points || 0
     };
-
-    (tasks || []).forEach((t: any) => {
-      stats.totalTasks++;
-      stats.totalPoints += (t.points || 0);
-      
-      // Status Counts
-      stats.tasksByStatus[t.column_id] = (stats.tasksByStatus[t.column_id] || 0) + 1;
-      
-      // Type Counts
-      stats.tasksByType[t.type] = (stats.tasksByType[t.type] || 0) + 1;
-
-      // Completion Logic
-      if (t.column_id === 'done') {
-        stats.completedTasks++;
-        stats.completedPoints += (t.points || 0);
-      }
-    });
-
-    stats.velocity = stats.completedPoints; // For a single sprint, velocity is essentially completed points
-    return stats;
   }
 
   // Get tasks in sprint
-  async getTasks(sprintId: string): Promise<Task[]> {
-    const { data, error } = await supabase
-      .from('tasks')
-      .select('*, task_tags(*), assignee:users!assignee_id(*)')
-      .eq('sprint_id', sprintId);
-      
-    if (error) throw error;
-    return data as unknown as Task[]; // Casting due to complex join types
+  async getTasks(sprintId: string): Promise<any[]> {
+    const users = await api.getUsers();
+    const tasks = await api.getTasks(users);
+    return tasks.filter(t => t.sprintId === sprintId);
   }
 
   // Add task to sprint
   async addTask(sprintId: string, taskId: string): Promise<void> {
-    const { error } = await supabase
-      .from('tasks')
-      .update({ sprint_id: sprintId })
-      .eq('id', taskId);
-    if (error) throw error;
+    await fetch(`${API_BASE}/tasks/${taskId}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ sprint_id: sprintId }),
+    });
   }
 
   // Remove task from sprint
   async removeTask(sprintId: string, taskId: string): Promise<void> {
-    const { error } = await supabase
-      .from('tasks')
-      .update({ sprint_id: null })
-      .eq('id', taskId)
-      .eq('sprint_id', sprintId); // Safety check
-    if (error) throw error;
+    await fetch(`${API_BASE}/tasks/${taskId}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ sprint_id: null }),
+    });
   }
 
   // Bulk add tasks
   async addTasks(sprintId: string, taskIds: string[]): Promise<void> {
-    if (taskIds.length === 0) return;
-    const { error } = await supabase
-      .from('tasks')
-      .update({ sprint_id: sprintId })
-      .in('id', taskIds);
-    if (error) throw error;
+    for (const taskId of taskIds) {
+      await this.addTask(sprintId, taskId);
+    }
   }
 
-  // Get burndown chart data (Approximation using activity logs if available, or static linear for now)
+  // Get burndown chart data
   async getBurndownData(sprintId: string): Promise<{ date: string; remaining: number; ideal: number }[]> {
     const sprint = await this.getById(sprintId);
     if (!sprint) return [];
 
-    const startDate = new Date(sprint.start_date);
-    const endDate = new Date(sprint.end_date);
+    const startDate = new Date(sprint.start_date || sprint.startDate);
+    const endDate = new Date(sprint.end_date || sprint.endDate);
     const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-    const totalPoints = sprint.total_points; // From getById stats aggregation
+    const totalPoints = sprint.total_points || 0;
 
     const data = [];
-    
-    // Ideal Burndown: Linear from total points to 0
-    let currentRemaining = totalPoints;
     const pointsPerDay = totalPoints / totalDays;
 
     for (let i = 0; i <= totalDays; i++) {
       const d = new Date(startDate);
       d.setDate(d.getDate() + i);
       const dateStr = d.toISOString().split('T')[0];
-
-      // Ideal
       const ideal = Math.max(0, totalPoints - (pointsPerDay * i));
-
-      // Real (Simple approximation: if date is past, use linear or 0, if future use null)
-      let remaining = null;
-      if (d <= new Date()) {
-          remaining = ideal; // Placeholder for actual calculation
-      }
 
       data.push({
         date: dateStr,
-        remaining: remaining !== null ? Math.round(remaining) : 0, 
+        remaining: Math.round(ideal),
         ideal: Math.round(ideal)
       });
     }
@@ -327,26 +214,12 @@ export class SprintsService {
 
   // Get velocity history for project
   async getVelocityHistory(projectId: string, lastN: number = 5): Promise<{ sprintId: string; sprintName: string; completedPoints: number }[]> {
-    const { data: sprints, error } = await supabase
-      .from('sprints')
-      .select('*')
-      .eq('project_id', projectId)
-      .eq('status', 'completed')
-      .order('end_date', { ascending: false })
-      .limit(lastN);
-
-    if (error) throw error;
-
-    const history = await Promise.all((sprints || []).map(async (s) => {
-        const stats = await this.getStats(s.id);
-        return {
-            sprintId: s.id,
-            sprintName: s.name,
-            completedPoints: stats.completedPoints
-        };
+    const { data: sprints } = await this.getAll({ projectId, status: 'completed' });
+    return sprints.slice(0, lastN).map(s => ({
+      sprintId: s.id,
+      sprintName: s.name,
+      completedPoints: s.completed_points || 0
     }));
-
-    return history.reverse(); // Chronological order
   }
 }
 

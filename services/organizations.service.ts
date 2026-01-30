@@ -1,248 +1,189 @@
+/**
+ * Organizations Service - Uses Local Backend
+ * All Supabase calls have been replaced with local backend API calls
+ */
 
-import { supabase } from '../lib/supabase';
-import { handleSupabaseError } from '../utils/errors';
-import {
-  Organization,
-  OrganizationInsert,
-  OrganizationUpdate,
-  OrganizationMember,
-  OrganizationMemberInsert,
-  OrganizationMemberWithUser,
-  OrganizationWithMembers,
-  OrganizationRole
-} from '../types/database.types';
+const API_BASE = '/api/v1';
+
+function getAuthHeaders(): HeadersInit {
+  const token = localStorage.getItem('infinia_token');
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+export type OrganizationRole = 'admin' | 'member';
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  owner_id?: string;
+}
 
 export class OrganizationsService {
   /**
    * Create a new organization
    */
-  async create(data: OrganizationInsert): Promise<Organization> {
-    const { data: organization, error } = await supabase
-      .from('organizations')
-      .insert(data)
-      .select()
-      .single();
-
-    if (error) handleSupabaseError(error);
-    return organization;
+  async create(data: { name: string; slug?: string; owner_id?: string }): Promise<Organization> {
+    const response = await fetch(`${API_BASE}/organizations`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error || 'Failed to create organization');
+    return result.data;
   }
 
   /**
    * Get organization by ID
    */
   async getById(id: string): Promise<Organization | null> {
-    const { data, error } = await supabase
-      .from('organizations')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') return null;
-      handleSupabaseError(error);
-    }
-    return data;
+    const response = await fetch(`${API_BASE}/organizations/${id}`, {
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json();
+    return data.success ? data.data : null;
   }
 
   /**
    * Get organization by slug
    */
   async getBySlug(slug: string): Promise<Organization | null> {
-    const { data, error } = await supabase
-      .from('organizations')
-      .select('*')
-      .eq('slug', slug)
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') return null;
-      handleSupabaseError(error);
+    const response = await fetch(`${API_BASE}/organizations?slug=${slug}`, {
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json();
+    if (data.success && data.data?.length > 0) {
+      return data.data[0];
     }
-    return data;
+    return null;
   }
 
   /**
    * Get organization with all members
    */
-  async getWithMembers(id: string): Promise<OrganizationWithMembers | null> {
-    const { data, error } = await supabase
-      .from('organizations')
-      .select(`
-        *,
-        members:organization_members(
-          *,
-          user:users(*)
-        )
-      `)
-      .eq('id', id)
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') return null;
-      handleSupabaseError(error);
-    }
-
-    return data as unknown as OrganizationWithMembers;
+  async getWithMembers(id: string): Promise<any | null> {
+    const org = await this.getById(id);
+    if (!org) return null;
+    const members = await this.getMembers(id);
+    return { ...org, members };
   }
 
   /**
    * Update organization
    */
-  async update(id: string, data: OrganizationUpdate): Promise<Organization> {
-    const { data: organization, error } = await supabase
-      .from('organizations')
-      .update(data)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) handleSupabaseError(error);
-    return organization;
+  async update(id: string, data: Partial<Organization>): Promise<Organization> {
+    const response = await fetch(`${API_BASE}/organizations/${id}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error || 'Failed to update organization');
+    return result.data;
   }
 
   /**
    * Delete organization
    */
   async delete(id: string): Promise<void> {
-    const { error } = await supabase
-      .from('organizations')
-      .delete()
-      .eq('id', id);
-
-    if (error) handleSupabaseError(error);
+    const response = await fetch(`${API_BASE}/organizations/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error || 'Failed to delete organization');
   }
 
   /**
    * Get all members of an organization
    */
-  async getMembers(organizationId: string): Promise<OrganizationMemberWithUser[]> {
-    const { data, error } = await supabase
-      .from('organization_members')
-      .select(`
-        *,
-        user:users(*)
-      `)
-      .eq('organization_id', organizationId)
-      .order('joined_at', { ascending: true });
-
-    if (error) handleSupabaseError(error);
-    return (data || []) as unknown as OrganizationMemberWithUser[];
+  async getMembers(organizationId: string): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/organizations/${organizationId}/members`, {
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json();
+    return data.success ? data.data || [] : [];
   }
 
   /**
    * Add a member to an organization
    */
-  async addMember(
-    organizationId: string,
-    userId: string,
-    role: OrganizationRole = 'member'
-  ): Promise<OrganizationMember> {
-    const { data, error } = await supabase
-      .from('organization_members')
-      .insert({
-        organization_id: organizationId,
-        user_id: userId,
-        role
-      })
-      .select()
-      .single();
-
-    if (error) handleSupabaseError(error);
-
-    // Also update the user's organization_id
-    await supabase
-      .from('users')
-      .update({ organization_id: organizationId })
-      .eq('id', userId);
-
-    return data;
+  async addMember(organizationId: string, userId: string, role: OrganizationRole = 'member'): Promise<any> {
+    const response = await fetch(`${API_BASE}/organizations/${organizationId}/members`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ user_id: userId, role }),
+    });
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error || 'Failed to add member');
+    return result.data;
   }
 
   /**
    * Remove a member from an organization
    */
   async removeMember(organizationId: string, userId: string): Promise<void> {
-    const { error } = await supabase
-      .from('organization_members')
-      .delete()
-      .eq('organization_id', organizationId)
-      .eq('user_id', userId);
-
-    if (error) handleSupabaseError(error);
-
-    // Also clear the user's organization_id
-    await supabase
-      .from('users')
-      .update({ organization_id: null })
-      .eq('id', userId);
+    await fetch(`${API_BASE}/organizations/${organizationId}/members/${userId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
   }
 
   /**
    * Update a member's role
    */
-  async updateMemberRole(
-    organizationId: string,
-    userId: string,
-    role: OrganizationRole
-  ): Promise<OrganizationMember> {
-    const { data, error } = await supabase
-      .from('organization_members')
-      .update({ role })
-      .eq('organization_id', organizationId)
-      .eq('user_id', userId)
-      .select()
-      .single();
-
-    if (error) handleSupabaseError(error);
-    return data;
+  async updateMemberRole(organizationId: string, userId: string, role: OrganizationRole): Promise<any> {
+    const response = await fetch(`${API_BASE}/organizations/${organizationId}/members/${userId}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ role }),
+    });
+    const result = await response.json();
+    return result.data;
   }
 
   /**
    * Check if a user is an admin of an organization
    */
   async isAdmin(organizationId: string, userId: string): Promise<boolean> {
-    const { data, error } = await supabase
-      .from('organization_members')
-      .select('role')
-      .eq('organization_id', organizationId)
-      .eq('user_id', userId)
-      .single();
-
-    if (error) return false;
-    return data?.role === 'admin';
+    const members = await this.getMembers(organizationId);
+    const member = members.find((m: any) => m.user_id === userId);
+    return member?.role === 'admin';
   }
 
   /**
    * Get the organization for the current user
    */
   async getCurrentOrganization(): Promise<Organization | null> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
-
-    // First get the user's organization_id from their profile
-    const { data: profile, error: profileError } = await supabase
-      .from('users')
-      .select('organization_id')
-      .eq('auth_user_id', user.id)
-      .single();
-
-    if (profileError || !profile?.organization_id) return null;
-
-    return this.getById(profile.organization_id);
+    const response = await fetch(`${API_BASE}/auth/me`, {
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json();
+    if (data.success && data.data?.organization_id) {
+      return this.getById(data.data.organization_id);
+    }
+    return null;
   }
 
   /**
    * Get the organization for a specific user
    */
   async getUserOrganization(userId: string): Promise<Organization | null> {
-    const { data: member, error } = await supabase
-      .from('organization_members')
-      .select('organization_id')
-      .eq('user_id', userId)
-      .single();
-
-    if (error || !member) return null;
-    return this.getById(member.organization_id);
+    const response = await fetch(`${API_BASE}/users/${userId}`, {
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json();
+    if (data.success && data.data?.organization_id) {
+      return this.getById(data.data.organization_id);
+    }
+    return null;
   }
 
   /**
@@ -271,66 +212,19 @@ export class OrganizationsService {
 
   /**
    * Create organization with the creator as admin
-   * This is the main method used during user signup
    */
   async createWithAdmin(name: string, userId: string): Promise<Organization> {
     const slug = await this.generateSlug(name);
-
-    // Create the organization with owner_id set to the creator
     const organization = await this.create({ name, slug, owner_id: userId });
-
-    // Add the creator as admin
     await this.addMember(organization.id, userId, 'admin');
-
     return organization;
   }
 
   /**
-   * Setup organization for an existing user (one-time utility)
-   * Creates org, adds user as admin, updates user's organization_id
-   * Handles edge cases where org_id is set but org/membership doesn't exist
+   * Setup organization for an existing user
    */
   async setupForExistingUser(userId: string, orgName: string): Promise<Organization> {
-    // Check if user already has an organization
-    const { data: user } = await supabase
-      .from('users')
-      .select('organization_id, name')
-      .eq('id', userId)
-      .single();
-
-    if (user?.organization_id) {
-      // Check if the organization actually exists
-      const existingOrg = await this.getById(user.organization_id);
-
-      if (existingOrg) {
-        // Check if user is actually a member
-        const { data: membership } = await supabase
-          .from('organization_members')
-          .select('id')
-          .eq('organization_id', user.organization_id)
-          .eq('user_id', userId)
-          .single();
-
-        if (membership) {
-          throw new Error('User already belongs to an organization');
-        }
-
-        // User has org_id but no membership - add them as admin
-        await this.addMember(existingOrg.id, userId, 'admin');
-        return existingOrg;
-      }
-
-      // Organization doesn't exist - clear the stale organization_id
-      await supabase
-        .from('users')
-        .update({ organization_id: null })
-        .eq('id', userId);
-    }
-
-    // Create organization with user as owner and admin
-    const organization = await this.createWithAdmin(orgName || `${user?.name || 'User'}'s Organization`, userId);
-
-    return organization;
+    return this.createWithAdmin(orgName, userId);
   }
 }
 

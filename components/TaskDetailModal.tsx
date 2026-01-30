@@ -14,7 +14,6 @@ import {
   Plus,
   ChevronDown,
   Briefcase,
-  Zap,
   Hexagon,
   Bug,
   Rocket,
@@ -27,12 +26,47 @@ import {
   User,
   Image as ImageIcon,
   FileText,
-  Paperclip
+  Paperclip,
+  UserPlus,
+  ArrowRightLeft,
+  PenLine,
+  ListPlus,
+  CheckCircle,
+  RotateCcw,
+  Activity,
+  Circle,
+  PlayCircle,
+  PauseCircle,
+  Check,
+  SignalHigh,
+  SignalMedium,
+  SignalLow,
+  Minus,
+  Inbox,
+  IterationCw,
+  Calendar,
+  Link2
 } from 'lucide-react';
 import { Task, Comment } from '../types';
 import { COLUMNS } from '../constants';
 import { useProjectData } from '../context/ProjectDataContext';
 import { aiClient } from '../lib/ai';
+import { activityService } from '../services/activity.service';
+import { tasksService, TaskLink, AvailableTask } from '../services/tasks.service';
+
+interface ActivityLog {
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  action: string;
+  user_id: string | null;
+  user_name?: string;
+  user_avatar?: string;
+  field_changed: string | null;
+  old_value: string | null;
+  new_value: string | null;
+  created_at: string;
+}
 
 interface TaskDetailModalProps {
   task: Task;
@@ -72,9 +106,22 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showAssigneeDropdown, setShowAssigneeDropdown] = useState(false);
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
+  const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
+  const [showSprintDropdown, setShowSprintDropdown] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [attachments, setAttachments] = useState<{ id: string; name: string; url: string; type: string }[]>((globalTask as any).attachments || []);
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  const [isLoadingActivity, setIsLoadingActivity] = useState(false);
+
+  // Task links (dependencies) state
+  const [blockedByTasks, setBlockedByTasks] = useState<TaskLink[]>([]);
+  const [blocksTasks, setBlocksTasks] = useState<TaskLink[]>([]);
+  const [showBlockedByDropdown, setShowBlockedByDropdown] = useState(false);
+  const [availableTasksForLinking, setAvailableTasksForLinking] = useState<AvailableTask[]>([]);
+  const [blockingSearchTerm, setBlockingSearchTerm] = useState('');
+  const [isLoadingLinks, setIsLoadingLinks] = useState(false);
 
   const isEpic = currentTask.type === 'epic';
   const childTasks = allTasks.filter((t: Task) => t.parentEpicId === currentTask.id);
@@ -85,6 +132,48 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
       setDescriptionBuffer(globalTask.description || '');
     }
   }, [globalTask, isEditingDescription]);
+
+  // Fetch activity logs when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const fetchActivity = async () => {
+      setIsLoadingActivity(true);
+      try {
+        // Use uuid (backend ID) if available, otherwise fall back to id
+        const taskId = (globalTask as any).uuid || globalTask.id;
+        const activities = await activityService.getForTask(taskId);
+        setActivityLogs(activities);
+      } catch (error) {
+        console.error('Failed to fetch activity:', error);
+      } finally {
+        setIsLoadingActivity(false);
+      }
+    };
+
+    fetchActivity();
+  }, [isOpen, globalTask.id, (globalTask as any).uuid]);
+
+  // Fetch task links when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const fetchLinks = async () => {
+      setIsLoadingLinks(true);
+      try {
+        const taskId = (globalTask as any).uuid || globalTask.id;
+        const links = await tasksService.getTaskLinks(taskId);
+        setBlockedByTasks(links.blockedBy || []);
+        setBlocksTasks(links.blocks || []);
+      } catch (error) {
+        console.error('Failed to fetch task links:', error);
+      } finally {
+        setIsLoadingLinks(false);
+      }
+    };
+
+    fetchLinks();
+  }, [isOpen, globalTask.id, (globalTask as any).uuid]);
 
   if (!isOpen) return null;
 
@@ -168,9 +257,57 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     setNewComment('');
   };
 
-  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => handleUpdateCurrentTask({ columnId: e.target.value });
-  const handlePriorityChange = (e: React.ChangeEvent<HTMLSelectElement>) => handleUpdateCurrentTask({ priority: e.target.value as 'HIGH' | 'MEDIUM' | 'LOW' });
-  const handleSprintChange = (e: React.ChangeEvent<HTMLSelectElement>) => handleUpdateCurrentTask({ sprintId: e.target.value });
+  // Task link handlers
+  const loadAvailableTasks = async () => {
+    try {
+      const taskId = (globalTask as any).uuid || globalTask.id;
+      const tasks = await tasksService.getAvailableLinksForTask(taskId);
+      setAvailableTasksForLinking(tasks);
+    } catch (error) {
+      console.error('Failed to load available tasks:', error);
+    }
+  };
+
+  const handleAddBlockingTask = async (blockingTask: AvailableTask) => {
+    const taskId = (globalTask as any).uuid || globalTask.id;
+    try {
+      const newLink = await tasksService.addBlockingTask(taskId, blockingTask.id);
+      setBlockedByTasks(prev => [...prev, {
+        ...newLink,
+        blocking_task: {
+          id: blockingTask.id,
+          task_key: blockingTask.task_key,
+          title: blockingTask.title,
+          type: blockingTask.type,
+          priority: blockingTask.priority,
+          column_id: '',
+        }
+      }]);
+      setShowBlockedByDropdown(false);
+      setBlockingSearchTerm('');
+      // Remove from available tasks
+      setAvailableTasksForLinking(prev => prev.filter(t => t.id !== blockingTask.id));
+    } catch (error) {
+      console.error('Failed to add blocking task:', error);
+    }
+  };
+
+  const handleRemoveBlockingTask = async (linkId: string) => {
+    const taskId = (globalTask as any).uuid || globalTask.id;
+    try {
+      await tasksService.removeTaskLink(taskId, linkId);
+      setBlockedByTasks(prev => prev.filter(l => l.id !== linkId));
+    } catch (error) {
+      console.error('Failed to remove blocking task:', error);
+    }
+  };
+
+  const filteredAvailableTasks = availableTasksForLinking.filter(t => {
+    if (!blockingSearchTerm) return true;
+    const term = blockingSearchTerm.toLowerCase();
+    return t.title.toLowerCase().includes(term) || t.task_key.toLowerCase().includes(term);
+  });
+
   const handleTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => handleUpdateCurrentTask({ type: e.target.value as any });
 
   const handleAddChildTask = (e: React.FormEvent) => {
@@ -342,14 +479,69 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Status</label>
                 <div className="relative">
-                  <select
-                    value={currentTask.columnId}
-                    onChange={handleStatusChange}
-                    className="w-full bg-gray-50 dark:bg-[#1F2128] border-none rounded-lg px-3 py-2 text-sm font-medium text-[#172B4D] dark:text-gray-200 focus:ring-1 focus:ring-blue-500 cursor-pointer appearance-none"
+                  <button
+                    onClick={() => setShowStatusDropdown(!showStatusDropdown)}
+                    className="w-full flex items-center gap-2 bg-gray-50 dark:bg-[#1F2128] px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors"
                   >
-                    {COLUMNS.map(col => <option key={col.id} value={col.id}>{col.title}</option>)}
-                  </select>
-                  <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    {(() => {
+                      const statusConfig: Record<string, { icon: any; color: string; bg: string }> = {
+                        'backlog': { icon: Circle, color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-700' },
+                        'todo': { icon: Circle, color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30' },
+                        'inprogress': { icon: PlayCircle, color: 'text-amber-500', bg: 'bg-amber-100 dark:bg-amber-900/30' },
+                        'blocked': { icon: PauseCircle, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30' },
+                        'done': { icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-100 dark:bg-emerald-900/30' },
+                      };
+                      const config = statusConfig[currentTask.columnId] || statusConfig['backlog'];
+                      const StatusIcon = config.icon;
+                      return <StatusIcon size={16} className={config.color} />;
+                    })()}
+                    <span className="text-sm font-medium text-[#172B4D] dark:text-gray-200 truncate flex-1 text-left">
+                      {COLUMNS.find(c => c.id === currentTask.columnId)?.title || 'Backlog'}
+                    </span>
+                    <ChevronDown size={12} className="text-gray-400" />
+                  </button>
+
+                  {showStatusDropdown && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowStatusDropdown(false)} />
+                      <div className="absolute left-0 top-full mt-1 w-56 bg-white dark:bg-[#1F2128] rounded-xl shadow-xl border border-gray-200 dark:border-[#2D2F36] py-2 z-20 overflow-hidden">
+                        <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Status</div>
+                        {COLUMNS.map((col) => {
+                          const statusConfig: Record<string, { icon: any; color: string; bg: string; description: string }> = {
+                            'backlog': { icon: Circle, color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-700', description: 'Not yet started' },
+                            'todo': { icon: Circle, color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30', description: 'Ready to work on' },
+                            'inprogress': { icon: PlayCircle, color: 'text-amber-500', bg: 'bg-amber-100 dark:bg-amber-900/30', description: 'Currently working' },
+                            'blocked': { icon: PauseCircle, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', description: 'Waiting on something' },
+                            'done': { icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-100 dark:bg-emerald-900/30', description: 'Completed' },
+                          };
+                          const config = statusConfig[col.id] || statusConfig['backlog'];
+                          const StatusIcon = config.icon;
+                          const isSelected = currentTask.columnId === col.id;
+                          return (
+                            <button
+                              key={col.id}
+                              onClick={() => {
+                                handleUpdateCurrentTask({ columnId: col.id });
+                                setShowStatusDropdown(false);
+                              }}
+                              className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-[#2D2F36] transition-colors text-left ${
+                                isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                              }`}
+                            >
+                              <div className={`w-8 h-8 rounded-lg ${config.bg} flex items-center justify-center`}>
+                                <StatusIcon size={16} className={config.color} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium text-[#172B4D] dark:text-gray-200">{col.title}</div>
+                                <div className="text-[10px] text-gray-400">{config.description}</div>
+                              </div>
+                              {isSelected && <Check size={16} className="text-blue-500 flex-shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -357,19 +549,66 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Priority</label>
                 <div className="relative">
-                  <select
-                    value={currentTask.priority}
-                    onChange={handlePriorityChange}
-                    className={`w-full bg-gray-50 dark:bg-[#1F2128] border-none rounded-lg px-3 py-2 text-sm font-bold cursor-pointer appearance-none ${
+                  <button
+                    onClick={() => setShowPriorityDropdown(!showPriorityDropdown)}
+                    className="w-full flex items-center gap-2 bg-gray-50 dark:bg-[#1F2128] px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors"
+                  >
+                    {(() => {
+                      const priorityConfig: Record<string, { icon: any; color: string }> = {
+                        'HIGH': { icon: SignalHigh, color: 'text-red-500' },
+                        'MEDIUM': { icon: SignalMedium, color: 'text-amber-500' },
+                        'LOW': { icon: SignalLow, color: 'text-blue-500' },
+                      };
+                      const config = priorityConfig[currentTask.priority] || priorityConfig['MEDIUM'];
+                      const PriorityIcon = config.icon;
+                      return <PriorityIcon size={16} className={config.color} />;
+                    })()}
+                    <span className={`text-sm font-semibold truncate flex-1 text-left ${
                       currentTask.priority === 'HIGH' ? 'text-red-600' :
                       currentTask.priority === 'LOW' ? 'text-blue-600' : 'text-amber-600'
-                    }`}
-                  >
-                    <option value="HIGH">High</option>
-                    <option value="MEDIUM">Medium</option>
-                    <option value="LOW">Low</option>
-                  </select>
-                  <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    }`}>
+                      {currentTask.priority === 'HIGH' ? 'High' : currentTask.priority === 'LOW' ? 'Low' : 'Medium'}
+                    </span>
+                    <ChevronDown size={12} className="text-gray-400" />
+                  </button>
+
+                  {showPriorityDropdown && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowPriorityDropdown(false)} />
+                      <div className="absolute left-0 top-full mt-1 w-56 bg-white dark:bg-[#1F2128] rounded-xl shadow-xl border border-gray-200 dark:border-[#2D2F36] py-2 z-20 overflow-hidden">
+                        <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Priority Level</div>
+                        {[
+                          { value: 'HIGH', label: 'High', icon: SignalHigh, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', description: 'Critical, needs immediate attention' },
+                          { value: 'MEDIUM', label: 'Medium', icon: SignalMedium, color: 'text-amber-500', bg: 'bg-amber-100 dark:bg-amber-900/30', description: 'Important, but not urgent' },
+                          { value: 'LOW', label: 'Low', icon: SignalLow, color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30', description: 'Can be done when time permits' },
+                        ].map((priority) => {
+                          const PriorityIcon = priority.icon;
+                          const isSelected = currentTask.priority === priority.value;
+                          return (
+                            <button
+                              key={priority.value}
+                              onClick={() => {
+                                handleUpdateCurrentTask({ priority: priority.value as 'HIGH' | 'MEDIUM' | 'LOW' });
+                                setShowPriorityDropdown(false);
+                              }}
+                              className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-[#2D2F36] transition-colors text-left ${
+                                isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                              }`}
+                            >
+                              <div className={`w-8 h-8 rounded-lg ${priority.bg} flex items-center justify-center`}>
+                                <PriorityIcon size={16} className={priority.color} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className={`text-sm font-semibold ${priority.color}`}>{priority.label}</div>
+                                <div className="text-[10px] text-gray-400">{priority.description}</div>
+                              </div>
+                              {isSelected && <Check size={16} className="text-blue-500 flex-shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -379,17 +618,17 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 <div className="relative">
                   <button
                     onClick={() => setShowAssigneeDropdown(!showAssigneeDropdown)}
-                    className="w-full flex items-center gap-2 bg-gray-50 dark:bg-[#1F2128] px-3 py-1.5 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors"
+                    className="w-full flex items-center gap-2 bg-gray-50 dark:bg-[#1F2128] px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors"
                   >
                     {currentTask.assignee?.avatarUrl ? (
-                      <img src={currentTask.assignee.avatarUrl} className="w-5 h-5 rounded-full border border-gray-200 dark:border-gray-600" />
+                      <img src={currentTask.assignee.avatarUrl} className="w-6 h-6 rounded-full border-2 border-white dark:border-gray-600 shadow-sm" />
                     ) : (
-                      <div className="w-5 h-5 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
-                        <User size={12} className="text-gray-500" />
+                      <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                        <Minus size={12} className="text-gray-400" />
                       </div>
                     )}
                     <span className="text-sm font-medium text-[#172B4D] dark:text-gray-200 truncate flex-1 text-left">
-                      {currentTask.assignee?.name?.split(' ')[0] || 'Unassigned'}
+                      {currentTask.assignee?.name || 'Unassigned'}
                     </span>
                     <ChevronDown size={12} className="text-gray-400" />
                   </button>
@@ -397,36 +636,55 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   {showAssigneeDropdown && (
                     <>
                       <div className="fixed inset-0 z-10" onClick={() => setShowAssigneeDropdown(false)} />
-                      <div className="absolute left-0 top-full mt-1 w-full bg-white dark:bg-[#1F2128] rounded-lg shadow-xl border border-gray-200 dark:border-[#2D2F36] py-1 z-20 overflow-hidden max-h-48 overflow-y-auto">
+                      <div className="absolute left-0 top-full mt-1 w-64 bg-white dark:bg-[#1F2128] rounded-xl shadow-xl border border-gray-200 dark:border-[#2D2F36] py-2 z-20 overflow-hidden max-h-72 overflow-y-auto">
+                        <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Team Members</div>
+
+                        {/* Unassigned Option */}
                         <button
                           onClick={() => {
                             handleUpdateCurrentTask({ assignee: undefined });
                             setShowAssigneeDropdown(false);
                           }}
-                          className={`w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors text-left ${
-                            !currentTask.assignee ? 'bg-gray-50 dark:bg-[#2D2F36]/50' : ''
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-[#2D2F36] transition-colors text-left ${
+                            !currentTask.assignee ? 'bg-blue-50 dark:bg-blue-900/20' : ''
                           }`}
                         >
-                          <div className="w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
-                            <User size={12} className="text-gray-400" />
+                          <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                            <Minus size={16} className="text-gray-400" />
                           </div>
-                          <span className="text-sm text-gray-600 dark:text-gray-300">Unassigned</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-gray-500 dark:text-gray-400">Unassigned</div>
+                            <div className="text-[10px] text-gray-400">Remove assignee</div>
+                          </div>
+                          {!currentTask.assignee && <Check size={16} className="text-blue-500 flex-shrink-0" />}
                         </button>
-                        {users.map((user: any) => (
-                          <button
-                            key={user.id}
-                            onClick={() => {
-                              handleUpdateCurrentTask({ assignee: user });
-                              setShowAssigneeDropdown(false);
-                            }}
-                            className={`w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors text-left ${
-                              currentTask.assignee?.id === user.id ? 'bg-gray-50 dark:bg-[#2D2F36]/50' : ''
-                            }`}
-                          >
-                            <img src={user.avatarUrl} className="w-5 h-5 rounded-full border border-gray-200 dark:border-gray-600" />
-                            <span className="text-sm text-[#172B4D] dark:text-gray-200">{user.name}</span>
-                          </button>
-                        ))}
+
+                        {/* Divider */}
+                        <div className="my-2 border-t border-gray-100 dark:border-[#2D2F36]" />
+
+                        {/* Team Members */}
+                        {users.map((user: any) => {
+                          const isSelected = currentTask.assignee?.id === user.id;
+                          return (
+                            <button
+                              key={user.id}
+                              onClick={() => {
+                                handleUpdateCurrentTask({ assignee: user });
+                                setShowAssigneeDropdown(false);
+                              }}
+                              className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-[#2D2F36] transition-colors text-left ${
+                                isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                              }`}
+                            >
+                              <img src={user.avatarUrl} className="w-8 h-8 rounded-lg border border-gray-200 dark:border-gray-600 object-cover" />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium text-[#172B4D] dark:text-gray-200">{user.name}</div>
+                                <div className="text-[10px] text-gray-400">{user.role || 'Team Member'}</div>
+                              </div>
+                              {isSelected && <Check size={16} className="text-blue-500 flex-shrink-0" />}
+                            </button>
+                          );
+                        })}
                       </div>
                     </>
                   )}
@@ -741,28 +999,170 @@ Tips:
               </div>
 
               <div className="space-y-6 pl-2">
-                {currentTask.comments?.map((comment: any) => {
-                  const user = users.find((u: any) => u.id === comment.userId);
-                  return (
-                    <div key={comment.id} className="flex gap-4 group">
-                      <img src={user?.avatarUrl} className="w-8 h-8 rounded-full border border-gray-200 dark:border-[#2D2F36] mt-1" />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-sm font-bold text-[#172B4D] dark:text-white">{user?.name}</span>
-                          <span className="text-xs text-gray-500">{new Date(comment.timestamp).toLocaleString()}</span>
-                        </div>
-                        <div className="text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-[#1F2128] p-3 rounded-r-xl rounded-bl-xl border border-gray-100 dark:border-[#2D2F36]">
-                          {comment.text}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                {(!currentTask.comments || currentTask.comments.length === 0) && (
+                {isLoadingActivity ? (
                   <div className="text-center py-8 text-gray-400">
-                    <MessageSquare size={24} className="mx-auto mb-2 opacity-50" />
-                    <p className="text-xs">No activity yet</p>
+                    <Loader2 size={24} className="mx-auto mb-2 animate-spin" />
+                    <p className="text-xs">Loading activity...</p>
                   </div>
+                ) : (
+                  <>
+                    {/* Combine and sort activity logs and comments by timestamp */}
+                    {(() => {
+                      const combinedActivity: Array<{ type: 'comment' | 'activity'; data: any; timestamp: string }> = [];
+
+                      // Add comments
+                      (currentTask.comments || []).forEach((comment: any) => {
+                        combinedActivity.push({
+                          type: 'comment',
+                          data: comment,
+                          timestamp: comment.timestamp
+                        });
+                      });
+
+                      // Add activity logs
+                      activityLogs.forEach((activity) => {
+                        combinedActivity.push({
+                          type: 'activity',
+                          data: activity,
+                          timestamp: activity.created_at
+                        });
+                      });
+
+                      // Sort by timestamp descending (newest first)
+                      combinedActivity.sort((a, b) =>
+                        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+                      );
+
+                      if (combinedActivity.length === 0) {
+                        return (
+                          <div className="text-center py-8 text-gray-400">
+                            <MessageSquare size={24} className="mx-auto mb-2 opacity-50" />
+                            <p className="text-xs">No activity yet</p>
+                          </div>
+                        );
+                      }
+
+                      return combinedActivity.map((item) => {
+                        if (item.type === 'comment') {
+                          const comment = item.data;
+                          const user = users.find((u: any) => u.id === comment.userId);
+                          return (
+                            <div key={`comment-${comment.id}`} className="flex gap-4 group">
+                              <img src={user?.avatarUrl} className="w-8 h-8 rounded-full border border-gray-200 dark:border-[#2D2F36] mt-1" />
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-sm font-bold text-[#172B4D] dark:text-white">{user?.name}</span>
+                                  <span className="text-xs text-gray-500">{new Date(comment.timestamp).toLocaleString()}</span>
+                                </div>
+                                <div className="text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-[#1F2128] p-3 rounded-r-xl rounded-bl-xl border border-gray-100 dark:border-[#2D2F36]">
+                                  {comment.text}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        } else {
+                          const activity = item.data as ActivityLog;
+                          const user = users.find((u: any) => u.id === activity.user_id);
+
+                          // Format activity action text
+                          const getActionText = () => {
+                            switch (activity.action) {
+                              case 'created':
+                                return 'created this task';
+                              case 'updated':
+                                if (activity.field_changed) {
+                                  return `updated ${activity.field_changed}${activity.old_value && activity.new_value ? ` from "${activity.old_value}" to "${activity.new_value}"` : ''}`;
+                                }
+                                return 'updated this task';
+                              case 'moved':
+                                return `moved to ${activity.new_value || 'a new column'}`;
+                              case 'assigned':
+                                const assignee = users.find((u: any) => u.id === activity.new_value);
+                                return `assigned to ${assignee?.name || activity.new_value || 'someone'}`;
+                              case 'commented':
+                                return `commented: "${activity.new_value?.substring(0, 50)}${(activity.new_value?.length || 0) > 50 ? '...' : ''}"`;
+                              case 'added_to_sprint':
+                                return `added to sprint`;
+                              case 'removed_from_sprint':
+                                return `removed from sprint`;
+                              case 'added_subtask':
+                                return `added subtask: ${activity.new_value}`;
+                              case 'completed_subtask':
+                                return `completed subtask: ${activity.new_value}`;
+                              case 'reopened_subtask':
+                                return `reopened subtask: ${activity.new_value}`;
+                              case 'deleted_subtask':
+                                return `deleted subtask`;
+                              case 'deleted':
+                                return 'deleted this task';
+                              default:
+                                return activity.action;
+                            }
+                          };
+
+                          // Get icon and color based on action type
+                          const getActionIcon = () => {
+                            switch (activity.action) {
+                              case 'created':
+                                return { icon: Plus, color: 'text-emerald-500', bg: 'bg-emerald-500/10' };
+                              case 'assigned':
+                                return { icon: UserPlus, color: 'text-blue-500', bg: 'bg-blue-500/10' };
+                              case 'moved':
+                                return { icon: ArrowRightLeft, color: 'text-purple-500', bg: 'bg-purple-500/10' };
+                              case 'updated':
+                                return { icon: PenLine, color: 'text-amber-500', bg: 'bg-amber-500/10' };
+                              case 'added_subtask':
+                                return { icon: ListPlus, color: 'text-indigo-500', bg: 'bg-indigo-500/10' };
+                              case 'completed_subtask':
+                                return { icon: CheckCircle, color: 'text-emerald-500', bg: 'bg-emerald-500/10' };
+                              case 'reopened_subtask':
+                                return { icon: RotateCcw, color: 'text-orange-500', bg: 'bg-orange-500/10' };
+                              case 'deleted':
+                              case 'deleted_subtask':
+                                return { icon: Trash2, color: 'text-red-500', bg: 'bg-red-500/10' };
+                              default:
+                                return { icon: Activity, color: 'text-gray-500', bg: 'bg-gray-500/10' };
+                            }
+                          };
+
+                          const { icon: ActionIcon, color: iconColor, bg: iconBg } = getActionIcon();
+
+                          return (
+                            <div key={`activity-${activity.id}`} className="flex gap-3 items-start group">
+                              <div className="relative">
+                                <div className="w-9 h-9 rounded-full bg-gray-100 dark:bg-[#1F2128] border border-gray-200 dark:border-[#2D2F36] flex items-center justify-center overflow-hidden">
+                                  {user?.avatarUrl ? (
+                                    <img src={user.avatarUrl} className="w-full h-full rounded-full object-cover" />
+                                  ) : activity.user_avatar ? (
+                                    <img src={activity.user_avatar} className="w-full h-full rounded-full object-cover" />
+                                  ) : (
+                                    <User size={16} className="text-gray-400" />
+                                  )}
+                                </div>
+                                <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full ${iconBg} border-2 border-white dark:border-[#15171E] flex items-center justify-center`}>
+                                  <ActionIcon size={10} className={iconColor} />
+                                </div>
+                              </div>
+                              <div className="flex-1 min-w-0 pt-0.5">
+                                <p className="text-[13px] text-gray-700 dark:text-gray-300 leading-relaxed">
+                                  <span className="font-semibold text-[#172B4D] dark:text-white">
+                                    {user?.name || activity.user_name || 'System'}
+                                  </span>
+                                  {' '}
+                                  <span className="text-gray-500 dark:text-gray-400">
+                                    {getActionText()}
+                                  </span>
+                                </p>
+                                <span className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5 block">
+                                  {new Date(activity.created_at).toLocaleString()}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        }
+                      });
+                    })()}
+                  </>
                 )}
               </div>
             </div>
@@ -790,19 +1190,176 @@ Tips:
                 <div className="flex flex-col gap-1.5">
                   <span className="text-xs text-gray-500">Sprint</span>
                   <div className="relative">
-                    <Zap size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-yellow-500" />
-                    <select
-                      value={currentTask.sprintId || ''}
-                      onChange={handleSprintChange}
-                      className="w-full bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#2D2F36] rounded-lg px-3 py-2 pl-8 text-xs text-[#172B4D] dark:text-white outline-none focus:border-blue-500 shadow-sm"
+                    <button
+                      onClick={() => setShowSprintDropdown(!showSprintDropdown)}
+                      className="w-full flex items-center gap-2 bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#2D2F36] rounded-lg px-3 py-2 text-left hover:border-blue-400 dark:hover:border-blue-500 transition-colors shadow-sm"
                     >
-                      <option value="">Backlog</option>
-                      {sprints.map((s: any) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name} ({s.status})
-                        </option>
-                      ))}
-                    </select>
+                      {(() => {
+                        const currentSprint = sprints.find((s: any) => s.id === currentTask.sprintId);
+                        if (!currentSprint) {
+                          return (
+                            <>
+                              <div className="w-6 h-6 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                                <Inbox size={12} className="text-gray-400" />
+                              </div>
+                              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 flex-1 truncate">Backlog</span>
+                            </>
+                          );
+                        }
+                        const statusConfig: Record<string, { color: string; bg: string }> = {
+                          'active': { color: 'text-emerald-500', bg: 'bg-emerald-100 dark:bg-emerald-900/30' },
+                          'planned': { color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30' },
+                          'completed': { color: 'text-gray-400', bg: 'bg-gray-100 dark:bg-gray-700' },
+                        };
+                        const config = statusConfig[currentSprint.status] || statusConfig['planned'];
+                        return (
+                          <>
+                            <div className={`w-6 h-6 rounded-md ${config.bg} flex items-center justify-center`}>
+                              <IterationCw size={12} className={config.color} />
+                            </div>
+                            <span className="text-xs font-medium text-[#172B4D] dark:text-white flex-1 truncate">{currentSprint.name}</span>
+                          </>
+                        );
+                      })()}
+                      <ChevronDown size={12} className="text-gray-400 flex-shrink-0" />
+                    </button>
+
+                    {showSprintDropdown && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setShowSprintDropdown(false)} />
+                        <div className="absolute left-0 top-full mt-1 w-72 bg-white dark:bg-[#1F2128] rounded-xl shadow-xl border border-gray-200 dark:border-[#2D2F36] py-2 z-20 overflow-hidden max-h-80 overflow-y-auto">
+
+                          {/* Backlog Option */}
+                          <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Backlog</div>
+                          <button
+                            onClick={() => {
+                              handleUpdateCurrentTask({ sprintId: undefined });
+                              setShowSprintDropdown(false);
+                            }}
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-[#2D2F36] transition-colors text-left ${
+                              !currentTask.sprintId ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                            }`}
+                          >
+                            <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                              <Inbox size={16} className="text-gray-400" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-gray-600 dark:text-gray-300">Backlog</div>
+                              <div className="text-[10px] text-gray-400">Not assigned to any sprint</div>
+                            </div>
+                            {!currentTask.sprintId && <Check size={16} className="text-blue-500 flex-shrink-0" />}
+                          </button>
+
+                          {/* Active Sprints */}
+                          {sprints.filter((s: any) => s.status === 'active').length > 0 && (
+                            <>
+                              <div className="my-2 border-t border-gray-100 dark:border-[#2D2F36]" />
+                              <div className="px-3 py-1.5 text-[10px] font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-1.5">
+                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                Active Sprints
+                              </div>
+                              {sprints.filter((s: any) => s.status === 'active').map((sprint: any) => {
+                                const isSelected = currentTask.sprintId === sprint.id;
+                                return (
+                                  <button
+                                    key={sprint.id}
+                                    onClick={() => {
+                                      handleUpdateCurrentTask({ sprintId: sprint.id });
+                                      setShowSprintDropdown(false);
+                                    }}
+                                    className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-[#2D2F36] transition-colors text-left ${
+                                      isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                                    }`}
+                                  >
+                                    <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                                      <IterationCw size={16} className="text-emerald-500" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-medium text-[#172B4D] dark:text-gray-200 truncate">{sprint.name}</div>
+                                      <div className="text-[10px] text-gray-400 flex items-center gap-1">
+                                        <Calendar size={9} />
+                                        {new Date(sprint.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - {new Date(sprint.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                      </div>
+                                    </div>
+                                    {isSelected && <Check size={16} className="text-blue-500 flex-shrink-0" />}
+                                  </button>
+                                );
+                              })}
+                            </>
+                          )}
+
+                          {/* Planned Sprints */}
+                          {sprints.filter((s: any) => s.status === 'planned').length > 0 && (
+                            <>
+                              <div className="my-2 border-t border-gray-100 dark:border-[#2D2F36]" />
+                              <div className="px-3 py-1.5 text-[10px] font-bold text-blue-500 uppercase tracking-wider">Planned Sprints</div>
+                              {sprints.filter((s: any) => s.status === 'planned').map((sprint: any) => {
+                                const isSelected = currentTask.sprintId === sprint.id;
+                                return (
+                                  <button
+                                    key={sprint.id}
+                                    onClick={() => {
+                                      handleUpdateCurrentTask({ sprintId: sprint.id });
+                                      setShowSprintDropdown(false);
+                                    }}
+                                    className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-[#2D2F36] transition-colors text-left ${
+                                      isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                                    }`}
+                                  >
+                                    <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                                      <IterationCw size={16} className="text-blue-500" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-medium text-[#172B4D] dark:text-gray-200 truncate">{sprint.name}</div>
+                                      <div className="text-[10px] text-gray-400 flex items-center gap-1">
+                                        <Calendar size={9} />
+                                        {new Date(sprint.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - {new Date(sprint.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                      </div>
+                                    </div>
+                                    {isSelected && <Check size={16} className="text-blue-500 flex-shrink-0" />}
+                                  </button>
+                                );
+                              })}
+                            </>
+                          )}
+
+                          {/* Completed Sprints */}
+                          {sprints.filter((s: any) => s.status === 'completed').length > 0 && (
+                            <>
+                              <div className="my-2 border-t border-gray-100 dark:border-[#2D2F36]" />
+                              <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Completed</div>
+                              {sprints.filter((s: any) => s.status === 'completed').map((sprint: any) => {
+                                const isSelected = currentTask.sprintId === sprint.id;
+                                return (
+                                  <button
+                                    key={sprint.id}
+                                    onClick={() => {
+                                      handleUpdateCurrentTask({ sprintId: sprint.id });
+                                      setShowSprintDropdown(false);
+                                    }}
+                                    className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-[#2D2F36] transition-colors text-left ${
+                                      isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                                    }`}
+                                  >
+                                    <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                                      <CheckCircle2 size={16} className="text-gray-400" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">{sprint.name}</div>
+                                      <div className="text-[10px] text-gray-400 flex items-center gap-1">
+                                        <Calendar size={9} />
+                                        {new Date(sprint.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - {new Date(sprint.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                      </div>
+                                    </div>
+                                    {isSelected && <Check size={16} className="text-blue-500 flex-shrink-0" />}
+                                  </button>
+                                );
+                              })}
+                            </>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -832,6 +1389,122 @@ Tips:
                     className="w-full bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#2D2F36] rounded-lg px-3 py-1.5 text-xs text-[#172B4D] dark:text-white outline-none focus:border-blue-500"
                   />
                 </div>
+              </div>
+            </SidebarSection>
+
+            <div className="h-px bg-gray-200 dark:bg-[#2D2F36]"></div>
+
+            {/* Dependencies Section */}
+            <SidebarSection title="Dependencies">
+              <div className="space-y-4">
+                {/* Blocked By Section */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                    <PauseCircle size={10} className="text-red-500" /> Blocked By
+                  </label>
+
+                  {isLoadingLinks ? (
+                    <div className="text-xs text-gray-400 flex items-center gap-2">
+                      <Loader2 size={12} className="animate-spin" /> Loading...
+                    </div>
+                  ) : blockedByTasks.length === 0 ? (
+                    <div className="text-xs text-gray-400">No blocking tasks</div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {blockedByTasks.map((link) => (
+                        <div key={link.id} className="flex items-center gap-2 group">
+                          <div className="flex-1 flex items-center gap-2 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20 px-2 py-1.5 rounded-md">
+                            <Link2 size={10} className="text-red-400 flex-shrink-0" />
+                            <span className="text-[10px] font-mono text-gray-500">{link.blocking_task?.task_key}</span>
+                            <span className="text-xs text-[#172B4D] dark:text-gray-200 truncate flex-1">
+                              {link.blocking_task?.title}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => handleRemoveBlockingTask(link.id)}
+                            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Add Blocking Task Button/Dropdown */}
+                  <div className="relative">
+                    <button
+                      onClick={() => {
+                        setShowBlockedByDropdown(!showBlockedByDropdown);
+                        if (!showBlockedByDropdown) loadAvailableTasks();
+                      }}
+                      className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                    >
+                      <Plus size={10} /> Add blocking task
+                    </button>
+
+                    {showBlockedByDropdown && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setShowBlockedByDropdown(false)} />
+                        <div className="absolute left-0 top-full mt-1 w-72 bg-white dark:bg-[#1F2128] rounded-xl shadow-xl border border-gray-200 dark:border-[#2D2F36] py-2 z-20 overflow-hidden max-h-80">
+                          {/* Search Input */}
+                          <div className="px-3 pb-2">
+                            <input
+                              type="text"
+                              placeholder="Search tasks..."
+                              value={blockingSearchTerm}
+                              onChange={(e) => setBlockingSearchTerm(e.target.value)}
+                              className="w-full bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                              autoFocus
+                            />
+                          </div>
+
+                          {/* Task List */}
+                          <div className="max-h-60 overflow-y-auto">
+                            {filteredAvailableTasks.length === 0 ? (
+                              <div className="px-3 py-4 text-xs text-gray-400 text-center">
+                                No tasks available for linking
+                              </div>
+                            ) : (
+                              filteredAvailableTasks.map((task) => (
+                                <button
+                                  key={task.id}
+                                  onClick={() => handleAddBlockingTask(task)}
+                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-[#2D2F36] text-left transition-colors"
+                                >
+                                  <span className="text-[10px] font-mono text-gray-400">{task.task_key}</span>
+                                  <span className="text-xs text-[#172B4D] dark:text-gray-200 truncate flex-1">
+                                    {task.title}
+                                  </span>
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Blocks Section (read-only display) */}
+                {blocksTasks.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-[#2D2F36]">
+                    <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                      <AlertCircle size={10} className="text-amber-500" /> Blocks
+                    </label>
+                    <div className="space-y-1.5">
+                      {blocksTasks.map((link) => (
+                        <div key={link.id} className="flex items-center gap-2 bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/20 px-2 py-1.5 rounded-md">
+                          <Link2 size={10} className="text-amber-400 flex-shrink-0" />
+                          <span className="text-[10px] font-mono text-gray-500">{link.blocked_task?.task_key}</span>
+                          <span className="text-xs text-[#172B4D] dark:text-gray-200 truncate">
+                            {link.blocked_task?.title}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </SidebarSection>
 

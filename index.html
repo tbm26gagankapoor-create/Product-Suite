@@ -74,6 +74,58 @@
       .animate-slideOutToLeft { animation: slideOutToLeft 0.2s ease-in forwards; }
       .animate-slideOutToRight { animation: slideOutToRight 0.2s ease-in forwards; }
       .animate-progressPulse { animation: progressPulse 1.5s ease-in-out infinite; }
+
+      /* Timeline Animations */
+      @keyframes timelineBarEnter {
+        from {
+          opacity: 0;
+          transform: translateY(-4px) scaleX(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scaleX(1);
+        }
+      }
+      @keyframes todayPulse {
+        0%, 100% {
+          opacity: 0.6;
+          box-shadow: 0 0 8px rgba(168, 85, 247, 0.4);
+        }
+        50% {
+          opacity: 1;
+          box-shadow: 0 0 16px rgba(168, 85, 247, 0.6);
+        }
+      }
+      @keyframes shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+      }
+      .animate-timelineBarEnter { animation: timelineBarEnter 0.25s ease-out forwards; }
+      .animate-todayPulse { animation: todayPulse 2s ease-in-out infinite; }
+      .animate-shimmer {
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+        background-size: 200% 100%;
+        animation: shimmer 2s infinite;
+      }
+
+      /* Timeline task bar hover effects */
+      .timeline-bar {
+        transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+      }
+      .timeline-bar:hover {
+        transform: translateY(-1px) scale(1.02);
+        filter: brightness(1.1);
+      }
+
+      /* Smooth group collapse animation */
+      .timeline-group-content {
+        transition: max-height 0.3s ease-out, opacity 0.2s ease-out;
+        overflow: hidden;
+      }
+      .timeline-group-collapsed {
+        max-height: 0;
+        opacity: 0;
+      }
     </style>
   <script type="importmap">
 {

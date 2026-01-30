@@ -1,29 +1,64 @@
+/**
+ * Tasks Service - Uses Local Backend
+ * All Supabase calls have been replaced with local backend API calls
+ */
 
-import { supabase } from '../lib/supabase';
-import { handleSupabaseError } from '../utils/errors';
-import { 
-  Task, 
-  TaskInsert, 
-  TaskUpdate, 
-  TaskWithRelations,
-  TaskTag,
-  TagColor,
-  Comment,
-  CommentWithUser,
-  TaskAttachment,
-  ActivityLogWithUser,
-  PaginationParams,
-  TaskType,
-  Priority,
-  User
-} from '../types/database.types';
+import { api } from '../lib/api';
+import { Task } from '../types';
+
+const API_BASE = '/api/v1';
+
+// Task Link types
+export interface TaskLink {
+  id: string;
+  blocking_task_id: string;
+  blocked_task_id: string;
+  link_type: 'blocks' | 'relates_to' | 'duplicates';
+  created_by: string | null;
+  created_at: string;
+  blocking_task?: {
+    id: string;
+    task_key: string;
+    title: string;
+    type: string;
+    priority: string;
+    column_id: string;
+  };
+  blocked_task?: {
+    id: string;
+    task_key: string;
+    title: string;
+    type: string;
+    priority: string;
+    column_id: string;
+  };
+}
+
+export interface AvailableTask {
+  id: string;
+  task_key: string;
+  title: string;
+  type: string;
+  priority: string;
+}
+
+function getAuthHeaders(): HeadersInit {
+  const token = localStorage.getItem('infinia_token');
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
 
 export interface TaskFilters {
   projectId?: string;
   sprintId?: string | null;
   columnId?: string | string[];
-  type?: TaskType | TaskType[];
-  priority?: Priority | Priority[];
+  type?: string | string[];
+  priority?: string | string[];
   assigneeId?: string | null;
   reporterId?: string;
   parentEpicId?: string | null;
@@ -33,146 +68,90 @@ export interface TaskFilters {
 }
 
 export class TasksService {
-  // --- Basic CRUD ---
+  // Get all tasks
+  async getAll(filters?: TaskFilters, pagination?: { page?: number; limit?: number }): Promise<{ data: any[]; count: number }> {
+    const users = await api.getUsers();
+    const tasks = await api.getTasks(users);
 
-  async getAll(filters?: TaskFilters, pagination?: PaginationParams): Promise<{ data: Task[]; count: number }> {
-    let query = supabase.from('tasks').select('*', { count: 'exact' });
-    query = this.applyFilters(query, filters);
+    let filtered = tasks;
 
-    if (pagination?.page && pagination?.limit) {
-      const from = (pagination.page - 1) * pagination.limit;
-      const to = from + pagination.limit - 1;
-      query = query.range(from, to);
+    if (filters?.projectId) {
+      filtered = filtered.filter(t => t.projectId === filters.projectId);
+    }
+    if (filters?.sprintId !== undefined) {
+      filtered = filters.sprintId === null
+        ? filtered.filter(t => !t.sprintId)
+        : filtered.filter(t => t.sprintId === filters.sprintId);
+    }
+    if (filters?.assigneeId) {
+      filtered = filtered.filter(t => t.assignee?.id === filters.assigneeId);
+    }
+    if (filters?.type) {
+      const types = Array.isArray(filters.type) ? filters.type : [filters.type];
+      filtered = filtered.filter(t => types.includes(t.type));
     }
 
-    query = query.order('created_at', { ascending: false });
-
-    const { data, error, count } = await query;
-    if (error) handleSupabaseError(error);
-    return { data: data || [], count: count || 0 };
+    return { data: filtered, count: filtered.length };
   }
 
-  async getAllWithRelations(filters?: TaskFilters): Promise<TaskWithRelations[]> {
-    let query = supabase.from('tasks').select(`
-      *,
-      assignee:users!assignee_id(*),
-      reporter:users!reporter_id(*),
-      project:projects(*),
-      sprint:sprints(*),
-      parent_epic:tasks!parent_epic_id(*),
-      tags:task_tags(*),
-      comments:comments(*, user:users(*)),
-      attachments:task_attachments(*),
-      children:tasks!parent_epic_id(*)
-    `);
-
-    query = this.applyFilters(query, filters);
-    query = query.order('created_at', { ascending: false });
-
-    const { data, error } = await query;
-    if (error) handleSupabaseError(error);
-
-    return (data || []).map((t: any) => ({
-      ...t,
-      comments_count: t.comments?.length || 0
-    })) as TaskWithRelations[];
+  // Get all tasks with relations
+  async getAllWithRelations(filters?: TaskFilters): Promise<any[]> {
+    const { data } = await this.getAll(filters);
+    return data;
   }
 
-  async getById(id: string): Promise<TaskWithRelations | null> {
-    const { data, error } = await supabase
-      .from('tasks')
-      .select(`
-        *,
-        assignee:users!assignee_id(*),
-        reporter:users!reporter_id(*),
-        project:projects(*),
-        sprint:sprints(*),
-        parent_epic:tasks!parent_epic_id(*),
-        tags:task_tags(*),
-        comments:comments(*, user:users(*)),
-        attachments:task_attachments(*),
-        children:tasks!parent_epic_id(*)
-      `)
-      .eq('id', id)
-      .single();
-
-    if (error) {
-        if (error.code === 'PGRST116') return null;
-        handleSupabaseError(error);
-    }
-    return { ...data, comments_count: data.comments?.length || 0 } as TaskWithRelations;
+  // Get task by ID
+  async getById(id: string): Promise<any | null> {
+    const response = await fetch(`${API_BASE}/tasks/${id}`, {
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json();
+    return data.success ? data.data : null;
   }
 
-  async create(data: TaskInsert): Promise<Task> {
-    const { data: task, error } = await supabase
-      .from('tasks')
-      .insert(data)
-      .select()
-      .single();
-
-    if (error) handleSupabaseError(error);
-    await this.logActivity(task.id, 'created');
-    return task;
+  // Create task
+  async create(task: Partial<Task>): Promise<Task> {
+    return api.createTask(task as Task);
   }
 
-  async update(id: string, data: TaskUpdate): Promise<Task> {
-    const { data: task, error } = await supabase
-      .from('tasks')
-      .update(data)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) handleSupabaseError(error);
-    await this.logActivity(task.id, 'updated');
-    return task;
+  // Update task
+  async update(id: string, updates: Partial<Task>): Promise<Task> {
+    const task = await this.getById(id);
+    if (!task) throw new Error('Task not found');
+    return api.updateTask({ ...task, ...updates, uuid: id });
   }
 
+  // Delete task
   async delete(id: string): Promise<void> {
-    const { error } = await supabase.from('tasks').delete().eq('id', id);
-    if (error) handleSupabaseError(error);
+    await api.deleteTask(id);
   }
 
+  // Move task to column
   async moveToColumn(taskId: string, columnId: string): Promise<Task> {
-    const { data: task, error } = await supabase
-      .from('tasks')
-      .update({ column_id: columnId })
-      .eq('id', taskId)
-      .select()
-      .single();
-
-    if (error) handleSupabaseError(error);
-    await this.logActivity(taskId, 'moved', { field: 'column_id', oldValue: null, newValue: columnId });
-    return task;
+    return this.update(taskId, { columnId });
   }
 
-  // --- Statistics ---
-
+  // Get project statistics
   async getProjectStats(projectId: string): Promise<{
     byStatus: Record<string, number>;
-    byType: Record<TaskType, number>;
-    byPriority: Record<Priority, number>;
-    byAssignee: { user: User; count: number }[];
+    byType: Record<string, number>;
+    byPriority: Record<string, number>;
+    byAssignee: { user: any; count: number }[];
   }> {
-    const { data, error } = await supabase
-      .from('tasks')
-      .select('column_id, type, priority, assignee:users!assignee_id(*)')
-      .eq('project_id', projectId);
-
-    if (error) handleSupabaseError(error);
+    const { data: tasks } = await this.getAll({ projectId });
 
     const stats = {
       byStatus: {} as Record<string, number>,
-      byType: {} as Record<TaskType, number>,
-      byPriority: {} as Record<Priority, number>,
-      byAssigneeMap: new Map<string, { user: User; count: number }>()
+      byType: {} as Record<string, number>,
+      byPriority: {} as Record<string, number>,
+      byAssigneeMap: new Map<string, { user: any; count: number }>()
     };
 
-    (data || []).forEach((t: any) => {
-      stats.byStatus[t.column_id] = (stats.byStatus[t.column_id] || 0) + 1;
+    tasks.forEach((t: any) => {
+      stats.byStatus[t.columnId] = (stats.byStatus[t.columnId] || 0) + 1;
       stats.byType[t.type] = (stats.byType[t.type] || 0) + 1;
       stats.byPriority[t.priority] = (stats.byPriority[t.priority] || 0) + 1;
-      
+
       if (t.assignee) {
         if (!stats.byAssigneeMap.has(t.assignee.id)) {
           stats.byAssigneeMap.set(t.assignee.id, { user: t.assignee, count: 0 });
@@ -189,77 +168,60 @@ export class TasksService {
     };
   }
 
-  // --- Activity ---
+  // Log activity (stub - activity logging handled by backend)
+  async logActivity(taskId: string, action: string, changes?: any): Promise<void> {
+    console.log('Activity logged:', { taskId, action, changes });
+  }
 
-  async logActivity(taskId: string, action: string, changes?: { field: string; oldValue: any; newValue: any }): Promise<void> {
-    const userId = await this.getCurrentUserId();
-    const { error } = await supabase.from('activity_logs').insert({
-      entity_type: 'task',
-      entity_id: taskId,
-      action,
-      user_id: userId,
-      field_changed: changes?.field,
-      old_value: changes?.oldValue ? String(changes.oldValue) : null,
-      new_value: changes?.newValue ? String(changes.newValue) : null
+  // ============================================
+  // Task Links (Dependencies)
+  // ============================================
+
+  // Get all task links (blocked by and blocks)
+  async getTaskLinks(taskId: string): Promise<{ blockedBy: TaskLink[]; blocks: TaskLink[] }> {
+    const response = await fetch(`${API_BASE}/tasks/${taskId}/links`, {
+      headers: getAuthHeaders(),
     });
-    
-    if (error) console.error('Failed to log activity:', error);
+    const data = await response.json();
+    return data.success ? data.data : { blockedBy: [], blocks: [] };
   }
 
-  // --- Private Helpers ---
-
-  private applyFilters(query: any, filters?: TaskFilters) {
-    if (!filters) return query;
-
-    if (filters.projectId) query = query.eq('project_id', filters.projectId);
-    if (filters.sprintId !== undefined) {
-      if (filters.sprintId === null) query = query.is('sprint_id', null);
-      else query = query.eq('sprint_id', filters.sprintId);
+  // Add a blocking task (this task is blocked by blockingTaskId)
+  async addBlockingTask(taskId: string, blockingTaskId: string): Promise<TaskLink> {
+    const response = await fetch(`${API_BASE}/tasks/${taskId}/links`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        blocking_task_id: blockingTaskId,
+        link_type: 'blocks',
+      }),
+    });
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error?.message || 'Failed to add blocking task');
     }
-    if (filters.assigneeId !== undefined) {
-      if (filters.assigneeId === null) query = query.is('assignee_id', null);
-      else query = query.eq('assignee_id', filters.assigneeId);
-    }
-    if (filters.reporterId) query = query.eq('reporter_id', filters.reporterId);
-    if (filters.parentEpicId !== undefined) {
-      if (filters.parentEpicId === null) query = query.is('parent_epic_id', null);
-      else query = query.eq('parent_epic_id', filters.parentEpicId);
-    }
-
-    if (filters.columnId) {
-      Array.isArray(filters.columnId) 
-        ? query = query.in('column_id', filters.columnId)
-        : query = query.eq('column_id', filters.columnId);
-    }
-    if (filters.type) {
-      Array.isArray(filters.type) 
-        ? query = query.in('type', filters.type)
-        : query = query.eq('type', filters.type);
-    }
-    if (filters.priority) {
-      Array.isArray(filters.priority) 
-        ? query = query.in('priority', filters.priority)
-        : query = query.eq('priority', filters.priority);
-    }
-    
-    if (filters.search) {
-      query = query.or(`title.ilike.%${filters.search}%,description.ilike.%${filters.search}%,task_key.ilike.%${filters.search}%`);
-    }
-
-    if (filters.isOverdue) {
-        const today = new Date().toISOString().split('T')[0];
-        query = query.lt('due_date', today).neq('column_id', 'done');
-    }
-
-    return query;
+    return data.data;
   }
 
-  private async getCurrentUserId(): Promise<string | null> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
-    // Cache this lookup in a real app or rely on RLS
-    const { data: profile } = await supabase.from('users').select('id').eq('auth_user_id', user.id).single();
-    return profile?.id || null;
+  // Remove a task link
+  async removeTaskLink(taskId: string, linkId: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/tasks/${taskId}/links/${linkId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error?.message || 'Failed to remove link');
+    }
+  }
+
+  // Get tasks available for linking
+  async getAvailableLinksForTask(taskId: string): Promise<AvailableTask[]> {
+    const response = await fetch(`${API_BASE}/tasks/${taskId}/available-links`, {
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json();
+    return data.success ? data.data : [];
   }
 }
 

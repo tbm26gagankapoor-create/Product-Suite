@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, ListFilter, MoreHorizontal, X, Trash2, AlertCircle } from 'lucide-react';
+import { Plus, Search, ListFilter, MoreHorizontal, X, Trash2, AlertCircle, Circle, PlayCircle, PauseCircle, CheckCircle2, Lightbulb, Check, SignalHigh, SignalMedium, SignalLow, User, Layers } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { COLUMNS } from '../constants';
 import { Task } from '../types';
@@ -8,6 +8,16 @@ import TaskCard from './TaskCard';
 import TaskDetailModal from './TaskDetailModal';
 import CreateTaskModal from './CreateTaskModal';
 import { useProjectData } from '../context/ProjectDataContext';
+
+// Column configuration with icons and colors
+const COLUMN_CONFIG: Record<string, { icon: any; color: string; bg: string }> = {
+  'backlog': { icon: Circle, color: 'text-gray-400', bg: 'bg-gray-500/10' },
+  'idea': { icon: Lightbulb, color: 'text-amber-400', bg: 'bg-amber-500/10' },
+  'todo': { icon: Circle, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+  'inprogress': { icon: PlayCircle, color: 'text-amber-400', bg: 'bg-amber-500/10' },
+  'blocked': { icon: PauseCircle, color: 'text-red-400', bg: 'bg-red-500/10' },
+  'done': { icon: CheckCircle2, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+};
 
 interface KanbanBoardProps {
   sprintId: string;
@@ -226,24 +236,46 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ sprintId, tasks, onTaskUpdate
                             />
                         </div>
                         <div className="relative">
-                            <button 
+                            <button
                                 onClick={() => setIsGroupDropdownOpen(!isGroupDropdownOpen)}
                                 className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-[#15171E] border border-gray-200 dark:border-white/10 rounded-xl text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1F2128] transition-colors shadow-sm"
                             >
-                                <ListFilter size={14} /> Group By: {groupBy === 'none' ? 'None' : groupBy.charAt(0).toUpperCase() + groupBy.slice(1)}
+                                <ListFilter size={14} /> Group: {groupBy === 'none' ? 'None' : groupBy.charAt(0).toUpperCase() + groupBy.slice(1)}
                             </button>
                             {isGroupDropdownOpen && (
-                                <div className="absolute right-0 top-full mt-2 w-40 bg-white dark:bg-[#1E2028] border border-gray-200 dark:border-[#2D2F36] rounded-xl shadow-xl z-50 overflow-hidden ring-1 ring-black/5">
-                                    {['none', 'priority', 'assignee', 'epic'].map(g => (
-                                        <button 
-                                            key={g}
-                                            onClick={() => { setGroupBy(g as GroupBy); setIsGroupDropdownOpen(false); }}
-                                            className="w-full text-left px-4 py-2.5 text-xs font-medium hover:bg-gray-50 dark:hover:bg-[#2D2F36] text-gray-700 dark:text-gray-200 capitalize"
-                                        >
-                                            {g}
-                                        </button>
-                                    ))}
-                                </div>
+                                <>
+                                    <div className="fixed inset-0 z-40" onClick={() => setIsGroupDropdownOpen(false)} />
+                                    <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-[#1F2128] border border-gray-200 dark:border-[#2D2F36] rounded-xl shadow-xl z-50 overflow-hidden py-2">
+                                        <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Group By</div>
+                                        {[
+                                            { id: 'none', label: 'None', icon: Circle, description: 'Show all tasks together' },
+                                            { id: 'priority', label: 'Priority', icon: SignalHigh, description: 'Group by High, Medium, Low' },
+                                            { id: 'assignee', label: 'Assignee', icon: User, description: 'Group by team member' },
+                                            { id: 'epic', label: 'Epic', icon: Layers, description: 'Group by parent epic' },
+                                        ].map(option => {
+                                            const OptionIcon = option.icon;
+                                            const isSelected = groupBy === option.id;
+                                            return (
+                                                <button
+                                                    key={option.id}
+                                                    onClick={() => { setGroupBy(option.id as GroupBy); setIsGroupDropdownOpen(false); }}
+                                                    className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-[#2D2F36] transition-colors text-left ${
+                                                        isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                                                    }`}
+                                                >
+                                                    <div className={`w-8 h-8 rounded-lg ${isSelected ? 'bg-blue-500/10' : 'bg-gray-100 dark:bg-gray-700'} flex items-center justify-center`}>
+                                                        <OptionIcon size={16} className={isSelected ? 'text-blue-500' : 'text-gray-400'} />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-sm font-medium text-[#172B4D] dark:text-gray-200">{option.label}</div>
+                                                        <div className="text-[10px] text-gray-400">{option.description}</div>
+                                                    </div>
+                                                    {isSelected && <Check size={16} className="text-blue-500 flex-shrink-0" />}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </>
                             )}
                         </div>
                       </>
@@ -255,27 +287,34 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ sprintId, tasks, onTaskUpdate
       {/* Board Columns (Horizontal Scroll) */}
       <div className="flex-1 overflow-x-auto overflow-y-hidden px-8 pb-6">
           <div className="flex h-full gap-4 min-w-max">
-              {COLUMNS.map((column) => (
-                  <div 
-                    key={column.id} 
-                    className="w-80 flex-shrink-0 flex flex-col bg-gray-100/50 dark:bg-[#121214] h-full rounded-2xl border border-transparent dark:border-white/5"
+              {COLUMNS.map((column) => {
+                  const columnConfig = COLUMN_CONFIG[column.id] || COLUMN_CONFIG['backlog'];
+                  const ColumnIcon = columnConfig.icon;
+                  const columnTaskCount = tasks.filter(t => t.columnId === column.id).length;
+
+                  return (
+                  <div
+                    key={column.id}
+                    className="w-80 flex-shrink-0 flex flex-col bg-gray-100/50 dark:bg-[#1a1a1f] h-full rounded-2xl border border-gray-200/50 dark:border-white/5"
                   >
                       {/* Column Header */}
-                      <div className="flex items-center justify-between mb-1 sticky top-0 bg-transparent z-10 p-4 rounded-t-2xl group">
-                          <h3 className="text-[11px] font-extrabold text-[#5E6C84] dark:text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                              {column.title}
-                              <span className="bg-gray-200 dark:bg-[#1F2128] text-[#172B4D] dark:text-gray-300 px-2 py-0.5 rounded-md text-[10px] min-w-[20px] text-center">
-                                {tasks.filter(t => t.columnId === column.id).length}
+                      <div className="flex items-center justify-between sticky top-0 z-10 px-4 py-3 group">
+                          <div className="flex items-center gap-2">
+                              <h3 className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                  {column.title}
+                              </h3>
+                              <span className="bg-gray-200/80 dark:bg-[#2a2a30] text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded-md text-[10px] font-bold min-w-[24px] text-center">
+                                {columnTaskCount}
                               </span>
-                          </h3>
+                          </div>
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button 
+                              <button
                                 onClick={() => { setCreateColumnId(column.id); setIsCreateModalOpen(true); }}
-                                className="p-1.5 hover:bg-gray-200 dark:hover:bg-[#2D2F36] rounded text-gray-500 hover:text-blue-600 transition-colors"
+                                className="p-1.5 hover:bg-gray-200 dark:hover:bg-[#2D2F36] rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
                               >
                                   <Plus size={14} />
                               </button>
-                              <button className="p-1.5 hover:bg-gray-200 dark:hover:bg-[#2D2F36] rounded text-gray-500 transition-colors">
+                              <button className="p-1.5 hover:bg-gray-200 dark:hover:bg-[#2D2F36] rounded text-gray-400 transition-colors">
                                   <MoreHorizontal size={14} />
                               </button>
                           </div>
@@ -339,7 +378,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ sprintId, tasks, onTaskUpdate
                           })}
                       </div>
                   </div>
-              ))}
+              )})}
           </div>
       </div>
 

@@ -1,5 +1,6 @@
-
-import { PostgrestError } from '@supabase/supabase-js';
+/**
+ * Error Utilities - Generic error handling
+ */
 
 // Custom error classes
 export class ApiError extends Error {
@@ -40,32 +41,34 @@ export class ValidationError extends ApiError {
   }
 }
 
-// Error handler function
-export function handleSupabaseError(error: PostgrestError): never {
-  console.error('Supabase API Error:', error);
-  
-  if (error.code === 'PGRST116') {
-     // Often returned when .single() finds no rows
-     throw new NotFoundError('Resource', 'requested');
+// Generic error handler function
+export function handleApiError(error: any): never {
+  console.error('API Error:', error);
+
+  if (error.code === 'PGRST116' || error.status === 404) {
+    throw new NotFoundError('Resource', 'requested');
   }
 
-  // RLS Policy violation
-  if (error.code === '42501') {
-      throw new ForbiddenError(error.message);
+  // Authorization errors
+  if (error.code === '42501' || error.status === 403) {
+    throw new ForbiddenError(error.message);
   }
-  
+
   // Unique violation
   if (error.code === '23505') {
-      throw new ValidationError('Duplicate entry', error.details);
+    throw new ValidationError('Duplicate entry', error.details);
   }
 
   // Foreign key violation
   if (error.code === '23503') {
-      throw new ValidationError('Invalid reference', error.details);
+    throw new ValidationError('Invalid reference', error.details);
   }
 
-  throw new ApiError(error.message, error.code, 500, error.details);
+  throw new ApiError(error.message || 'An error occurred', error.code || 'UNKNOWN', error.status || 500, error.details);
 }
+
+// Legacy alias for backwards compatibility
+export const handleSupabaseError = handleApiError;
 
 // Result wrapper type
 export type Result<T> = { data: T; error: null } | { data: null; error: ApiError };

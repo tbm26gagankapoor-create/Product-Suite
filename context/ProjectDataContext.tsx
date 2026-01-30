@@ -395,7 +395,7 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           description: updatedTask.description,
           priority: updatedTask.priority,
           points: updatedTask.points,
-          assignee_id: updatedTask.assignee?.id,
+          assignee_id: updatedTask.assignee?.id ?? null,
           sprint_id: updatedTask.sprintId,
           column_id: updatedTask.columnId,
         }),

@@ -35,7 +35,11 @@ import { Sprint, Project, User } from '../types';
 import SprintDetailView from './SprintDetailView';
 import SprintModal from './SprintModal';
 
-const SprintsView: React.FC = () => {
+interface SprintsViewProps {
+  onProjectSelect?: (projectId: string) => void;
+}
+
+const SprintsView: React.FC<SprintsViewProps> = ({ onProjectSelect }) => {
   const { sprints, tasks, projects, addSprint } = useProjectData();
   const [selectedSprintId, setSelectedSprintId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'All' | 'Active' | 'Planned' | 'Completed'>('Active');
@@ -312,10 +316,13 @@ const SprintsView: React.FC = () => {
                                     </h3>
                                     <div className="flex items-center gap-2 flex-wrap">
                                         {project && (
-                                            <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-semibold bg-gradient-to-r ${project.color || 'from-blue-500 to-blue-600'} bg-opacity-10 border border-gray-200 dark:border-[#2D2F36] bg-gray-50 dark:bg-[#1F2128]`}>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); onProjectSelect?.(project.id); }}
+                                                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-semibold bg-gradient-to-r ${project.color || 'from-blue-500 to-blue-600'} bg-opacity-10 border border-gray-200 dark:border-[#2D2F36] bg-gray-50 dark:bg-[#1F2128] hover:border-blue-500 transition-colors`}
+                                            >
                                                 <div className={`w-2.5 h-2.5 rounded-md bg-gradient-to-br ${project.color || 'from-blue-500 to-blue-600'} shadow-sm`}></div>
-                                                <span className="text-gray-700 dark:text-gray-200">{project.name}</span>
-                                            </span>
+                                                <span className="text-gray-700 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400">{project.name}</span>
+                                            </button>
                                         )}
                                         <span className="text-[11px] text-gray-400 dark:text-gray-500 font-medium">{totalPoints} pts</span>
                                     </div>
@@ -441,14 +448,17 @@ const SprintsView: React.FC = () => {
                                     </div>
 
                                     {/* Project */}
-                                    <div className="flex items-center gap-2 min-w-0">
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); project && onProjectSelect?.(project.id); }}
+                                        className="flex items-center gap-2 min-w-0 hover:opacity-80 transition-opacity"
+                                    >
                                         {project && (
                                             <div className={`w-6 h-6 rounded-md bg-gradient-to-br ${project.color || 'from-blue-500 to-blue-600'} flex items-center justify-center shadow-sm flex-shrink-0`}>
                                                 <span className="text-[9px] font-bold text-white">{project.key?.substring(0, 2) || 'PR'}</span>
                                             </div>
                                         )}
-                                        <span className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate">{project?.name || 'Unknown'}</span>
-                                    </div>
+                                        <span className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate hover:text-blue-600 dark:hover:text-blue-400">{project?.name || 'Unknown'}</span>
+                                    </button>
 
                                     {/* Duration */}
                                     <div className="flex flex-col gap-0.5">
@@ -531,25 +541,58 @@ const SprintsView: React.FC = () => {
 
             {/* --- TIMELINE VIEW --- */}
             {viewMode === 'timeline' && timelineData && (
-                <div className="bg-[#141417] border border-[#232328] rounded-lg overflow-hidden shadow-xl animate-in fade-in duration-300 flex flex-col min-h-[500px]">
+                <div className="bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#1F2128] rounded-xl overflow-hidden shadow-sm animate-in fade-in duration-300 flex flex-col min-h-[500px]">
                     {/* Timeline Header - Time Scale */}
-                    <div className="flex border-b border-[#232328] sticky top-0 z-20">
+                    <div className="flex border-b border-gray-200 dark:border-[#1F2128] sticky top-0 z-20 bg-white dark:bg-[#15171E]">
                         {/* Project Header Cell */}
-                        <div className="w-56 px-5 py-3 border-r border-[#232328] flex-shrink-0 bg-[#141417]">
-                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">Resources</span>
+                        <div className="w-64 px-6 border-r border-gray-200 dark:border-[#1F2128] flex-shrink-0 flex flex-col justify-end pb-3">
+                            <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Projects</span>
                         </div>
-                        {/* Time Scale Header */}
-                        <div className="flex-1 overflow-hidden relative bg-[#141417]">
-                            <div className="flex h-11">
+                        {/* Time Scale Header with Month Spans */}
+                        <div className="flex-1 overflow-hidden relative">
+                            {/* Month Header Row */}
+                            <div className="flex border-b border-gray-100 dark:border-[#1F2128]/50">
+                                {(() => {
+                                    const months: { name: string; span: number }[] = [];
+                                    let currentMonth = '';
+                                    let span = 0;
+                                    for (let i = 0; i < 12; i++) {
+                                        const d = new Date(timelineData.minDate);
+                                        d.setDate(d.getDate() + (i * 7));
+                                        const monthName = d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+                                        if (monthName === currentMonth) {
+                                            span++;
+                                        } else {
+                                            if (currentMonth) months.push({ name: currentMonth, span });
+                                            currentMonth = monthName;
+                                            span = 1;
+                                        }
+                                    }
+                                    months.push({ name: currentMonth, span });
+                                    return months.map((m, idx) => (
+                                        <div
+                                            key={idx}
+                                            className="border-r border-gray-100 dark:border-[#1F2128]/50 flex items-center justify-center py-2"
+                                            style={{ flex: m.span }}
+                                        >
+                                            <span className="text-[11px] font-semibold text-[#172B4D] dark:text-gray-200">{m.name}</span>
+                                        </div>
+                                    ));
+                                })()}
+                            </div>
+                            {/* Week Header Row */}
+                            <div className="flex h-10">
                                 {Array.from({length: 12}).map((_, i) => {
                                     const d = new Date(timelineData.minDate);
                                     d.setDate(d.getDate() + (i * 7));
+                                    const today = new Date();
+                                    const isCurrentWeek = d <= today && new Date(d.getTime() + 7 * 24 * 60 * 60 * 1000) > today;
                                     return (
                                         <div
                                             key={i}
-                                            className="flex-1 border-l border-[#232328] flex items-center justify-center"
+                                            className={`flex-1 border-l border-gray-100 dark:border-[#1F2128]/50 flex items-center justify-center transition-colors ${isCurrentWeek ? 'bg-blue-50 dark:bg-blue-500/10' : ''}`}
                                         >
-                                            <span className="text-[10px] font-medium text-gray-500">
+                                            <span className={`text-[10px] font-medium ${isCurrentWeek ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>
                                                 {d.toLocaleDateString(undefined, {month:'short', day:'numeric'})}
                                             </span>
                                         </div>
@@ -560,14 +603,14 @@ const SprintsView: React.FC = () => {
                     </div>
 
                     {/* Timeline Body */}
-                    <div className="flex-1 overflow-auto custom-scrollbar">
+                    <div className="flex-1 overflow-auto custom-scrollbar bg-[#F4F5F7] dark:bg-[#0B0C0E]">
                         {Object.entries(timelineData.groupedByProject).map(([projectId, projSprints]: [string, Sprint[]]) => {
                             const project = getProject(projectId);
                             if(projSprints.length === 0) return null;
 
                             // Calculate dynamic row height based on number of sprints
                             const sprintCount = projSprints.length;
-                            const sprintBarHeight = 34;
+                            const sprintBarHeight = 36;
                             const sprintGap = 8;
                             const verticalPadding = 16;
                             const rowHeight = verticalPadding * 2 + (sprintCount * sprintBarHeight) + ((sprintCount - 1) * sprintGap);
@@ -577,44 +620,65 @@ const SprintsView: React.FC = () => {
                                 new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
                             );
 
-                            // Muted color palette for sprints (based on sprint index for variety)
-                            const sprintColors = [
-                                { bg: '#3d5a4c', text: 'text-emerald-200' },  // Muted sage green
-                                { bg: '#4a5568', text: 'text-gray-200' },     // Slate gray
-                                { bg: '#5c4a3d', text: 'text-amber-200' },    // Muted brown
-                                { bg: '#3d4a5c', text: 'text-blue-200' },     // Steel blue
-                                { bg: '#5c3d4a', text: 'text-rose-200' },     // Muted mauve
-                                { bg: '#4a5c3d', text: 'text-lime-200' },     // Olive green
-                                { bg: '#3d5c5c', text: 'text-teal-200' },     // Teal
-                                { bg: '#5c5c3d', text: 'text-yellow-200' },   // Khaki
-                            ];
+                            // Status-based colors matching the product design system
+                            const getSprintStyles = (status: string) => {
+                                switch (status) {
+                                    case 'active':
+                                        return {
+                                            bg: 'bg-blue-500 dark:bg-blue-600',
+                                            text: 'text-white',
+                                            subtext: 'text-blue-100',
+                                            border: 'border-blue-600 dark:border-blue-500'
+                                        };
+                                    case 'completed':
+                                        return {
+                                            bg: 'bg-emerald-500 dark:bg-emerald-600',
+                                            text: 'text-white',
+                                            subtext: 'text-emerald-100',
+                                            border: 'border-emerald-600 dark:border-emerald-500'
+                                        };
+                                    case 'planned':
+                                    default:
+                                        return {
+                                            bg: 'bg-gray-400 dark:bg-gray-600',
+                                            text: 'text-white',
+                                            subtext: 'text-gray-200',
+                                            border: 'border-gray-500 dark:border-gray-500'
+                                        };
+                                }
+                            };
 
                             return (
-                                <div key={projectId} className="flex border-b border-[#1e1e22] hover:bg-[#1a1a1e] transition-colors" style={{ minHeight: `${Math.max(72, rowHeight)}px` }}>
+                                <div key={projectId} className="flex border-b border-gray-200 dark:border-[#1F2128] hover:bg-white/50 dark:hover:bg-[#15171E]/50 transition-colors" style={{ minHeight: `${Math.max(72, rowHeight)}px` }}>
                                     {/* Project Column */}
-                                    <div className="w-56 px-5 py-4 border-r border-[#232328] bg-[#141417] flex-shrink-0 flex items-center">
-                                        <div className="flex items-center gap-4">
+                                    <div className="w-64 px-6 py-4 border-r border-gray-200 dark:border-[#1F2128] bg-white dark:bg-[#15171E] flex-shrink-0 flex items-center">
+                                        <div className="flex items-center gap-3">
                                             {/* Avatar/Icon */}
-                                            <div className="w-9 h-9 rounded-lg bg-[#232328] flex items-center justify-center flex-shrink-0 overflow-hidden border border-[#2d2d32]">
+                                            <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden shadow-sm ${project?.color ? `bg-gradient-to-br ${project.color}` : 'bg-gradient-to-br from-blue-500 to-blue-600'}`}>
                                                 {project?.imageUrl ? (
                                                     <img src={project.imageUrl} alt={project.name} className="w-full h-full object-cover" />
                                                 ) : (
-                                                    <span className="text-[11px] font-bold text-gray-400">{project?.key?.substring(0, 2) || 'PR'}</span>
+                                                    <span className="text-[10px] font-bold text-white">{project?.key?.substring(0, 2) || 'PR'}</span>
                                                 )}
                                             </div>
                                             <div className="min-w-0 flex-1">
-                                                <span className="text-[13px] font-semibold text-gray-100 truncate block leading-tight">{project?.name || 'Unknown'}</span>
-                                                <span className="text-[10px] text-gray-500 font-medium">{project?.key || 'PRJ'}</span>
+                                                <button
+                                                    onClick={() => project && onProjectSelect?.(project.id)}
+                                                    className="text-sm font-semibold text-[#172B4D] dark:text-white truncate block hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-left"
+                                                >
+                                                    {project?.name || 'Unknown'}
+                                                </button>
+                                                <span className="text-[10px] text-[#5E6C84] dark:text-gray-500">{project?.key || 'PRJ'} • {projSprints.length} sprint{projSprints.length !== 1 ? 's' : ''}</span>
                                             </div>
                                         </div>
                                     </div>
 
                                     {/* Timeline Area */}
-                                    <div className="flex-1 relative bg-[#18181b]">
-                                        {/* Grid Lines - subtle dotted */}
+                                    <div className="flex-1 relative">
+                                        {/* Grid Lines */}
                                         <div className="absolute inset-0 flex pointer-events-none">
                                             {Array.from({length: 12}).map((_, i) => (
-                                                <div key={i} className="flex-1 border-l border-dashed border-[#232328]/60"></div>
+                                                <div key={i} className="flex-1 border-l border-gray-200/50 dark:border-[#1F2128]/30"></div>
                                             ))}
                                         </div>
 
@@ -628,7 +692,7 @@ const SprintsView: React.FC = () => {
                                                         className="absolute top-0 bottom-0 z-20 pointer-events-none"
                                                         style={{ left: `${todayOffset}%` }}
                                                     >
-                                                        <div className="absolute top-0 bottom-0 w-px bg-blue-500/70"></div>
+                                                        <div className="absolute top-0 bottom-0 w-0.5 bg-blue-500 dark:bg-blue-400"></div>
                                                     </div>
                                                 );
                                             }
@@ -636,12 +700,13 @@ const SprintsView: React.FC = () => {
                                         })()}
 
                                         {/* Sprint Bars */}
-                                        <div className="relative w-full h-full flex flex-col justify-center" style={{ padding: `${verticalPadding}px 12px` }}>
+                                        <div className="relative w-full h-full flex flex-col justify-center" style={{ padding: `${verticalPadding}px 8px` }}>
                                             <div className="flex flex-col" style={{ gap: `${sprintGap}px` }}>
-                                                {sortedSprints.map((s, sprintIndex) => {
+                                                {sortedSprints.map((s) => {
                                                     const left = (getLeftOffset(s.startDate, timelineData.minDate) / timelineData.totalDays) * 100;
                                                     const width = (getDuration(s.startDate, s.endDate) / timelineData.totalDays) * 100;
                                                     const stats = getSprintStats(s.id);
+                                                    const styles = getSprintStyles(s.status);
 
                                                     // Calculate days remaining/overdue
                                                     const today = new Date();
@@ -649,45 +714,66 @@ const SprintsView: React.FC = () => {
                                                     const daysRemaining = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
                                                     const isOverdue = daysRemaining < 0 && s.status !== 'completed';
 
-                                                    // Get color based on sprint index (cycles through palette)
-                                                    const colorIndex = sprintIndex % sprintColors.length;
-                                                    const sprintColor = sprintColors[colorIndex];
-
-                                                    // Status text color
-                                                    const getStatusStyle = () => {
-                                                        if (s.status === 'completed') return 'text-emerald-300/90';
-                                                        if (s.status === 'active' && isOverdue) return 'text-orange-300/90';
-                                                        if (s.status === 'active') return 'text-blue-300/90';
-                                                        return 'text-gray-300/80';
-                                                    };
-
                                                     return (
                                                         <div key={s.id} className="relative" style={{ height: `${sprintBarHeight}px` }}>
                                                             <div
                                                                 onClick={() => setSelectedSprintId(s.id)}
-                                                                className="absolute rounded-md hover:brightness-125 cursor-pointer transition-all flex items-center justify-between px-3 overflow-hidden group"
+                                                                className={`absolute rounded-lg shadow-sm hover:shadow-md cursor-pointer transition-all duration-150 hover:brightness-105 flex items-center justify-between px-3 overflow-hidden group ${styles.bg}`}
                                                                 style={{
                                                                     left: `${Math.max(0, left)}%`,
                                                                     width: `${Math.max(4, width)}%`,
-                                                                    minWidth: '110px',
+                                                                    minWidth: '120px',
                                                                     height: `${sprintBarHeight}px`,
                                                                     top: '0',
-                                                                    backgroundColor: sprintColor.bg
                                                                 }}
                                                                 title={`${s.name}\n${new Date(s.startDate).toLocaleDateString()} - ${new Date(s.endDate).toLocaleDateString()}\n${stats.taskCount} tasks • ${stats.progress}% complete`}
                                                             >
-                                                                {/* Sprint Name */}
-                                                                <span className={`text-[12px] font-medium ${sprintColor.text} truncate`}>
-                                                                    {s.name}
-                                                                </span>
+                                                                {/* Left: Sprint info */}
+                                                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                                    <span className={`text-[11px] font-semibold ${styles.text} truncate`}>
+                                                                        {s.name}
+                                                                    </span>
+                                                                    <span className={`text-[9px] ${styles.subtext} flex-shrink-0`}>
+                                                                        {stats.taskCount} tasks {stats.totalPoints > 0 && `• ${stats.totalPoints} pts`}
+                                                                    </span>
+                                                                </div>
 
-                                                                {/* Status Badge */}
-                                                                <span className={`text-[9px] font-medium ${getStatusStyle()} flex-shrink-0 ml-2`}>
-                                                                    {s.status === 'completed' && 'Done'}
-                                                                    {s.status === 'active' && !isOverdue && 'Active'}
-                                                                    {s.status === 'active' && isOverdue && `+${Math.abs(daysRemaining)}d`}
-                                                                    {s.status === 'planned' && 'Planned'}
-                                                                </span>
+                                                                {/* Right: Avatars and status */}
+                                                                <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                                                                    {/* Team avatars */}
+                                                                    {stats.assignees.length > 0 && (
+                                                                        <div className="flex items-center -space-x-1">
+                                                                            {stats.assignees.slice(0, 3).map((u) => (
+                                                                                <img
+                                                                                    key={u.id}
+                                                                                    src={u.avatarUrl}
+                                                                                    alt={u.name}
+                                                                                    className="w-5 h-5 rounded-full border-2 border-white/30 object-cover"
+                                                                                />
+                                                                            ))}
+                                                                            {stats.assignees.length > 3 && (
+                                                                                <div className="w-5 h-5 rounded-full border-2 border-white/30 bg-black/20 flex items-center justify-center text-[8px] font-bold text-white">
+                                                                                    +{stats.assignees.length - 3}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Status/Days indicator */}
+                                                                    {s.status === 'active' && (
+                                                                        <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${isOverdue ? 'bg-red-500/30 text-white' : 'bg-white/20 text-white'}`}>
+                                                                            {isOverdue ? `+${Math.abs(daysRemaining)}d` : `${daysRemaining}d`}
+                                                                        </span>
+                                                                    )}
+
+                                                                    {/* More menu */}
+                                                                    <button
+                                                                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-white/20 transition-all"
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                    >
+                                                                        <MoreHorizontal size={12} className="text-white/80" />
+                                                                    </button>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     );
@@ -705,33 +791,34 @@ const SprintsView: React.FC = () => {
                                 <div className="text-center">
                                     <CalendarRange size={48} className="mx-auto mb-4 opacity-40" />
                                     <p className="text-sm font-medium">No sprints to display</p>
-                                    <p className="text-xs mt-1 text-gray-600">Create a sprint to see it on the timeline</p>
+                                    <p className="text-xs mt-1 text-gray-600 dark:text-gray-500">Create a sprint to see it on the timeline</p>
                                 </div>
                             </div>
                         )}
                     </div>
 
-                    {/* Timeline Footer */}
-                    <div className="px-5 py-3 border-t border-[#232328] bg-[#141417] flex items-center justify-between">
-                        <div className="flex items-center gap-6 text-[10px] text-gray-500">
-                            <div className="flex items-center gap-2">
-                                <div className="w-3 h-3 rounded-sm bg-[#3d5a4c]"></div>
+                    {/* Timeline Footer - Legend */}
+                    <div className="px-5 py-3 border-t border-gray-200 dark:border-[#1F2128] bg-white dark:bg-[#15171E] flex items-center justify-between">
+                        <div className="flex items-center gap-5 text-[10px] text-[#5E6C84] dark:text-gray-400">
+                            <span className="font-semibold text-[#172B4D] dark:text-gray-300 uppercase tracking-wider">Legend</span>
+                            <div className="flex items-center gap-1.5">
+                                <div className="w-3 h-3 rounded bg-blue-500"></div>
                                 <span>Active</span>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <div className="w-3 h-3 rounded-sm bg-[#4a5568]"></div>
-                                <span>Planned</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <div className="w-3 h-3 rounded-sm bg-[#5c4a3d]"></div>
+                            <div className="flex items-center gap-1.5">
+                                <div className="w-3 h-3 rounded bg-emerald-500"></div>
                                 <span>Completed</span>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <div className="w-0.5 h-3 bg-blue-500/70 rounded-full"></div>
+                            <div className="flex items-center gap-1.5">
+                                <div className="w-3 h-3 rounded bg-gray-400"></div>
+                                <span>Planned</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 ml-2 pl-2 border-l border-gray-200 dark:border-[#2D2F36]">
+                                <div className="w-0.5 h-3 bg-blue-500 rounded-full"></div>
                                 <span>Today</span>
                             </div>
                         </div>
-                        <div className="text-[10px] text-gray-500 font-medium">
+                        <div className="text-[10px] text-[#5E6C84] dark:text-gray-400 font-medium">
                             {filteredSprints.length} sprint{filteredSprints.length !== 1 ? 's' : ''} • {Object.values(timelineData.groupedByProject).filter((s: Sprint[]) => s.length > 0).length} project{Object.values(timelineData.groupedByProject).filter((s: Sprint[]) => s.length > 0).length !== 1 ? 's' : ''}
                         </div>
                     </div>

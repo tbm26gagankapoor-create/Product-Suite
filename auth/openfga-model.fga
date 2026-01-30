@@ -1,0 +1,66 @@
+model
+  schema 1.1
+
+# Base user type
+type user
+
+# Platform level - top of hierarchy
+type platform
+  relations
+    define admin: [user]
+
+    # Permissions
+    define can_read: admin
+    define can_write: admin
+    define can_manage: admin
+
+# Tenant (Organization) level
+type tenant
+  relations
+    define platform: [platform]
+    define admin: [user]
+    define member: [user] or admin
+
+    # Permissions - admins can manage, members can read/write
+    define can_read: member
+    define can_write: member
+    define can_manage: admin
+
+# Workspace (Project) level
+type workspace
+  relations
+    define tenant: [tenant]
+    define admin: [user] or can_manage from tenant
+    define member: [user] or admin
+    define viewer: [user] or member
+
+    # Permissions based on roles
+    define can_read: viewer
+    define can_write: member
+    define can_manage: admin
+
+# Task level - individual task permissions
+type task
+  relations
+    define workspace: [workspace]
+    define reporter: [user]
+    define assignee: [user]
+
+    # Permissions
+    # can_read: reporter, assignee, or anyone with workspace read access
+    define can_read: reporter or assignee or can_read from workspace
+
+    # can_comment: reporter and assignee only
+    define can_comment: reporter or assignee
+
+    # can_manage_stages: reporter and assignee can change task stages
+    define can_manage_stages: reporter or assignee
+
+    # can_manage_fields: only reporter can edit all fields (title, description, priority, etc.)
+    define can_manage_fields: reporter or can_manage from workspace
+
+    # can_delete: only reporter or workspace admins
+    define can_delete: reporter or can_manage from workspace
+
+    # can_assign: only reporter or workspace admins can change assignee
+    define can_assign: reporter or can_manage from workspace
