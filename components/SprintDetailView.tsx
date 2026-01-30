@@ -1,22 +1,24 @@
 
 import React, { useState } from 'react';
-import { 
-  ArrowLeft, 
-  Calendar, 
-  TrendingUp, 
-  CheckCircle, 
-  AlertCircle, 
-  MoreHorizontal, 
-  Layout, 
+import {
+  ArrowLeft,
+  Calendar,
+  TrendingUp,
+  CheckCircle,
+  Layout,
   List as ListIcon,
-  BarChart2, 
   Clock,
   CheckSquare,
   Users,
-  CalendarRange
+  CalendarRange,
+  Pencil,
+  X,
+  AlertTriangle
 } from 'lucide-react';
-import { Sprint, Task } from '../types';
+import { Task } from '../types';
 import { useProjectData } from '../context/ProjectDataContext';
+import { activityService } from '../services/activity.service';
+import { sprintsService } from '../services/sprints.service';
 import KanbanBoard from './KanbanBoard';
 import ListView from './ListView';
 import TimelineView from './TimelineView';
@@ -27,8 +29,17 @@ interface SprintDetailViewProps {
 }
 
 const SprintDetailView: React.FC<SprintDetailViewProps> = ({ sprintId, onBack }) => {
-  const { sprints, tasks, updateTask, updateSprint, users, projects } = useProjectData();
+  const { sprints, tasks, updateTask, updateSprint, users, projects, refreshData } = useProjectData();
   const [activeTab, setActiveTab] = useState<'board' | 'list' | 'timeline'>('board');
+
+  // Edit Sprint Modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({ name: '', startDate: '', endDate: '', goal: '' });
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Complete Sprint Modal state
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [isCompleting, setIsCompleting] = useState(false);
 
   const sprint = sprints.find(s => s.id === sprintId);
   const sprintTasks = tasks.filter(t => t.sprintId === sprintId);
@@ -67,6 +78,118 @@ const SprintDetailView: React.FC<SprintDetailViewProps> = ({ sprintId, onBack })
       if (allTasksDone) {
         updateSprint({ ...sprint, status: 'completed' });
       }
+    }
+  };
+
+  // Open Edit Sprint Modal
+  const handleOpenEditModal = () => {
+    setEditForm({
+      name: sprint.name,
+      startDate: sprint.startDate.split('T')[0],
+      endDate: sprint.endDate.split('T')[0],
+      goal: sprint.goal || ''
+    });
+    setShowEditModal(true);
+  };
+
+  // Save Sprint Edit with Activity Logging
+  const handleSaveEdit = async () => {
+    setIsSaving(true);
+    try {
+      const changes: { field: string; oldValue: string; newValue: string }[] = [];
+
+      // Track what changed
+      if (editForm.name !== sprint.name) {
+        changes.push({ field: 'name', oldValue: sprint.name, newValue: editForm.name });
+      }
+      if (editForm.startDate !== sprint.startDate.split('T')[0]) {
+        changes.push({ field: 'startDate', oldValue: sprint.startDate, newValue: editForm.startDate });
+      }
+      if (editForm.endDate !== sprint.endDate.split('T')[0]) {
+        changes.push({ field: 'endDate', oldValue: sprint.endDate, newValue: editForm.endDate });
+      }
+      if (editForm.goal !== (sprint.goal || '')) {
+        changes.push({ field: 'goal', oldValue: sprint.goal || '', newValue: editForm.goal });
+      }
+
+      if (changes.length === 0) {
+        setShowEditModal(false);
+        return;
+      }
+
+      // Update sprint via API
+      await sprintsService.update(sprint.id, {
+        name: editForm.name,
+        startDate: editForm.startDate,
+        endDate: editForm.endDate,
+        goal: editForm.goal
+      });
+
+      // Update local state
+      updateSprint({
+        ...sprint,
+        name: editForm.name,
+        startDate: editForm.startDate,
+        endDate: editForm.endDate,
+        goal: editForm.goal
+      });
+
+      // Log activity for each changed field
+      for (const change of changes) {
+        await activityService.log({
+          entityType: 'sprint',
+          entityId: sprint.id,
+          action: 'updated',
+          fieldChanged: change.field,
+          oldValue: change.oldValue,
+          newValue: change.newValue
+        });
+      }
+
+      setShowEditModal(false);
+    } catch (error) {
+      console.error('Failed to update sprint:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Get incomplete tasks count for confirmation modal
+  const incompleteTasks = sprintTasks.filter(t => t.columnId !== 'done');
+
+  // Handle Complete Sprint
+  const handleCompleteSprint = async () => {
+    setIsCompleting(true);
+    try {
+      // Move incomplete tasks to backlog (remove sprint assignment)
+      for (const task of incompleteTasks) {
+        await updateTask({ ...task, sprintId: undefined });
+      }
+
+      // Complete the sprint via API
+      await sprintsService.completeSprint(sprint.id);
+
+      // Update local state
+      updateSprint({ ...sprint, status: 'completed' });
+
+      // Log activity
+      await activityService.log({
+        entityType: 'sprint',
+        entityId: sprint.id,
+        action: 'updated',
+        fieldChanged: 'status',
+        oldValue: sprint.status,
+        newValue: 'completed'
+      });
+
+      setShowCompleteModal(false);
+
+      // Refresh data to sync state
+      await refreshData();
+    } catch (error) {
+      console.error('Failed to complete sprint:', error);
+    } finally {
+      setIsCompleting(false);
     }
   };
 
@@ -116,12 +239,24 @@ const SprintDetailView: React.FC<SprintDetailViewProps> = ({ sprintId, onBack })
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
+                    <button
+                        onClick={handleOpenEditModal}
+                        className="px-4 py-2 border border-gray-200 dark:border-[#2D2F36] rounded-lg text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1F2128] transition-colors flex items-center gap-2"
+                    >
+                        <Pencil size={14} />
+                        Edit Sprint
+                    </button>
                     <button className="px-4 py-2 border border-gray-200 dark:border-[#2D2F36] rounded-lg text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1F2128] transition-colors">
                         Sprint Reports
                     </button>
-                    <button className="px-4 py-2 bg-[#172B4D] dark:bg-white text-white dark:text-black rounded-lg text-sm font-bold hover:opacity-90 transition-opacity">
-                        Complete Sprint
-                    </button>
+                    {sprint.status !== 'completed' && (
+                        <button
+                            onClick={() => setShowCompleteModal(true)}
+                            className="px-4 py-2 bg-[#172B4D] dark:bg-white text-white dark:text-black rounded-lg text-sm font-bold hover:opacity-90 transition-opacity"
+                        >
+                            Complete Sprint
+                        </button>
+                    )}
                 </div>
             </div>
         </div>
@@ -226,26 +361,190 @@ const SprintDetailView: React.FC<SprintDetailViewProps> = ({ sprintId, onBack })
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">
           {activeTab === 'board' ? (
-              <KanbanBoard 
-                sprintId={sprint.id} 
-                tasks={sprintTasks} 
-                onTaskUpdate={handleTaskUpdate} 
+              <KanbanBoard
+                sprintId={sprint.id}
+                tasks={sprintTasks}
+                onTaskUpdate={handleTaskUpdate}
                 title={`${sprint.name} Board`}
               />
           ) : activeTab === 'list' ? (
-              <ListView 
-                sprintId={sprint.id} 
-                tasks={sprintTasks} 
-                onTaskUpdate={handleTaskUpdate} 
+              <ListView
+                sprintId={sprint.id}
+                tasks={sprintTasks}
+                onTaskUpdate={handleTaskUpdate}
                 mode="sprint"
               />
           ) : (
-              <TimelineView 
-                tasks={sprintTasks} 
-                onTaskUpdate={handleTaskUpdate} 
+              <TimelineView
+                tasks={sprintTasks}
+                onTaskUpdate={handleTaskUpdate}
               />
           )}
       </div>
+
+      {/* Edit Sprint Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-in fade-in">
+          <div className="bg-white dark:bg-[#1F2128] rounded-xl shadow-2xl w-full max-w-md mx-4 animate-in zoom-in-95">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#2D2F36]">
+              <h2 className="text-lg font-bold text-[#172B4D] dark:text-white">Edit Sprint</h2>
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-[#2D2F36] rounded-lg transition-colors"
+              >
+                <X size={20} className="text-gray-500" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Sprint Name
+                </label>
+                <input
+                  type="text"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-[#2D2F36] rounded-lg bg-white dark:bg-[#15171E] text-[#172B4D] dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={editForm.startDate}
+                    onChange={(e) => setEditForm({ ...editForm, startDate: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 dark:border-[#2D2F36] rounded-lg bg-white dark:bg-[#15171E] text-[#172B4D] dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    value={editForm.endDate}
+                    onChange={(e) => setEditForm({ ...editForm, endDate: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 dark:border-[#2D2F36] rounded-lg bg-white dark:bg-[#15171E] text-[#172B4D] dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Sprint Goal
+                </label>
+                <textarea
+                  value={editForm.goal}
+                  onChange={(e) => setEditForm({ ...editForm, goal: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-[#2D2F36] rounded-lg bg-white dark:bg-[#15171E] text-[#172B4D] dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  placeholder="What do you want to achieve in this sprint?"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 p-4 border-t border-gray-200 dark:border-[#2D2F36]">
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2D2F36] rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={isSaving}
+                className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {isSaving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Complete Sprint Confirmation Modal */}
+      {showCompleteModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-in fade-in">
+          <div className="bg-white dark:bg-[#1F2128] rounded-xl shadow-2xl w-full max-w-md mx-4 animate-in zoom-in-95">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#2D2F36]">
+              <h2 className="text-lg font-bold text-[#172B4D] dark:text-white flex items-center gap-2">
+                <AlertTriangle size={20} className="text-amber-500" />
+                Complete Sprint
+              </h2>
+              <button
+                onClick={() => setShowCompleteModal(false)}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-[#2D2F36] rounded-lg transition-colors"
+              >
+                <X size={20} className="text-gray-500" />
+              </button>
+            </div>
+            <div className="p-4">
+              <p className="text-gray-600 dark:text-gray-300 mb-4">
+                Are you sure you want to complete <span className="font-semibold text-[#172B4D] dark:text-white">{sprint.name}</span>?
+              </p>
+
+              {incompleteTasks.length > 0 && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle size={20} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                        {incompleteTasks.length} incomplete task{incompleteTasks.length !== 1 ? 's' : ''} will be moved to backlog
+                      </p>
+                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                        Tasks not marked as "Done" will be removed from this sprint and moved to the backlog.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {incompleteTasks.length > 0 && (
+                <div className="max-h-32 overflow-y-auto border border-gray-200 dark:border-[#2D2F36] rounded-lg divide-y divide-gray-100 dark:divide-[#2D2F36]">
+                  {incompleteTasks.slice(0, 5).map(task => (
+                    <div key={task.id} className="px-3 py-2 text-sm">
+                      <span className="font-mono text-xs text-gray-500 mr-2">{task.id}</span>
+                      <span className="text-gray-700 dark:text-gray-300">{task.title}</span>
+                    </div>
+                  ))}
+                  {incompleteTasks.length > 5 && (
+                    <div className="px-3 py-2 text-sm text-gray-500 italic">
+                      ...and {incompleteTasks.length - 5} more
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {incompleteTasks.length === 0 && (
+                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    <CheckCircle size={20} className="text-green-600 dark:text-green-400" />
+                    <p className="text-sm font-medium text-green-800 dark:text-green-300">
+                      All tasks are completed! Great work!
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-3 p-4 border-t border-gray-200 dark:border-[#2D2F36]">
+              <button
+                onClick={() => setShowCompleteModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2D2F36] rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCompleteSprint}
+                disabled={isCompleting}
+                className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {isCompleting ? 'Completing...' : 'Complete Sprint'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
