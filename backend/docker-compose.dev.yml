@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  # OpenFGA for local development
+  openfga:
+    image: openfga/openfga:latest
+    command: run
+    environment:
+      - OPENFGA_DATASTORE_ENGINE=memory
+      - OPENFGA_LOG_FORMAT=text
+      - OPENFGA_PLAYGROUND_ENABLED=true
+    ports:
+      - "8080:8080"   # gRPC
+      - "8081:8081"   # HTTP
+      - "3001:3000"   # Playground
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/grpc_health_probe", "-addr=:8081"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
