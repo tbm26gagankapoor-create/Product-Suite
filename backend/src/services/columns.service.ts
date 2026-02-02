@@ -21,30 +21,32 @@ export interface CreateColumnInput {
   is_default?: boolean;
 }
 
-function enrichColumn(column: Column): ColumnWithCount {
-  const taskCount = database.count('tasks', t => t.column_id === column.id);
+async function enrichColumn(column: Column): Promise<ColumnWithCount> {
+  const taskCount = await database.count('tasks', { column_id: column.id });
   return { ...column, task_count: taskCount };
 }
 
 export const columnsService = {
-  getAll(projectId?: string): ColumnWithCount[] {
-    let columns = database.getAll<Column>('columns_status');
+  async getAll(projectId?: string): Promise<ColumnWithCount[]> {
+    let columns: Column[];
     if (projectId) {
-      columns = columns.filter(c => c.project_id === projectId);
+      columns = await database.findMany<Column>('columns_status', { project_id: projectId });
+    } else {
+      columns = await database.getAll<Column>('columns_status');
     }
-    return columns
-      .sort((a, b) => a.display_order - b.display_order)
-      .map(enrichColumn);
+
+    const enrichedColumns = await Promise.all(columns.map(enrichColumn));
+    return enrichedColumns.sort((a, b) => a.display_order - b.display_order);
   },
 
-  getById(id: string): ColumnWithCount | null {
-    const column = database.findById<Column>('columns_status', id);
+  async getById(id: string): Promise<ColumnWithCount | null> {
+    const column = await database.findById<Column>('columns_status', id);
     if (!column) return null;
     return enrichColumn(column);
   },
 
-  create(input: CreateColumnInput): ColumnWithCount {
-    const columns = database.findMany<Column>('columns_status', c => c.project_id === input.project_id);
+  async create(input: CreateColumnInput): Promise<ColumnWithCount> {
+    const columns = await database.findMany<Column>('columns_status', { project_id: input.project_id });
     const maxOrder = columns.reduce((max, c) => Math.max(max, c.display_order), -1);
 
     const column: Column = {
@@ -57,32 +59,32 @@ export const columnsService = {
       created_at: now(),
     };
 
-    database.insert('columns_status', column);
+    await database.insert('columns_status', column);
     return enrichColumn(column);
   },
 
-  update(id: string, input: Partial<CreateColumnInput & { display_order?: number }>): ColumnWithCount | null {
-    const existing = database.findById<Column>('columns_status', id);
+  async update(id: string, input: Partial<CreateColumnInput & { display_order?: number }>): Promise<ColumnWithCount | null> {
+    const existing = await database.findById<Column>('columns_status', id);
     if (!existing) return null;
 
-    const updated = database.update<Column>('columns_status', id, input);
+    const updated = await database.update<Column>('columns_status', id, input);
     if (!updated) return null;
     return enrichColumn(updated);
   },
 
-  delete(id: string): boolean {
+  async delete(id: string): Promise<boolean> {
     // Unassign tasks from this column
-    const tasks = database.findMany<any>('tasks', t => t.column_id === id);
-    tasks.forEach(task => {
-      database.update('tasks', task.id, { column_id: null });
-    });
+    const tasks = await database.findMany<any>('tasks', { column_id: id });
+    for (const task of tasks) {
+      await database.update<any>('tasks', task.id, { column_id: null });
+    }
     return database.delete('columns_status', id);
   },
 
-  reorder(projectId: string, columnIds: string[]): ColumnWithCount[] {
-    columnIds.forEach((id, index) => {
-      database.update<Column>('columns_status', id, { display_order: index });
-    });
+  async reorder(projectId: string, columnIds: string[]): Promise<ColumnWithCount[]> {
+    for (let index = 0; index < columnIds.length; index++) {
+      await database.update<any>('columns_status', columnIds[index], { display_order: index });
+    }
     return this.getAll(projectId);
   },
 };

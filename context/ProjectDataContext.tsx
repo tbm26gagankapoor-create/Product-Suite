@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
-import { Task, Project, Sprint, User, Team, Comment, Organization, OrganizationMember } from '../types';
+import { Task, Project, Sprint, User, Team, Comment, Organization, OrganizationMember, UserOrganizationMembership } from '../types';
 
 // Helper to get auth headers for API calls
 function getAuthHeaders(): HeadersInit {
@@ -27,6 +27,9 @@ function mapProject(data: any): Project {
     ownerId: data.owner_id,
     createdAt: data.created_at,
     tags: [],
+    imageUrl: data.image_url || undefined,
+    icon: data.icon || undefined,
+    iconColor: data.icon_color || undefined,
   };
 }
 
@@ -96,6 +99,19 @@ function mapSprint(data: any): Sprint {
   };
 }
 
+// Map backend team to frontend Team type
+function mapTeam(data: any): Team {
+  return {
+    id: data.id,
+    name: data.name,
+    description: data.description || '',
+    members: data.members || [],
+    projectIds: data.projectIds || [],
+    avatarUrl: data.avatar_url,
+    organizationId: data.organization_id,
+  };
+}
+
 // Map backend user to frontend User type
 function mapUser(data: any): User {
   return {
@@ -105,6 +121,14 @@ function mapUser(data: any): User {
     avatarUrl: data.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.name)}`,
     role: data.role || 'Member',
     isAdmin: data.role === 'Admin',
+    organizationId: data.organization_id,
+    location: data.location,
+    bio: data.bio,
+    website: data.website,
+    jobTitle: data.job_title,
+    status: data.status || 'active',
+    createdAt: data.created_at,
+    lastActiveAt: data.last_active_at,
   };
 }
 
@@ -114,9 +138,13 @@ interface ProjectDataContextType {
   sprints: Sprint[];
   users: User[];
   teams: Team[];
+  // Organization-scoped data - only includes items from current organization
+  organizationUsers: User[];
+  organizationTeams: Team[];
   currentUser: User | null;
   currentOrganization: Organization | null;
   organizationMembers: OrganizationMember[];
+  userOrganizations: UserOrganizationMembership[];
   isOrgAdmin: boolean;
   isLoading: boolean;
   connectionStatus: 'connecting' | 'connected' | 'error';
@@ -136,6 +164,7 @@ interface ProjectDataContextType {
   generateNextId: (projectId: string, type?: string) => string;
   updateCurrentUser: (updates: Partial<User>) => Promise<void>;
   refreshOrganization: () => Promise<void>;
+  switchOrganization: (organizationId: string) => Promise<void>;
 }
 
 const ProjectDataContext = createContext<ProjectDataContextType | undefined>(undefined);
@@ -149,6 +178,7 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentOrganization, setCurrentOrganization] = useState<Organization | null>(null);
   const [organizationMembers, setOrganizationMembers] = useState<OrganizationMember[]>([]);
+  const [userOrganizations, setUserOrganizations] = useState<UserOrganizationMembership[]>([]);
   const [isOrgAdmin, setIsOrgAdmin] = useState(false);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -215,41 +245,119 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         console.log('Profile:', profile);
         console.log('Is Admin:', profile?.isAdmin);
 
-        // 3. For now, skip organization data
-        setCurrentOrganization(null);
-        setOrganizationMembers([]);
-        setIsOrgAdmin(profile?.isAdmin || false);
+        // 3. Fetch organization data if user has one
+        // Re-read from localStorage to get the fresh data (updated by /api/v1/auth/me above)
+        let userOrgId: string | null = null;
+        const freshStoredUser = localStorage.getItem('infinia_user');
+        if (freshStoredUser) {
+          try {
+            const parsedUser = JSON.parse(freshStoredUser);
+            userOrgId = parsedUser.organization_id;
+            if (profile) {
+              profile.organizationId = userOrgId;
+            }
+          } catch (e) {
+            console.error('Failed to parse stored user for org:', e);
+          }
+        }
+
+        // Fetch organization details if user has one
+        if (userOrgId) {
+          try {
+            const orgResponse = await fetch(`/api/v1/organizations/${userOrgId}`, {
+              headers: getAuthHeaders(),
+            });
+            if (orgResponse.ok) {
+              const orgData = await orgResponse.json();
+              if (orgData.success && orgData.data) {
+                setCurrentOrganization({
+                  id: orgData.data.id,
+                  name: orgData.data.name,
+                  slug: orgData.data.slug,
+                  domain: orgData.data.domain,
+                  logoUrl: orgData.data.logo_url,
+                  ownerId: orgData.data.owner_id,
+                });
+
+                // Fetch organization members
+                try {
+                  const membersResponse = await fetch(`/api/v1/organizations/${userOrgId}/members`, {
+                    headers: getAuthHeaders(),
+                  });
+                  if (membersResponse.ok) {
+                    const membersData = await membersResponse.json();
+                    if (membersData.success && membersData.data) {
+                      // Map members and include user data
+                      const mappedMembers: OrganizationMember[] = membersData.data.map((m: any) => ({
+                        id: m.id,
+                        organizationId: m.organization_id,
+                        userId: m.user_id,
+                        role: m.role || 'member',
+                        joinedAt: m.joined_at,
+                        user: m.user ? {
+                          id: m.user.id,
+                          name: m.user.name,
+                          email: m.user.email,
+                          avatarUrl: m.user.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(m.user.name || 'User')}`,
+                        } : undefined,
+                      }));
+                      setOrganizationMembers(mappedMembers);
+
+                      // Check if current user is admin/owner in this organization
+                      const currentUserMember = mappedMembers.find(m => m.userId === profile?.id);
+                      const userIsAdmin = currentUserMember?.role === 'owner' || currentUserMember?.role === 'admin' || profile?.isAdmin;
+                      setIsOrgAdmin(userIsAdmin || false);
+                    }
+                  }
+                } catch (e) {
+                  console.log('Could not fetch organization members');
+                  setOrganizationMembers([]);
+                  setIsOrgAdmin(profile?.isAdmin || false);
+                }
+              }
+            }
+          } catch (e) {
+            console.log('Could not fetch organization details');
+          }
+        } else {
+          setCurrentOrganization(null);
+          setOrganizationMembers([]);
+          setIsOrgAdmin(profile?.isAdmin || false);
+        }
 
         // 4. Fetch all data from local backend WITH AUTH TOKEN
         // This ensures access control is applied on the server
         const headers = getAuthHeaders();
 
-        const [usersRes, projectsRes, tasksRes, sprintsRes] = await Promise.all([
+        const [usersRes, projectsRes, tasksRes, sprintsRes, teamsRes] = await Promise.all([
           fetch('/api/v1/users', { headers }),
           fetch('/api/v1/projects', { headers }),
           fetch('/api/v1/tasks', { headers }),
           fetch('/api/v1/sprints', { headers }),
+          fetch('/api/v1/teams', { headers }),
         ]);
 
         const usersData = await usersRes.json();
         const projectsData = await projectsRes.json();
         const tasksData = await tasksRes.json();
         const sprintsData = await sprintsRes.json();
+        const teamsData = await teamsRes.json();
 
         // Map and set data
         const mappedUsers = (usersData.data || []).map(mapUser);
         const mappedProjects = (projectsData.data || []).map(mapProject);
         const mappedTasks = (tasksData.data || []).map((t: any) => mapTask(t, mappedUsers));
         const mappedSprints = (sprintsData.data || []).map(mapSprint);
+        const mappedTeams = (teamsData.data || []).map(mapTeam);
 
         setUsers(mappedUsers);
         setProjects(mappedProjects);
         setTasks(mappedTasks);
         setSprints(mappedSprints);
-        setTeams([]); // Teams not implemented in local backend yet
+        setTeams(mappedTeams);
 
         setConnectionStatus('connected');
-        console.log(`Loaded: ${mappedProjects.length} projects, ${mappedTasks.length} tasks, ${mappedSprints.length} sprints`);
+        console.log(`Loaded: ${mappedProjects.length} projects, ${mappedTasks.length} tasks, ${mappedSprints.length} sprints, ${mappedTeams.length} teams`);
 
       } catch (error: any) {
         console.error("Data Fetch Error:", error);
@@ -302,6 +410,9 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           name: project.name,
           description: project.description,
           status: project.status,
+          image_url: project.imageUrl,
+          icon: project.icon,
+          icon_color: project.iconColor,
         }),
       });
     } catch (e) {
@@ -487,10 +598,33 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // --- Team Actions ---
   const addTeam = useCallback(async (team: Team) => {
-    setTeams(prev => [...prev, team]);
-    // Teams not implemented in local backend yet
-    console.log('Team creation not implemented in local backend');
-  }, []);
+    // Ensure team is associated with current organization
+    const teamWithOrg = {
+      ...team,
+      organizationId: team.organizationId || currentOrganization?.id,
+    };
+    setTeams(prev => [...prev, teamWithOrg]);
+    try {
+      const response = await fetch('/api/v1/teams', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          name: team.name,
+          description: team.description,
+          avatar_url: team.avatarUrl,
+          member_ids: team.members,
+          organization_id: teamWithOrg.organizationId,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        const savedTeam = mapTeam(data.data);
+        setTeams(prev => prev.map(t => t.id === team.id ? savedTeam : t));
+      }
+    } catch (e) {
+      console.error("Failed to sync team creation", e);
+    }
+  }, [currentOrganization]);
 
   // --- User Actions ---
   const updateCurrentUser = useCallback(async (updates: Partial<User>) => {
@@ -518,9 +652,57 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // --- Organization Actions ---
   const refreshOrganization = useCallback(async () => {
-      // Organization refresh is not implemented in local backend yet
-      console.log('Organization refresh not implemented');
-  }, [currentUser]);
+    if (!currentOrganization?.id) return;
+
+    try {
+      // Fetch updated organization members
+      const membersResponse = await fetch(`/api/v1/organizations/${currentOrganization.id}/members`, {
+        headers: getAuthHeaders(),
+      });
+      if (membersResponse.ok) {
+        const membersData = await membersResponse.json();
+        if (membersData.success && membersData.data) {
+          const mappedMembers: OrganizationMember[] = membersData.data.map((m: any) => ({
+            id: m.id,
+            organizationId: m.organization_id,
+            userId: m.user_id,
+            role: m.role || 'member',
+            joinedAt: m.joined_at,
+            user: m.user ? {
+              id: m.user.id,
+              name: m.user.name,
+              email: m.user.email,
+              avatarUrl: m.user.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(m.user.name || 'User')}`,
+            } : undefined,
+          }));
+          setOrganizationMembers(mappedMembers);
+
+          // Update isOrgAdmin based on current user's role
+          const currentUserMember = mappedMembers.find(m => m.userId === currentUser?.id);
+          const userIsAdmin = currentUserMember?.role === 'owner' || currentUserMember?.role === 'admin' || currentUser?.isAdmin;
+          setIsOrgAdmin(userIsAdmin || false);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to refresh organization data:', e);
+    }
+  }, [currentOrganization?.id, currentUser?.id, currentUser?.isAdmin]);
+
+  const switchOrganization = useCallback(async (organizationId: string) => {
+    // Update local state to reflect organization switch
+    const targetOrg = userOrganizations.find(m => m.organization.id === organizationId);
+    if (targetOrg) {
+      setCurrentOrganization(targetOrg.organization);
+      setUserOrganizations(prev => prev.map(m => ({
+        ...m,
+        isActive: m.organization.id === organizationId
+      })));
+      // Determine if user is admin in the new org
+      setIsOrgAdmin(targetOrg.role === 'owner' || targetOrg.role === 'admin');
+      // Refresh data for the new organization context
+      await fetchData();
+    }
+  }, [userOrganizations, fetchData]);
 
   // --- Smart ID Generation ---
   const generateNextId = useCallback((projectId: string, type: string = 'task') => {
@@ -551,15 +733,35 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return `${productKey}-${typeCode}-${paddedNum}`;
   }, [projects, tasks]);
 
+  // Compute organization-scoped users and teams
+  const organizationUsers = useMemo(() => {
+    if (!currentOrganization?.id) {
+      // If no org context, return all users (fallback)
+      return users;
+    }
+    return users.filter(u => u.organizationId === currentOrganization.id);
+  }, [users, currentOrganization]);
+
+  const organizationTeams = useMemo(() => {
+    if (!currentOrganization?.id) {
+      // If no org context, return all teams (fallback)
+      return teams;
+    }
+    return teams.filter(t => t.organizationId === currentOrganization.id);
+  }, [teams, currentOrganization]);
+
   const value = useMemo(() => ({
     projects,
     tasks,
     sprints,
     users,
     teams,
+    organizationUsers,
+    organizationTeams,
     currentUser,
     currentOrganization,
     organizationMembers,
+    userOrganizations,
     isOrgAdmin,
     isLoading,
     connectionStatus,
@@ -578,8 +780,9 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     addComment,
     generateNextId,
     updateCurrentUser,
-    refreshOrganization
-  }), [projects, tasks, sprints, users, teams, currentUser, currentOrganization, organizationMembers, isOrgAdmin, isLoading, connectionStatus, connectionError, fetchData, generateNextId, addComment, updateCurrentUser, refreshOrganization, addProject, updateProject, deleteProject, addTask, addEpic]);
+    refreshOrganization,
+    switchOrganization
+  }), [projects, tasks, sprints, users, teams, organizationUsers, organizationTeams, currentUser, currentOrganization, organizationMembers, userOrganizations, isOrgAdmin, isLoading, connectionStatus, connectionError, fetchData, generateNextId, addComment, updateCurrentUser, refreshOrganization, switchOrganization, addProject, updateProject, deleteProject, addTask, addEpic, addTeam, addSprint, updateSprint, updateTask, deleteTask]);
 
   return (
     <ProjectDataContext.Provider value={value}>

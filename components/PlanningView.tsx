@@ -20,7 +20,7 @@ interface PlanningViewProps {
 
 const PlanningView: React.FC<PlanningViewProps> = ({ projectId }) => {
   // --- Context ---
-  const { sprints, tasks, addSprint, addTask, updateTask, generateNextId, currentUser, users } = useProjectData();
+  const { sprints, tasks, addSprint, addTask, updateTask, generateNextId, currentUser, organizationUsers: users } = useProjectData();
 
   // --- State ---
   const [activeTab, setActiveTab] = useState<'Ongoing' | 'Upcoming' | 'Completed'>('Ongoing');

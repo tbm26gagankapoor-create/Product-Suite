@@ -28,9 +28,9 @@ export interface CreateSprintInput {
   end_date: string;
 }
 
-function getSprintStats(sprintId: string): { total_tasks: number; completed_tasks: number; total_points: number; completed_points: number } {
-  const tasks = database.findMany<any>('tasks', t => t.sprint_id === sprintId);
-  const columns = database.getAll<any>('columns_status');
+async function getSprintStats(sprintId: string): Promise<{ total_tasks: number; completed_tasks: number; total_points: number; completed_points: number }> {
+  const tasks = await database.findMany<any>('tasks', { sprint_id: sprintId });
+  const columns = await database.getAll<any>('columns_status');
 
   let completedTasks = 0;
   let completedPoints = 0;
@@ -52,38 +52,40 @@ function getSprintStats(sprintId: string): { total_tasks: number; completed_task
 }
 
 export const sprintsService = {
-  getAll(projectId?: string): SprintWithStats[] {
-    let sprints = database.getAll<Sprint>('sprints');
+  async getAll(projectId?: string): Promise<SprintWithStats[]> {
+    let sprints: Sprint[];
     if (projectId) {
-      sprints = sprints.filter(s => s.project_id === projectId);
+      sprints = await database.findMany<Sprint>('sprints', { project_id: projectId });
+    } else {
+      sprints = await database.getAll<Sprint>('sprints');
     }
-    return sprints
-      .map(sprint => ({ ...sprint, ...getSprintStats(sprint.id) }))
-      .sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
+
+    const sprintsWithStats = await Promise.all(
+      sprints.map(async (sprint) => ({
+        ...sprint,
+        ...(await getSprintStats(sprint.id)),
+      }))
+    );
+
+    return sprintsWithStats.sort((a, b) =>
+      new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
+    );
   },
 
-  /**
-   * Get sprints filtered by user access
-   * - Admins see all sprints
-   * - Non-admins see only sprints from projects they have access to
-   */
-  getAllForUser(userId: string, isAdmin: boolean, projectId?: string): SprintWithStats[] {
+  async getAllForUser(userId: string, isAdmin: boolean, projectId?: string): Promise<SprintWithStats[]> {
     if (isAdmin) {
       return this.getAll(projectId);
     }
 
     // Get all project IDs the user has access to
-    const membershipProjectIds = new Set(
-      database.findMany<any>('project_members', pm => pm.user_id === userId)
-        .map(pm => pm.project_id)
-    );
+    const memberships = await database.findMany<any>('project_members', { user_id: userId });
+    const membershipProjectIds = new Set(memberships.map(pm => pm.project_id));
 
     // Also include projects where user is owner
-    database.getAll<any>('projects')
-      .filter(p => p.owner_id === userId)
-      .forEach(p => membershipProjectIds.add(p.id));
+    const projects = await database.getAll<any>('projects');
+    projects.filter(p => p.owner_id === userId).forEach(p => membershipProjectIds.add(p.id));
 
-    let sprints = database.getAll<Sprint>('sprints');
+    let sprints = await database.getAll<Sprint>('sprints');
 
     // Filter by accessible projects
     sprints = sprints.filter(s => membershipProjectIds.has(s.project_id));
@@ -92,44 +94,52 @@ export const sprintsService = {
       sprints = sprints.filter(s => s.project_id === projectId);
     }
 
-    return sprints
-      .map(sprint => ({ ...sprint, ...getSprintStats(sprint.id) }))
-      .sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
+    const sprintsWithStats = await Promise.all(
+      sprints.map(async (sprint) => ({
+        ...sprint,
+        ...(await getSprintStats(sprint.id)),
+      }))
+    );
+
+    return sprintsWithStats.sort((a, b) =>
+      new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
+    );
   },
 
-  /**
-   * Check if a user has access to a specific sprint
-   */
-  userHasAccess(sprintId: string, userId: string, isAdmin: boolean): boolean {
+  async userHasAccess(sprintId: string, userId: string, isAdmin: boolean): Promise<boolean> {
     if (isAdmin) return true;
 
-    const sprint = database.findById<Sprint>('sprints', sprintId);
+    const sprint = await database.findById<Sprint>('sprints', sprintId);
     if (!sprint) return false;
 
     // Check project access
-    const project = database.findById<any>('projects', sprint.project_id);
+    const project = await database.findById<any>('projects', sprint.project_id);
     if (project?.owner_id === userId) return true;
 
-    const membership = database.findOne<any>('project_members',
-      pm => pm.project_id === sprint.project_id && pm.user_id === userId
-    );
+    const membership = await database.findOne<any>('project_members', {
+      project_id: sprint.project_id,
+      user_id: userId
+    });
 
     return Boolean(membership);
   },
 
-  getById(id: string): SprintWithStats | null {
-    const sprint = database.findById<Sprint>('sprints', id);
+  async getById(id: string): Promise<SprintWithStats | null> {
+    const sprint = await database.findById<Sprint>('sprints', id);
     if (!sprint) return null;
-    return { ...sprint, ...getSprintStats(id) };
+    return { ...sprint, ...(await getSprintStats(id)) };
   },
 
-  getActive(projectId: string): SprintWithStats | null {
-    const sprint = database.findOne<Sprint>('sprints', s => s.project_id === projectId && s.status === 'active');
+  async getActive(projectId: string): Promise<SprintWithStats | null> {
+    const sprint = await database.findOne<Sprint>('sprints', {
+      project_id: projectId,
+      status: 'active'
+    });
     if (!sprint) return null;
-    return { ...sprint, ...getSprintStats(sprint.id) };
+    return { ...sprint, ...(await getSprintStats(sprint.id)) };
   },
 
-  create(input: CreateSprintInput): SprintWithStats {
+  async create(input: CreateSprintInput): Promise<SprintWithStats> {
     const sprint: Sprint = {
       id: generateUUID(),
       project_id: input.project_id,
@@ -143,45 +153,49 @@ export const sprintsService = {
       updated_at: now(),
     };
 
-    database.insert('sprints', sprint);
-    return this.getById(sprint.id)!;
+    await database.insert('sprints', sprint);
+    return (await this.getById(sprint.id))!;
   },
 
-  update(id: string, input: Partial<CreateSprintInput & { status?: string; velocity?: number }>): SprintWithStats | null {
-    const existing = database.findById<Sprint>('sprints', id);
+  async update(id: string, input: Partial<CreateSprintInput & { status?: 'planned' | 'active' | 'completed'; velocity?: number }>): Promise<SprintWithStats | null> {
+    const existing = await database.findById<Sprint>('sprints', id);
     if (!existing) return null;
 
-    database.update<Sprint>('sprints', id, {
+    await database.update('sprints', id, {
       ...input,
       updated_at: now(),
-    });
+    } as Partial<Sprint>);
 
     return this.getById(id);
   },
 
-  delete(id: string): boolean {
+  async delete(id: string): Promise<boolean> {
     // Unassign tasks from this sprint
-    const tasks = database.findMany<any>('tasks', t => t.sprint_id === id);
-    tasks.forEach(task => {
-      database.update('tasks', task.id, { sprint_id: null });
-    });
+    const tasks = await database.findMany<any>('tasks', { sprint_id: id });
+    for (const task of tasks) {
+      await database.update('tasks', task.id, { sprint_id: null });
+    }
     return database.delete('sprints', id);
   },
 
-  startSprint(id: string): SprintWithStats | null {
-    const sprint = this.getById(id);
+  async startSprint(id: string): Promise<SprintWithStats | null> {
+    const sprint = await this.getById(id);
     if (!sprint) return null;
 
     // Complete any active sprints
-    const activeSprints = database.findMany<Sprint>('sprints', s => s.project_id === sprint.project_id && s.status === 'active');
-    activeSprints.forEach(s => {
-      database.update<Sprint>('sprints', s.id, { status: 'completed', updated_at: now() });
+    const activeSprints = await database.findMany<Sprint>('sprints', {
+      project_id: sprint.project_id,
+      status: 'active'
     });
+
+    for (const s of activeSprints) {
+      await database.update<Sprint>('sprints', s.id, { status: 'completed', updated_at: now() });
+    }
 
     return this.update(id, { status: 'active' });
   },
 
-  completeSprint(id: string): SprintWithStats | null {
+  async completeSprint(id: string): Promise<SprintWithStats | null> {
     return this.update(id, { status: 'completed' });
   },
 };

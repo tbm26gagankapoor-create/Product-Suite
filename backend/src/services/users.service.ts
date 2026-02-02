@@ -8,6 +8,7 @@ export interface User {
   password_hash?: string;
   avatar_url: string | null;
   role: string | null;
+  organization_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -21,47 +22,49 @@ export interface CreateUserInput {
 }
 
 export const usersService = {
-  getAll(): Omit<User, 'password_hash'>[] {
-    return database.getAll<User>('users').map(({ password_hash, ...user }) => user);
+  async getAll(): Promise<Omit<User, 'password_hash'>[]> {
+    const users = await database.getAll<User>('users');
+    return users.map(({ password_hash, ...user }) => user);
   },
 
-  getById(id: string): Omit<User, 'password_hash'> | null {
-    const user = database.findById<User>('users', id);
+  async getById(id: string): Promise<Omit<User, 'password_hash'> | null> {
+    const user = await database.findById<User>('users', id);
     if (!user) return null;
     const { password_hash, ...rest } = user;
     return rest;
   },
 
-  getByEmail(email: string): User | null {
-    return database.findOne<User>('users', u => u.email === email) || null;
+  async getByEmail(email: string): Promise<User | null> {
+    return database.findOne<User>('users', { email: email.toLowerCase() });
   },
 
-  create(input: CreateUserInput): Omit<User, 'password_hash'> {
-    if (this.getByEmail(input.email)) {
+  async create(input: CreateUserInput): Promise<Omit<User, 'password_hash'>> {
+    const existing = await this.getByEmail(input.email);
+    if (existing) {
       throw new Error('UNIQUE constraint failed: email already exists');
     }
 
     const user: User = {
       id: generateUUID(),
       name: input.name,
-      email: input.email,
-      password_hash: bcrypt.hashSync(input.password, 10),
+      email: input.email.toLowerCase(),
+      password_hash: await bcrypt.hash(input.password, 10),
       avatar_url: input.avatar_url || null,
       role: input.role || null,
       created_at: now(),
       updated_at: now(),
     };
 
-    database.insert('users', user);
+    await database.insert('users', user);
     const { password_hash, ...rest } = user;
     return rest;
   },
 
-  update(id: string, input: Partial<Omit<CreateUserInput, 'password'>>): Omit<User, 'password_hash'> | null {
-    const existing = database.findById<User>('users', id);
+  async update(id: string, input: Partial<Omit<CreateUserInput, 'password'>>): Promise<Omit<User, 'password_hash'> | null> {
+    const existing = await database.findById<User>('users', id);
     if (!existing) return null;
 
-    const updated = database.update<User>('users', id, {
+    const updated = await database.update<User>('users', id, {
       ...input,
       updated_at: now(),
     });
@@ -71,11 +74,11 @@ export const usersService = {
     return rest;
   },
 
-  delete(id: string): boolean {
+  async delete(id: string): Promise<boolean> {
     return database.delete('users', id);
   },
 
-  validatePassword(user: User, password: string): boolean {
-    return bcrypt.compareSync(password, user.password_hash || '');
+  async validatePassword(user: User, password: string): Promise<boolean> {
+    return bcrypt.compare(password, user.password_hash || '');
   },
 };

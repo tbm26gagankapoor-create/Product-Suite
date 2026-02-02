@@ -21,7 +21,7 @@ interface HomeProps {
 }
 
 const Home: React.FC<HomeProps> = ({ onViewChange }) => {
-  const { tasks, projects, sprints, currentUser, users, updateTask, addTask, addSprint, addProject, addEpic } = useProjectData();
+  const { tasks, projects, sprints, currentUser, organizationUsers: users, updateTask, addTask, addSprint, addProject, addEpic } = useProjectData();
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isSprintModalOpen, setIsSprintModalOpen] = useState(false);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);

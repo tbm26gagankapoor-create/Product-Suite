@@ -30,6 +30,34 @@ export const config = {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10),
     maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
   },
+
+  // Microsoft OAuth Configuration
+  microsoft: {
+    clientId: process.env.MICROSOFT_CLIENT_ID || '',
+    clientSecret: process.env.MICROSOFT_CLIENT_SECRET || '',
+    tenantId: process.env.MICROSOFT_TENANT_ID || 'common',
+    redirectUri: process.env.MICROSOFT_REDIRECT_URI || 'http://localhost:3001/api/v1/auth/microsoft/callback',
+    scopes: ['openid', 'profile', 'email', 'User.Read'],
+  },
+
+  // Google OAuth Configuration
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID || '',
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+    redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3001/api/v1/auth/google/callback',
+    scopes: ['openid', 'profile', 'email'],
+  },
+
+  // Frontend URL (for OAuth redirects)
+  frontend: {
+    url: process.env.FRONTEND_URL || 'http://localhost:5173',
+  },
+
+  // Gmail SMTP Configuration
+  gmail: {
+    user: process.env.GMAIL_USER || '',
+    appPassword: process.env.GMAIL_APP_PASSWORD || '',
+  },
 } as const;
 
 export type Config = typeof config;

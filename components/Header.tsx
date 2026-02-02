@@ -1,8 +1,9 @@
 
-import React, { useState, useEffect } from 'react';
-import { Calendar, Star, MoreHorizontal, UserPlus, AlertCircle, ChevronsRight, Box } from 'lucide-react';
+import React from 'react';
+import { Star, MoreHorizontal, UserPlus, AlertCircle } from 'lucide-react';
 import { Project } from '../types';
 import { useProjectData } from '../context/ProjectDataContext';
+import ProductIcon from './ProductIcon';
 
 interface HeaderProps {
   activeTab?: string;
@@ -13,36 +14,6 @@ interface HeaderProps {
   onFixDates?: () => void;
   missingDateCount?: number;
 }
-
-const ProjectIcon = ({ project }: { project: Project }) => {
-    const [error, setError] = useState(false);
-    
-    // Reset error when project changes
-    useEffect(() => setError(false), [project.id, project.imageUrl]);
-
-    if (project.imageUrl && !error) {
-        return (
-            <img 
-                src={project.imageUrl} 
-                alt={project.name} 
-                className="w-12 h-12 rounded-xl object-cover shadow-lg shadow-blue-500/20" 
-                onError={() => setError(true)}
-            />
-        );
-    }
-    
-    return (
-        <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${project.color || 'from-blue-500 to-blue-600'} flex items-center justify-center text-white shadow-lg shadow-blue-500/20`}>
-             {project.key === 'INF' ? (
-                 <ChevronsRight size={20} />
-             ) : project.key ? (
-                 <span className="font-bold text-lg">{project.key.substring(0, 3)}</span>
-             ) : (
-                 <Box size={20} />
-             )}
-        </div>
-    );
-};
 
 const Header: React.FC<HeaderProps> = ({ 
   activeTab = 'Overview', 
@@ -67,9 +38,9 @@ const Header: React.FC<HeaderProps> = ({
       <div className="flex items-start justify-between mb-6">
         <div className="flex items-center gap-4">
              {activeProject ? (
-                 <ProjectIcon project={activeProject} />
+                 <ProductIcon project={activeProject} size="lg" className="shadow-lg shadow-blue-500/20" />
              ) : (
-                 <div className="w-12 h-12 rounded-xl bg-gray-200 dark:bg-[#1F2128] animate-pulse"></div>
+                 <div className="w-14 h-14 rounded-2xl bg-gray-200 dark:bg-[#1F2128] animate-pulse"></div>
              )}
              
              <div>

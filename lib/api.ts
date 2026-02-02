@@ -41,7 +41,10 @@ const mapUserFromDB = (data: any): User => ({
   bio: data.bio,
   website: data.website,
   jobTitle: data.job_title,
-  socialLinks: data.social_links
+  socialLinks: data.social_links,
+  status: data.status || 'active',
+  createdAt: data.created_at,
+  lastActiveAt: data.last_active_at,
 });
 
 const mapTeamFromDB = (data: any): Team => ({
@@ -254,6 +257,9 @@ export const api = {
     if (updates.bio) dbUpdates.bio = updates.bio;
     if (updates.website) dbUpdates.website = updates.website;
     if (updates.jobTitle) dbUpdates.job_title = updates.jobTitle;
+    if (updates.organizationId) dbUpdates.organization_id = updates.organizationId;
+    if (updates.status) dbUpdates.status = updates.status;
+    if (updates.isAdmin !== undefined) dbUpdates.role = updates.isAdmin ? 'Admin' : updates.role || 'Member';
 
     const response = await fetch(`${API_BASE}/users/${id}`, {
       method: 'PATCH',
@@ -473,6 +479,66 @@ export const api = {
 
   async removeProjectMember(projectId: string, userId: string): Promise<void> {
     await fetch(`${API_BASE}/projects/${projectId}/members/${userId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+  },
+
+  // Invites
+  async sendInvite(email: string, role: 'admin' | 'member', organizationId: string): Promise<{
+    invite: {
+      id: string;
+      email: string;
+      role: string;
+      status: string;
+      expiresAt: string;
+      inviteLink: string;
+    };
+    emailSent: boolean;
+    emailError?: string;
+  }> {
+    const response = await fetch(`${API_BASE}/invites`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ email, role, organizationId }),
+    });
+    return handleResponse<any>(response);
+  },
+
+  async getInvite(inviteId: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/invites/${inviteId}`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<any>(response);
+  },
+
+  async acceptInvite(inviteId: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/invites/${inviteId}/accept`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<any>(response);
+  },
+
+  async getOrganizationInvites(organizationId: string): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/invites/organization/${organizationId}`, {
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json();
+    if (!data.success) return [];
+    return data.data || [];
+  },
+
+  async resendInvite(inviteId: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/invites/${inviteId}/resend`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<any>(response);
+  },
+
+  async revokeInvite(inviteId: string): Promise<void> {
+    await fetch(`${API_BASE}/invites/${inviteId}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });

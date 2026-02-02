@@ -237,7 +237,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   initialData,
   onSuccess
 }) => {
-  const { addTask, generateNextId, sprints, tasks, projects, users, currentUser } = useProjectData();
+  const { addTask, generateNextId, sprints, tasks, projects, organizationUsers: users, currentUser } = useProjectData();
   
   // Form State
   const [title, setTitle] = useState('');

@@ -18,8 +18,6 @@ import {
   X,
   ShieldAlert,
   Zap,
-  Box,
-  ChevronsRight,
   TrendingUp,
   DollarSign,
   Users,
@@ -29,6 +27,7 @@ import {
 import { Project, Task } from '../types';
 import { useProjectData } from '../context/ProjectDataContext';
 import { activityService } from '../services/activity.service';
+import ProductIcon from './ProductIcon';
 
 interface OverviewProps {
   onNavigate?: (tab: string) => void;
@@ -36,36 +35,6 @@ interface OverviewProps {
   onProjectUpdate?: (project: Project) => void;
   projectTasks?: Task[]; // Received from parent (filtered from context)
 }
-
-const ProjectIcon = ({ project }: { project: Project }) => {
-    const [error, setError] = useState(false);
-    
-    // Reset error when project changes
-    useEffect(() => setError(false), [project.id, project.imageUrl]);
-
-    if (project.imageUrl && !error) {
-        return (
-            <img 
-                src={project.imageUrl} 
-                alt={project.name} 
-                className="w-14 h-14 rounded-2xl object-cover shadow-xl shadow-blue-500/10 dark:shadow-none flex-shrink-0"
-                onError={() => setError(true)}
-            />
-        );
-    }
-    
-    return (
-        <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${project.color || 'from-blue-500 to-blue-600'} flex items-center justify-center text-white shadow-xl shadow-blue-500/10 dark:shadow-none flex-shrink-0`}>
-             {project.key === 'INF' ? (
-                 <ChevronsRight size={24} />
-             ) : project.key ? (
-                 <span className="font-bold text-xl">{project.key.substring(0, 3)}</span>
-             ) : (
-                 <Box size={24} />
-             )}
-        </div>
-    );
-};
 
 const Overview: React.FC<OverviewProps> = ({ onNavigate, activeProject, onProjectUpdate, projectTasks = [] }) => {
   const { users } = useProjectData();

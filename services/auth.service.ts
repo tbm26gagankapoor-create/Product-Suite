@@ -34,10 +34,18 @@ export class AuthService {
     return api.auth.signIn(email, password);
   }
 
-  // Sign in with OAuth provider (not supported in local backend)
-  async signInWithOAuth(provider: 'google' | 'github'): Promise<AuthResult> {
-    console.warn('OAuth sign-in is not supported with local backend');
-    return { data: { user: null, session: null }, error: new Error('OAuth not supported') };
+  // Sign in with OAuth provider
+  async signInWithOAuth(provider: 'microsoft' | 'google' | 'github'): Promise<AuthResult> {
+    if (provider === 'microsoft') {
+      // Redirect to backend OAuth endpoint - this will navigate away from the page
+      window.location.href = '/api/v1/auth/microsoft';
+      // This won't actually return since we're redirecting
+      return { data: { user: null, session: null }, error: null };
+    }
+
+    // Other providers not yet implemented
+    console.warn(`OAuth sign-in for ${provider} is not yet supported`);
+    return { data: { user: null, session: null }, error: new Error(`${provider} OAuth not supported`) };
   }
 
   // Sign out current user

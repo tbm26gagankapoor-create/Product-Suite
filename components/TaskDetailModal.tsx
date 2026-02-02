@@ -91,7 +91,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   onClose,
   onUpdate
 }) => {
-  const { sprints, projects, tasks: allTasks, users, addTask, updateTask, deleteTask, generateNextId, addComment, currentUser } = useProjectData();
+  const { sprints, projects, tasks: allTasks, organizationUsers: users, addTask, updateTask, deleteTask, generateNextId, addComment, currentUser } = useProjectData();
 
   const globalTask = allTasks.find((t: Task) => t.id === task.id) || task;
   const currentProject = projects.find((p: any) => p.id === globalTask.projectId);

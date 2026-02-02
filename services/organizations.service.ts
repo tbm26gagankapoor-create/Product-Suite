@@ -1,7 +1,9 @@
 /**
  * Organizations Service - Uses Local Backend
- * All Supabase calls have been replaced with local backend API calls
+ * Supports multi-organization membership and domain-based organization matching
  */
+
+import { GENERIC_EMAIL_DOMAINS, OrganizationRole } from '../types';
 
 const API_BASE = '/api/v1';
 
@@ -16,13 +18,29 @@ function getAuthHeaders(): HeadersInit {
   return headers;
 }
 
-export type OrganizationRole = 'admin' | 'member';
-
 export interface Organization {
   id: string;
   name: string;
   slug: string;
+  domain?: string;
+  logoUrl?: string;
   owner_id?: string;
+  memberCount?: number;
+  projectCount?: number;
+  settings?: {
+    allowDomainJoin: boolean;
+    requireApproval: boolean;
+    defaultRole: OrganizationRole;
+  };
+  createdAt?: string;
+}
+
+export interface UserOrganizationMembership {
+  organizationId: string;
+  organization: Organization;
+  role: OrganizationRole;
+  joinedAt: string;
+  isActive: boolean;
 }
 
 export class OrganizationsService {
@@ -225,6 +243,194 @@ export class OrganizationsService {
    */
   async setupForExistingUser(userId: string, orgName: string): Promise<Organization> {
     return this.createWithAdmin(orgName, userId);
+  }
+
+  /**
+   * Get all organizations a user is a member of
+   */
+  async getUserOrganizations(userId: string): Promise<UserOrganizationMembership[]> {
+    try {
+      const response = await fetch(`${API_BASE}/users/${userId}/organizations`, {
+        headers: getAuthHeaders(),
+      });
+      const data = await response.json();
+      if (data.success && data.data) {
+        return data.data;
+      }
+      return [];
+    } catch (e) {
+      console.error('Error fetching user organizations:', e);
+      return [];
+    }
+  }
+
+  /**
+   * Get all organizations that match a specific email domain
+   * Excludes generic email domains like gmail.com, outlook.com, etc.
+   */
+  async getOrganizationsByDomain(email: string): Promise<Organization[]> {
+    const domain = email.split('@')[1]?.toLowerCase();
+
+    // Don't match on generic email domains
+    if (!domain || GENERIC_EMAIL_DOMAINS.includes(domain)) {
+      return [];
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/organizations?domain=${encodeURIComponent(domain)}`, {
+        headers: getAuthHeaders(),
+      });
+      const data = await response.json();
+      if (data.success && data.data) {
+        return data.data;
+      }
+      return [];
+    } catch (e) {
+      console.error('Error fetching organizations by domain:', e);
+      return [];
+    }
+  }
+
+  /**
+   * Check if an email domain is a generic/personal email provider
+   */
+  isGenericEmailDomain(email: string): boolean {
+    const domain = email.split('@')[1]?.toLowerCase();
+    return !domain || GENERIC_EMAIL_DOMAINS.includes(domain);
+  }
+
+  /**
+   * Extract domain from email address
+   */
+  extractDomain(email: string): string | null {
+    const domain = email.split('@')[1]?.toLowerCase();
+    return domain || null;
+  }
+
+  /**
+   * Switch active organization for a user
+   * Updates the user's current organization context
+   */
+  async switchOrganization(userId: string, organizationId: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${API_BASE}/users/${userId}/active-organization`, {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ organization_id: organizationId }),
+      });
+      const data = await response.json();
+      return data.success;
+    } catch (e) {
+      console.error('Error switching organization:', e);
+      return false;
+    }
+  }
+
+  /**
+   * Request to join an organization
+   */
+  async requestToJoin(organizationId: string, userId: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${API_BASE}/organizations/${organizationId}/join-requests`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ user_id: userId }),
+      });
+      const data = await response.json();
+      return data.success;
+    } catch (e) {
+      console.error('Error requesting to join organization:', e);
+      return false;
+    }
+  }
+
+  /**
+   * Leave an organization
+   */
+  async leaveOrganization(organizationId: string, userId: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${API_BASE}/organizations/${organizationId}/members/${userId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      return response.ok;
+    } catch (e) {
+      console.error('Error leaving organization:', e);
+      return false;
+    }
+  }
+
+  /**
+   * Update organization settings
+   */
+  async updateSettings(
+    organizationId: string,
+    settings: {
+      allowDomainJoin?: boolean;
+      requireApproval?: boolean;
+      defaultRole?: OrganizationRole;
+    }
+  ): Promise<Organization | null> {
+    try {
+      const response = await fetch(`${API_BASE}/organizations/${organizationId}/settings`, {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(settings),
+      });
+      const data = await response.json();
+      if (data.success) {
+        return data.data;
+      }
+      return null;
+    } catch (e) {
+      console.error('Error updating organization settings:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Set organization domain for domain-based auto-join
+   */
+  async setDomain(organizationId: string, domain: string): Promise<Organization | null> {
+    try {
+      const response = await fetch(`${API_BASE}/organizations/${organizationId}`, {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ domain }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        return data.data;
+      }
+      return null;
+    } catch (e) {
+      console.error('Error setting organization domain:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Get organization statistics
+   */
+  async getStats(organizationId: string): Promise<{
+    memberCount: number;
+    projectCount: number;
+    taskCount: number;
+    adminCount: number;
+  } | null> {
+    try {
+      const response = await fetch(`${API_BASE}/organizations/${organizationId}/stats`, {
+        headers: getAuthHeaders(),
+      });
+      const data = await response.json();
+      if (data.success) {
+        return data.data;
+      }
+      return null;
+    } catch (e) {
+      console.error('Error fetching organization stats:', e);
+      return null;
+    }
   }
 }
 
