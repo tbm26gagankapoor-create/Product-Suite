@@ -734,13 +734,16 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, [projects, tasks]);
 
   // Compute organization-scoped users and teams
+  // Use organizationMembers as the source of truth for who belongs to the organization
   const organizationUsers = useMemo(() => {
     if (!currentOrganization?.id) {
       // If no org context, return all users (fallback)
       return users;
     }
-    return users.filter(u => u.organizationId === currentOrganization.id);
-  }, [users, currentOrganization]);
+    // Filter users based on organization membership, not the user's organizationId field
+    const memberUserIds = new Set(organizationMembers.map(m => m.userId));
+    return users.filter(u => memberUserIds.has(u.id));
+  }, [users, currentOrganization, organizationMembers]);
 
   const organizationTeams = useMemo(() => {
     if (!currentOrganization?.id) {
