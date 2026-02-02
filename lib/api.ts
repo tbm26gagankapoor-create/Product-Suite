@@ -5,7 +5,8 @@
 
 import { Project, Task, Sprint, User, Team, Comment } from '../types';
 
-const API_BASE = '/api/v1';
+// Use environment variable or default to production backend
+const API_BASE = import.meta.env.VITE_API_URL || 'https://product-suite-production.up.railway.app/api/v1';
 
 // --- Auth Headers ---
 function getAuthHeaders(): HeadersInit {

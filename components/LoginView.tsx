@@ -15,6 +15,9 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import ParticleBackground from './ParticleBackground';
 
+// Backend API URL
+const API_URL = import.meta.env.VITE_API_URL || 'https://product-suite-production.up.railway.app/api/v1';
+
 interface LoginViewProps {
   onLogin: () => void;
   onForgotPassword: () => void;
@@ -35,13 +38,13 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onForgotPassword }) => {
   // Microsoft OAuth handler
   const handleMicrosoftLogin = () => {
     // Redirect to backend OAuth endpoint
-    window.location.href = '/api/v1/auth/microsoft';
+    window.location.href = `${API_URL}/auth/microsoft`;
   };
 
   // Google OAuth handler
   const handleGoogleLogin = () => {
     // Redirect to backend OAuth endpoint
-    window.location.href = '/api/v1/auth/google';
+    window.location.href = `${API_URL}/auth/google`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -64,7 +67,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onForgotPassword }) => {
     try {
       if (isLogin) {
         // Login via local backend API
-        const response = await fetch('/api/v1/auth/login', {
+        const response = await fetch(`${API_URL}/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password }),
@@ -83,7 +86,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onForgotPassword }) => {
         onLogin();
       } else {
         // Sign Up via local backend API
-        const response = await fetch('/api/v1/auth/register', {
+        const response = await fetch(`${API_URL}/auth/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password, name }),
