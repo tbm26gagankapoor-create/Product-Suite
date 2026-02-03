@@ -4,8 +4,8 @@
  * stores it in localStorage, and triggers authentication state update.
  */
 
-import React, { useEffect, useState } from 'react';
-import { ChevronsRight, AlertCircle, CheckCircle } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { ChevronsRight, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 
 interface OAuthCallbackProps {
   onSuccess: () => void;
@@ -26,14 +26,20 @@ const ERROR_MESSAGES: Record<string, string> = {
 const OAuthCallback: React.FC<OAuthCallbackProps> = ({ onSuccess, onError }) => {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
+  const [retryCount, setRetryCount] = useState(0);
+  const processedRef = useRef(false);
 
   useEffect(() => {
+    // Prevent double processing
+    if (processedRef.current) return;
+
     const processCallback = () => {
       // Check for error in query params first (from backend redirect on error)
       const urlParams = new URLSearchParams(window.location.search);
       const errorParam = urlParams.get('error');
 
       if (errorParam) {
+        processedRef.current = true;
         const errorMessage = ERROR_MESSAGES[errorParam] || 'An unknown error occurred during sign in.';
         setError(errorMessage);
         setStatus('error');
@@ -43,8 +49,19 @@ const OAuthCallback: React.FC<OAuthCallbackProps> = ({ onSuccess, onError }) => 
 
       // Parse token from URL hash fragment
       const hash = window.location.hash.substring(1);
+
+      // If no hash yet and we haven't retried too many times, wait and retry
       if (!hash) {
-        setError('No authentication data received.');
+        if (retryCount < 10) {
+          // Retry after a short delay - the hash might not be available immediately
+          setTimeout(() => {
+            setRetryCount(prev => prev + 1);
+          }, 200);
+          return;
+        }
+        // After retries, show error
+        processedRef.current = true;
+        setError('No authentication data received. Please try signing in again.');
         setStatus('error');
         return;
       }
@@ -52,10 +69,10 @@ const OAuthCallback: React.FC<OAuthCallbackProps> = ({ onSuccess, onError }) => 
       const params = new URLSearchParams(hash);
       const token = params.get('token');
       const userJson = params.get('user');
-      const isNew = params.get('isNew') === 'true';
 
       if (token && userJson) {
         try {
+          processedRef.current = true;
           const user = JSON.parse(decodeURIComponent(userJson));
 
           // Store in localStorage (matching existing pattern from LoginView)
@@ -71,32 +88,62 @@ const OAuthCallback: React.FC<OAuthCallbackProps> = ({ onSuccess, onError }) => 
           // Brief delay to show success state, then trigger auth callback
           setTimeout(() => {
             onSuccess();
-          }, 500);
+          }, 800);
         } catch (e) {
           console.error('Error processing OAuth callback:', e);
+          processedRef.current = true;
           setError('Failed to process authentication response.');
           setStatus('error');
         }
+      } else if (retryCount < 10) {
+        // Token not ready yet, retry
+        setTimeout(() => {
+          setRetryCount(prev => prev + 1);
+        }, 200);
       } else {
+        processedRef.current = true;
         setError('Invalid authentication response received.');
         setStatus('error');
       }
     };
 
-    processCallback();
-  }, [onSuccess, onError]);
+    // Small initial delay to ensure URL is fully loaded
+    const timer = setTimeout(processCallback, 100);
+    return () => clearTimeout(timer);
+  }, [onSuccess, onError, retryCount]);
 
-  // Loading state
+  // Loading state - branded with animated elements
   if (status === 'processing') {
     return (
       <div className="flex min-h-screen w-full items-center justify-center bg-white dark:bg-[#0B0C0E]">
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-2 mb-6">
-            <ChevronsRight className="text-blue-600" size={32} strokeWidth={2.5} />
-            <span className="font-bold text-xl text-[#172B4D] dark:text-white tracking-widest">INFINIA</span>
+        <div className="flex flex-col items-center gap-6">
+          {/* Logo with gradient animation */}
+          <div className="relative">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/25 animate-pulse">
+              <ChevronsRight className="w-8 h-8 text-white" strokeWidth={2.5} />
+            </div>
+            {/* Spinning ring around logo */}
+            <div className="absolute inset-0 -m-1">
+              <div className="w-[72px] h-[72px] rounded-2xl border-2 border-transparent border-t-blue-500/50 animate-spin" style={{ animationDuration: '1.5s' }} />
+            </div>
           </div>
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-slate-600 dark:text-slate-400 font-medium">Completing sign in...</p>
+
+          {/* App name */}
+          <div className="text-center">
+            <h1 className="text-xl font-bold text-[#172B4D] dark:text-white tracking-tight">
+              Infinia
+            </h1>
+            <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+              Completing sign in...
+            </p>
+          </div>
+
+          {/* Loading dots */}
+          <div className="flex gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '0ms' }} />
+            <div className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+            <div className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
         </div>
       </div>
     );
@@ -106,15 +153,26 @@ const OAuthCallback: React.FC<OAuthCallbackProps> = ({ onSuccess, onError }) => 
   if (status === 'success') {
     return (
       <div className="flex min-h-screen w-full items-center justify-center bg-white dark:bg-[#0B0C0E]">
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-2 mb-6">
-            <ChevronsRight className="text-blue-600" size={32} strokeWidth={2.5} />
-            <span className="font-bold text-xl text-[#172B4D] dark:text-white tracking-widest">INFINIA</span>
+        <div className="flex flex-col items-center gap-6">
+          {/* Success icon */}
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-green-500/25">
+            <CheckCircle className="w-8 h-8 text-white" />
           </div>
-          <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-500/20 flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="text-green-600 dark:text-green-400" size={24} />
+
+          {/* App name */}
+          <div className="text-center">
+            <h1 className="text-xl font-bold text-[#172B4D] dark:text-white tracking-tight">
+              Welcome!
+            </h1>
+            <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+              Sign in successful, loading your workspace...
+            </p>
           </div>
-          <p className="text-slate-600 dark:text-slate-400 font-medium">Sign in successful!</p>
+
+          {/* Progress bar */}
+          <div className="w-48 h-1.5 bg-gray-100 dark:bg-[#1F2128] rounded-full overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full animate-loading-progress" />
+          </div>
         </div>
       </div>
     );
@@ -123,30 +181,34 @@ const OAuthCallback: React.FC<OAuthCallbackProps> = ({ onSuccess, onError }) => 
   // Error state
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-white dark:bg-[#0B0C0E]">
-      <div className="text-center max-w-md px-6">
-        <div className="flex items-center justify-center gap-2 mb-6">
-          <ChevronsRight className="text-blue-600" size={32} strokeWidth={2.5} />
-          <span className="font-bold text-xl text-[#172B4D] dark:text-white tracking-widest">INFINIA</span>
+      <div className="flex flex-col items-center gap-6 max-w-md px-6 text-center">
+        {/* Error icon */}
+        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center shadow-lg shadow-red-500/25">
+          <AlertCircle className="w-8 h-8 text-white" />
         </div>
 
-        <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-500/20 flex items-center justify-center mx-auto mb-4">
-          <AlertCircle className="text-red-600 dark:text-red-400" size={28} />
+        {/* Error message */}
+        <div>
+          <h2 className="text-xl font-bold text-[#172B4D] dark:text-white mb-2">
+            Authentication Failed
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {error}
+          </p>
         </div>
 
-        <h2 className="text-xl font-bold text-[#172B4D] dark:text-white mb-2">
-          Authentication Failed
-        </h2>
-
-        <p className="text-slate-600 dark:text-slate-400 mb-6">
-          {error}
-        </p>
-
+        {/* Return button */}
         <a
           href="/"
-          className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-xl shadow-lg shadow-blue-500/20 transition-all duration-200"
+          className="flex items-center justify-center gap-2 px-6 py-3 bg-[#172B4D] dark:bg-white text-white dark:text-[#172B4D] font-medium rounded-xl hover:opacity-90 transition-all shadow-lg"
         >
           Return to Login
         </a>
+
+        {/* Help text */}
+        <p className="text-xs text-gray-400 dark:text-gray-500">
+          If the problem persists, please contact support
+        </p>
       </div>
     </div>
   );
