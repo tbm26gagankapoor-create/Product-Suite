@@ -57,10 +57,11 @@ interface DocGroup {
 }
 
 const INITIAL_GROUPS: DocGroup[] = [
-    { title: 'Strategy', items: ['prd', 'roadmap'] },
+    { title: 'Strategy', items: ['prd', 'roadmap', 'modules'] },
     { title: 'Architecture', items: ['business', 'data', 'app', 'tech'] },
-    { title: 'Implementation', items: ['design', 'adrs', 'specs'] },
-    { title: 'Workflows', items: ['biz-flow', 'sys-flow', 'integrations'] }
+    { title: 'Design', items: ['design-guidelines', 'design'] },
+    { title: 'Implementation', items: ['adrs', 'specs'] },
+    { title: 'User Experience', items: ['user-flows', 'biz-flow', 'sys-flow', 'integrations'] }
 ];
 
 // Helper for relative time

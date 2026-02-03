@@ -13,7 +13,8 @@ import {
   CalendarRange,
   Pencil,
   X,
-  AlertTriangle
+  AlertTriangle,
+  Rocket
 } from 'lucide-react';
 import { Task } from '../types';
 import { useProjectData } from '../context/ProjectDataContext';
@@ -22,6 +23,8 @@ import { sprintsService } from '../services/sprints.service';
 import KanbanBoard from './KanbanBoard';
 import ListView from './ListView';
 import TimelineView from './TimelineView';
+import SprintGoalsTracker from './SprintGoalsTracker';
+import SprintRetrospectiveModal from './SprintRetrospectiveModal';
 
 interface SprintDetailViewProps {
   sprintId: string;
@@ -29,7 +32,7 @@ interface SprintDetailViewProps {
 }
 
 const SprintDetailView: React.FC<SprintDetailViewProps> = ({ sprintId, onBack }) => {
-  const { sprints, tasks, updateTask, updateSprint, organizationUsers: users, projects, refreshData } = useProjectData();
+  const { sprints, tasks, updateTask, updateSprint, startSprint, organizationUsers: users, projects, refreshData } = useProjectData();
   const [activeTab, setActiveTab] = useState<'board' | 'list' | 'timeline'>('board');
 
   // Edit Sprint Modal state
@@ -40,6 +43,14 @@ const SprintDetailView: React.FC<SprintDetailViewProps> = ({ sprintId, onBack })
   // Complete Sprint Modal state
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
+  const [carryOverOption, setCarryOverOption] = useState<'backlog' | 'nextSprint'>('backlog');
+  const [selectedCarryOverSprintId, setSelectedCarryOverSprintId] = useState<string>('');
+
+  // Start Sprint state
+  const [isStarting, setIsStarting] = useState(false);
+
+  // Retrospective Modal state
+  const [showRetroModal, setShowRetroModal] = useState(false);
 
   const sprint = sprints.find(s => s.id === sprintId);
   const sprintTasks = tasks.filter(t => t.sprintId === sprintId);
@@ -157,13 +168,26 @@ const SprintDetailView: React.FC<SprintDetailViewProps> = ({ sprintId, onBack })
   // Get incomplete tasks count for confirmation modal
   const incompleteTasks = sprintTasks.filter(t => t.columnId !== 'done');
 
+  // Get available sprints for carry-over (planned sprints in the same project, excluding current)
+  const availableCarryOverSprints = sprints.filter(
+    s => s.projectId === sprint?.projectId && s.id !== sprintId && s.status === 'planned'
+  );
+
   // Handle Complete Sprint
   const handleCompleteSprint = async () => {
     setIsCompleting(true);
     try {
-      // Move incomplete tasks to backlog (remove sprint assignment)
-      for (const task of incompleteTasks) {
-        await updateTask({ ...task, sprintId: undefined });
+      // Handle incomplete tasks based on carry-over option
+      if (carryOverOption === 'backlog') {
+        // Move incomplete tasks to backlog (remove sprint assignment)
+        for (const task of incompleteTasks) {
+          await updateTask({ ...task, sprintId: undefined });
+        }
+      } else if (carryOverOption === 'nextSprint' && selectedCarryOverSprintId) {
+        // Move incomplete tasks to the selected sprint
+        for (const task of incompleteTasks) {
+          await updateTask({ ...task, sprintId: selectedCarryOverSprintId });
+        }
       }
 
       // Complete the sprint via API
@@ -183,6 +207,9 @@ const SprintDetailView: React.FC<SprintDetailViewProps> = ({ sprintId, onBack })
       });
 
       setShowCompleteModal(false);
+      // Reset carry-over state
+      setCarryOverOption('backlog');
+      setSelectedCarryOverSprintId('');
 
       // Refresh data to sync state
       await refreshData();
@@ -190,6 +217,31 @@ const SprintDetailView: React.FC<SprintDetailViewProps> = ({ sprintId, onBack })
       console.error('Failed to complete sprint:', error);
     } finally {
       setIsCompleting(false);
+    }
+  };
+
+  // Handle Start Sprint (for planned sprints)
+  const handleStartSprint = async () => {
+    setIsStarting(true);
+    try {
+      await startSprint(sprint.id);
+
+      // Log activity
+      await activityService.log({
+        entityType: 'sprint',
+        entityId: sprint.id,
+        action: 'updated',
+        fieldChanged: 'status',
+        oldValue: 'planned',
+        newValue: 'active'
+      });
+
+      // Refresh data to sync state
+      await refreshData();
+    } catch (error) {
+      console.error('Failed to start sprint:', error);
+    } finally {
+      setIsStarting(false);
     }
   };
 
@@ -239,6 +291,16 @@ const SprintDetailView: React.FC<SprintDetailViewProps> = ({ sprintId, onBack })
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
+                    {sprint.status === 'planned' && (
+                        <button
+                            onClick={handleStartSprint}
+                            disabled={isStarting}
+                            className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-bold transition-colors flex items-center gap-2 disabled:opacity-50"
+                        >
+                            <Rocket size={14} />
+                            {isStarting ? 'Starting...' : 'Start Sprint'}
+                        </button>
+                    )}
                     <button
                         onClick={handleOpenEditModal}
                         className="px-4 py-2 border border-gray-200 dark:border-[#2D2F36] rounded-lg text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1F2128] transition-colors flex items-center gap-2"
@@ -249,6 +311,14 @@ const SprintDetailView: React.FC<SprintDetailViewProps> = ({ sprintId, onBack })
                     <button className="px-4 py-2 border border-gray-200 dark:border-[#2D2F36] rounded-lg text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1F2128] transition-colors">
                         Sprint Reports
                     </button>
+                    {sprint.status === 'completed' && (
+                        <button
+                            onClick={() => setShowRetroModal(true)}
+                            className="px-4 py-2 border border-purple-200 dark:border-purple-500/30 bg-purple-50 dark:bg-purple-500/10 rounded-lg text-sm font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-colors"
+                        >
+                            Retrospective
+                        </button>
+                    )}
                     {sprint.status !== 'completed' && (
                         <button
                             onClick={() => setShowCompleteModal(true)}
@@ -331,6 +401,11 @@ const SprintDetailView: React.FC<SprintDetailViewProps> = ({ sprintId, onBack })
                 </div>
             </div>
         </div>
+
+        {/* Sprint Goals Tracker */}
+        {sprint.goal && (
+            <SprintGoalsTracker sprintId={sprint.id} goalText={sprint.goal} />
+        )}
 
         {/* View Toggle */}
         <div className="flex items-center gap-6 mt-8 border-b border-gray-200 dark:border-[#1F2128]">
@@ -485,34 +560,81 @@ const SprintDetailView: React.FC<SprintDetailViewProps> = ({ sprintId, onBack })
               </p>
 
               {incompleteTasks.length > 0 && (
-                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-4">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle size={20} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
-                        {incompleteTasks.length} incomplete task{incompleteTasks.length !== 1 ? 's' : ''} will be moved to backlog
-                      </p>
-                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                        Tasks not marked as "Done" will be removed from this sprint and moved to the backlog.
-                      </p>
+                <div className="space-y-4">
+                  {/* Carry-over options */}
+                  <div className="bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-lg p-4">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                      What should happen to {incompleteTasks.length} incomplete task{incompleteTasks.length !== 1 ? 's' : ''}?
+                    </p>
+                    <div className="space-y-3">
+                      {/* Backlog option */}
+                      <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="carryOver"
+                          value="backlog"
+                          checked={carryOverOption === 'backlog'}
+                          onChange={() => setCarryOverOption('backlog')}
+                          className="mt-1 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        <div>
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Move to backlog</span>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Tasks will be unassigned from any sprint</p>
+                        </div>
+                      </label>
+
+                      {/* Carry to next sprint option */}
+                      <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="carryOver"
+                          value="nextSprint"
+                          checked={carryOverOption === 'nextSprint'}
+                          onChange={() => setCarryOverOption('nextSprint')}
+                          disabled={availableCarryOverSprints.length === 0}
+                          className="mt-1 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500 disabled:opacity-50"
+                        />
+                        <div className="flex-1">
+                          <span className={`text-sm font-medium ${availableCarryOverSprints.length === 0 ? 'text-gray-400' : 'text-gray-700 dark:text-gray-200'}`}>
+                            Carry over to next sprint
+                          </span>
+                          {availableCarryOverSprints.length === 0 ? (
+                            <p className="text-xs text-gray-400 mt-0.5">No planned sprints available</p>
+                          ) : (
+                            <select
+                              value={selectedCarryOverSprintId}
+                              onChange={(e) => setSelectedCarryOverSprintId(e.target.value)}
+                              disabled={carryOverOption !== 'nextSprint'}
+                              className="mt-2 w-full px-3 py-2 text-sm border border-gray-200 dark:border-[#2D2F36] rounded-lg bg-white dark:bg-[#15171E] text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                            >
+                              <option value="">Select a sprint...</option>
+                              {availableCarryOverSprints.map(s => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      </label>
                     </div>
                   </div>
-                </div>
-              )}
 
-              {incompleteTasks.length > 0 && (
-                <div className="max-h-32 overflow-y-auto border border-gray-200 dark:border-[#2D2F36] rounded-lg divide-y divide-gray-100 dark:divide-[#2D2F36]">
-                  {incompleteTasks.slice(0, 5).map(task => (
-                    <div key={task.id} className="px-3 py-2 text-sm">
-                      <span className="font-mono text-xs text-gray-500 mr-2">{task.id}</span>
-                      <span className="text-gray-700 dark:text-gray-300">{task.title}</span>
+                  {/* Incomplete tasks list */}
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">Incomplete Tasks</p>
+                    <div className="max-h-32 overflow-y-auto border border-gray-200 dark:border-[#2D2F36] rounded-lg divide-y divide-gray-100 dark:divide-[#2D2F36]">
+                      {incompleteTasks.slice(0, 5).map(task => (
+                        <div key={task.id} className="px-3 py-2 text-sm">
+                          <span className="font-mono text-xs text-gray-500 mr-2">{task.id}</span>
+                          <span className="text-gray-700 dark:text-gray-300">{task.title}</span>
+                        </div>
+                      ))}
+                      {incompleteTasks.length > 5 && (
+                        <div className="px-3 py-2 text-sm text-gray-500 italic">
+                          ...and {incompleteTasks.length - 5} more
+                        </div>
+                      )}
                     </div>
-                  ))}
-                  {incompleteTasks.length > 5 && (
-                    <div className="px-3 py-2 text-sm text-gray-500 italic">
-                      ...and {incompleteTasks.length - 5} more
-                    </div>
-                  )}
+                  </div>
                 </div>
               )}
 
@@ -536,7 +658,7 @@ const SprintDetailView: React.FC<SprintDetailViewProps> = ({ sprintId, onBack })
               </button>
               <button
                 onClick={handleCompleteSprint}
-                disabled={isCompleting}
+                disabled={isCompleting || (carryOverOption === 'nextSprint' && !selectedCarryOverSprintId && incompleteTasks.length > 0)}
                 className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
               >
                 {isCompleting ? 'Completing...' : 'Complete Sprint'}
@@ -545,6 +667,15 @@ const SprintDetailView: React.FC<SprintDetailViewProps> = ({ sprintId, onBack })
           </div>
         </div>
       )}
+
+      {/* Retrospective Modal */}
+      <SprintRetrospectiveModal
+        isOpen={showRetroModal}
+        onClose={() => setShowRetroModal(false)}
+        sprintId={sprint.id}
+        sprintName={sprint.name}
+        users={users}
+      />
 
     </div>
   );

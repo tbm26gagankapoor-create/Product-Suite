@@ -40,11 +40,11 @@ const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
   const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
 
   const handleCreateProduct = async (productData: any) => {
-      const newProjectId = `p-${Date.now()}`;
+      const tempProjectId = `p-${Date.now()}`;
       const projectKey = productData.name.substring(0, 3).toUpperCase();
-      
+
       const newProject: Project = {
-          id: newProjectId,
+          id: tempProjectId,
           name: productData.name,
           key: projectKey,
           description: productData.description,
@@ -61,18 +61,19 @@ const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
           docs: productData.docs,
           vision: productData.vision || ''
       };
-      
-      // 1. Create Project
-      await addProject(newProject);
+
+      // 1. Create Project - use saved project ID from backend
+      const savedProject = await addProject(newProject);
+      const projectId = savedProject?.id || tempProjectId;
 
       // 2. Create Epics & Tasks
       if (productData.epics && Array.isArray(productData.epics)) {
           for (const epicData of productData.epics) {
-              const epicId = generateNextId(newProjectId, 'epic');
-              
+              const epicId = generateNextId(projectId, 'epic');
+
               const newEpic: Task = {
                   id: epicId,
-                  projectId: newProjectId,
+                  projectId: projectId,
                   title: epicData.title,
                   description: epicData.description,
                   columnId: 'todo',
@@ -92,12 +93,12 @@ const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
 
               if (epicData.tasks && Array.isArray(epicData.tasks)) {
                   for (const taskData of epicData.tasks) {
-                      const taskId = generateNextId(newProjectId, 'task');
+                      const taskId = generateNextId(projectId, 'task');
                       const assignee = users.find((u: User) => u.id === taskData.assigneeId) || users[0];
-                      
+
                       const newTask: Task = {
                           id: taskId,
-                          projectId: newProjectId,
+                          projectId: projectId,
                           title: taskData.title,
                           description: taskData.description,
                           columnId: 'todo',

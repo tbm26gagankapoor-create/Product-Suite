@@ -11,10 +11,17 @@ router.use(authMiddleware);
 // Get all teams (filtered by user's organizations)
 router.get('/', async (req: AuthRequest, res: Response) => {
   const user = req.user;
+  const { member_id } = req.query;
 
   // If no user, return empty list
   if (!user) {
     return res.json({ success: true, data: [] });
+  }
+
+  // If member_id filter is provided, get teams where that user is a member
+  if (member_id) {
+    const teams = await teamsService.getTeamsForUser(member_id as string);
+    return res.json({ success: true, data: teams });
   }
 
   // Get user's organization memberships

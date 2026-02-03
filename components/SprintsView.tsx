@@ -41,7 +41,8 @@ interface SprintsViewProps {
 }
 
 const SprintsView: React.FC<SprintsViewProps> = ({ onProjectSelect }) => {
-  const { sprints, tasks, projects, addSprint } = useProjectData();
+  const { sprints, tasks, projects, addSprint, startSprint, refreshData } = useProjectData();
+  const [startingSprintId, setStartingSprintId] = useState<string | null>(null);
   const [selectedSprintId, setSelectedSprintId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'All' | 'Active' | 'Planned' | 'Completed'>('Active');
   const [isSprintModalOpen, setIsSprintModalOpen] = useState(false);
@@ -174,6 +175,20 @@ const SprintsView: React.FC<SprintsViewProps> = ({ onProjectSelect }) => {
       return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   };
 
+  // Handle starting a planned sprint
+  const handleStartSprint = async (sprintId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setStartingSprintId(sprintId);
+    try {
+      await startSprint(sprintId);
+      await refreshData();
+    } catch (error) {
+      console.error('Failed to start sprint:', error);
+    } finally {
+      setStartingSprintId(null);
+    }
+  };
+
   const handleCreateSprint = (data: { name: string; startDate: string; endDate: string; goal: string; projectId?: string }) => {
       // projectId is now required for sprint-to-product uniqueness
       const projectId = data.projectId || projects[0]?.id;
@@ -259,12 +274,12 @@ const SprintsView: React.FC<SprintsViewProps> = ({ onProjectSelect }) => {
                         />
                      </div>
                      <div className="h-8 w-px bg-gray-200 dark:bg-[#2D2F36] mx-1"></div>
-                     <button 
+                     <button
                         onClick={() => setIsSprintModalOpen(true)}
                         className="flex items-center gap-2 bg-[#0052CC] hover:bg-[#0065FF] text-white px-4 py-2 rounded-lg font-bold transition-all shadow-sm text-sm"
                      >
                         <Plus size={16} strokeWidth={3} />
-                        <span>Start Sprint</span>
+                        <span>Plan New Sprint</span>
                      </button>
                 </div>
             </div>
@@ -379,10 +394,27 @@ const SprintsView: React.FC<SprintsViewProps> = ({ onProjectSelect }) => {
                                     <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-lg shadow-gray-200 dark:shadow-none transform group-hover:scale-110 transition-transform duration-300`}>
                                         <Icon size={28} strokeWidth={1.5} />
                                     </div>
-                                    <div className="flex gap-2">
+                                    <div className="flex items-center gap-2">
                                         <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-medium uppercase tracking-wide bg-gray-100 dark:bg-[#2D2F36] text-gray-600 dark:text-gray-300">
                                             {sprint.status}
                                         </span>
+                                        {sprint.status === 'planned' && (
+                                            <button
+                                                onClick={(e) => handleStartSprint(sprint.id, e)}
+                                                disabled={startingSprintId === sprint.id}
+                                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-green-500 hover:bg-green-600 text-white transition-colors disabled:opacity-50"
+                                                title="Start this sprint"
+                                            >
+                                                {startingSprintId === sprint.id ? (
+                                                    <span className="animate-pulse">Starting...</span>
+                                                ) : (
+                                                    <>
+                                                        <Rocket size={10} />
+                                                        Start
+                                                    </>
+                                                )}
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
 
@@ -518,10 +550,20 @@ const SprintsView: React.FC<SprintsViewProps> = ({ onProjectSelect }) => {
                                     </div>
 
                                     {/* Status */}
-                                    <div>
+                                    <div className="flex items-center gap-2">
                                         <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-gray-100 dark:bg-[#2D2F36] text-gray-600 dark:text-gray-300">
                                             {sprint.status}
                                         </span>
+                                        {sprint.status === 'planned' && (
+                                            <button
+                                                onClick={(e) => handleStartSprint(sprint.id, e)}
+                                                disabled={startingSprintId === sprint.id}
+                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-green-500 hover:bg-green-600 text-white transition-colors disabled:opacity-50"
+                                                title="Start this sprint"
+                                            >
+                                                {startingSprintId === sprint.id ? '...' : 'Start'}
+                                            </button>
+                                        )}
                                     </div>
 
                                     {/* Project */}

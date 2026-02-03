@@ -242,11 +242,21 @@ export const api = {
   },
 
   // Users
-  async getUsers(): Promise<User[]> {
-    const response = await fetch(`${API_BASE}/users`, { headers: getAuthHeaders() });
+  async getUsers(filters?: { team_id?: string }): Promise<User[]> {
+    const params = new URLSearchParams();
+    if (filters?.team_id) params.append('team_id', filters.team_id);
+    const queryString = params.toString();
+    const url = queryString ? `${API_BASE}/users?${queryString}` : `${API_BASE}/users`;
+
+    const response = await fetch(url, { headers: getAuthHeaders() });
     const data = await response.json();
     if (!data.success) return [];
     return (data.data || []).map(mapUserFromDB);
+  },
+
+  // Get users in a specific team
+  async getUsersInTeam(teamId: string): Promise<User[]> {
+    return this.getUsers({ team_id: teamId });
   },
 
   async updateUser(id: string, updates: Partial<User>): Promise<User> {
@@ -272,11 +282,21 @@ export const api = {
   },
 
   // Teams
-  async getTeams(): Promise<Team[]> {
-    const response = await fetch(`${API_BASE}/teams`, { headers: getAuthHeaders() });
+  async getTeams(filters?: { member_id?: string }): Promise<Team[]> {
+    const params = new URLSearchParams();
+    if (filters?.member_id) params.append('member_id', filters.member_id);
+    const queryString = params.toString();
+    const url = queryString ? `${API_BASE}/teams?${queryString}` : `${API_BASE}/teams`;
+
+    const response = await fetch(url, { headers: getAuthHeaders() });
     const data = await response.json();
     if (!data.success) return [];
     return (data.data || []).map(mapTeamFromDB);
+  },
+
+  // Get teams where a specific user is a member
+  async getTeamsForUser(userId: string): Promise<Team[]> {
+    return this.getTeams({ member_id: userId });
   },
 
   async createTeam(team: Team): Promise<Team> {
@@ -295,11 +315,21 @@ export const api = {
   },
 
   // Projects
-  async getProjects(): Promise<Project[]> {
-    const response = await fetch(`${API_BASE}/projects`, { headers: getAuthHeaders() });
+  async getProjects(filters?: { member_id?: string }): Promise<Project[]> {
+    const params = new URLSearchParams();
+    if (filters?.member_id) params.append('member_id', filters.member_id);
+    const queryString = params.toString();
+    const url = queryString ? `${API_BASE}/projects?${queryString}` : `${API_BASE}/projects`;
+
+    const response = await fetch(url, { headers: getAuthHeaders() });
     const data = await response.json();
     if (!data.success) return [];
     return (data.data || []).map(mapProjectFromDB);
+  },
+
+  // Get projects where a specific user is a member
+  async getProjectsForUser(userId: string): Promise<Project[]> {
+    return this.getProjects({ member_id: userId });
   },
 
   async createProject(project: Project): Promise<Project> {
@@ -338,8 +368,18 @@ export const api = {
   },
 
   // Tasks & Epics
-  async getTasks(users: User[]): Promise<Task[]> {
-    const response = await fetch(`${API_BASE}/tasks`, { headers: getAuthHeaders() });
+  async getTasks(users: User[], filters?: { project_id?: string; sprint_id?: string; assignee_id?: string; reporter_id?: string; user_id?: string }): Promise<Task[]> {
+    const params = new URLSearchParams();
+    if (filters?.project_id) params.append('project_id', filters.project_id);
+    if (filters?.sprint_id) params.append('sprint_id', filters.sprint_id);
+    if (filters?.assignee_id) params.append('assignee_id', filters.assignee_id);
+    if (filters?.reporter_id) params.append('reporter_id', filters.reporter_id);
+    if (filters?.user_id) params.append('user_id', filters.user_id);
+
+    const queryString = params.toString();
+    const url = queryString ? `${API_BASE}/tasks?${queryString}` : `${API_BASE}/tasks`;
+
+    const response = await fetch(url, { headers: getAuthHeaders() });
     const data = await response.json();
     if (!data.success) return [];
     return (data.data || []).map((t: any) => mapTaskFromDB(t, users));

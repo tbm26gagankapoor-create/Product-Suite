@@ -1,28 +1,34 @@
 
-import { 
-  FileText, 
-  Activity, 
-  Briefcase, 
-  Database, 
-  Layout, 
-  Server, 
-  Layers, 
-  GitBranch, 
-  Code, 
-  FileJson 
+import {
+  FileText,
+  Activity,
+  Briefcase,
+  Database,
+  Layout,
+  Server,
+  Layers,
+  GitBranch,
+  Code,
+  FileJson,
+  Boxes,
+  Palette,
+  Route
 } from 'lucide-react';
 import { Column, User, Sprint, Team, Project } from './types';
 
 export const DOC_NAV_ITEMS = [
     { id: 'prd', label: 'PRD Requirements', icon: FileText },
     { id: 'roadmap', label: 'Roadmap', icon: Activity },
+    { id: 'modules', label: 'Modules', icon: Boxes },
     { id: 'business', label: 'Business Architecture', icon: Briefcase },
     { id: 'data', label: 'Data Architecture', icon: Database },
     { id: 'app', label: 'Application Architecture', icon: Layout },
     { id: 'tech', label: 'Technology Architecture', icon: Server },
+    { id: 'design-guidelines', label: 'Design Guidelines', icon: Palette },
     { id: 'design', label: 'Design Documents', icon: Layers },
     { id: 'adrs', label: 'ADRs', icon: GitBranch },
     { id: 'specs', label: 'Technical Specifications', icon: Code },
+    { id: 'user-flows', label: 'User Flows', icon: Route },
     { id: 'biz-flow', label: 'Business Workflows', icon: GitBranch },
     { id: 'sys-flow', label: 'System Workflows', icon: Activity },
     { id: 'integrations', label: 'Integration Workflows', icon: FileJson },

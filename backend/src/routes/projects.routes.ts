@@ -10,10 +10,17 @@ router.use(authMiddleware);
 // Get all projects (filtered by user access)
 router.get('/', async (req: AuthRequest, res: Response) => {
   const user = req.user;
+  const { member_id } = req.query;
 
   // If no user (not logged in), return empty list
   if (!user) {
     return res.json({ success: true, data: [] });
+  }
+
+  // If member_id filter is provided, get projects where that user is a member
+  if (member_id) {
+    const projects = await projectsService.getByMemberId(member_id as string);
+    return res.json({ success: true, data: projects });
   }
 
   const projects = await projectsService.getAllForUser(user.id, user.isAdmin);
@@ -63,7 +70,7 @@ router.get('/code/:code', async (req: AuthRequest, res: Response) => {
 // Create project
 router.post('/', async (req: AuthRequest, res: Response) => {
   const user = req.user;
-  const { name, description, code, owner_id, image_url, icon, icon_color } = req.body;
+  const { name, description, code, owner_id, image_url, icon, icon_color, vision, prd, docs } = req.body;
 
   if (!name || !code) {
     return res.status(400).json({
@@ -75,7 +82,12 @@ router.post('/', async (req: AuthRequest, res: Response) => {
   try {
     // Set owner to current user if not specified
     const actualOwnerId = owner_id || user?.id;
-    const project = await projectsService.create({ name, description, code, owner_id: actualOwnerId, image_url, icon, icon_color });
+    const project = await projectsService.create({
+      name, description, code,
+      owner_id: actualOwnerId,
+      image_url, icon, icon_color,
+      vision, prd, docs
+    });
 
     // Automatically add the creator as a project member
     if (user && actualOwnerId === user.id) {

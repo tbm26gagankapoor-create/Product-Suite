@@ -71,13 +71,40 @@ type TaskFilter = 'all' | 'inprogress' | 'blocked' | 'done' | 'high';
 const UserDetail: React.FC<UserDetailProps> = ({ userId, onBack, onSelectTeam }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'context'>('overview');
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
-  // Use organization-scoped data
-  const { tasks, organizationTeams, organizationUsers, projects } = useProjectData();
+  // Use organization-scoped data for user lookup only
+  const { organizationUsers, users } = useProjectData();
+
+  // Fetch user-specific data from API (tasks, teams, projects)
+  const [userTasks, setUserTasks] = useState<any[]>([]);
+  const [userTeams, setUserTeams] = useState<any[]>([]);
+  const [userProjects, setUserProjects] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      setIsLoading(true);
+      try {
+        const [tasksData, teamsData, projectsData] = await Promise.all([
+          api.getTasks(users, { assignee_id: userId }),
+          api.getTeamsForUser(userId),
+          api.getProjectsForUser(userId),
+        ]);
+        setUserTasks(tasksData);
+        setUserTeams(teamsData);
+        setUserProjects(projectsData);
+      } catch (error) {
+        console.error('Failed to fetch user data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchUserData();
+  }, [userId, users]);
 
   const user = organizationUsers.find(u => u.id === userId);
   if (!user) return <div>User not found</div>;
+  if (isLoading) return <div className="flex items-center justify-center h-64 text-gray-500">Loading user data...</div>;
 
-  const userTasks = tasks.filter(t => t.assignee?.id === userId);
   const completedTasks = userTasks.filter(t => t.columnId === 'done');
   const activeTasks = userTasks.filter(t => t.columnId !== 'done');
   const inProgressTasks = userTasks.filter(t => t.columnId === 'inprogress');
@@ -86,9 +113,6 @@ const UserDetail: React.FC<UserDetailProps> = ({ userId, onBack, onSelectTeam })
   const pointsWon = completedTasks.reduce((acc, t) => acc + (t.points || 0), 0);
   const pointsPending = activeTasks.reduce((acc, t) => acc + (t.points || 0), 0);
   const completionRate = userTasks.length > 0 ? Math.round((completedTasks.length / userTasks.length) * 100) : 0;
-
-  const userTeams = organizationTeams.filter(t => t.members.includes(userId));
-  const userProjects = projects.filter(p => p.members.includes(userId));
 
   // Get high priority tasks
   const highPriorityTasks = activeTasks.filter(t => t.priority === 'HIGH');
@@ -485,14 +509,56 @@ interface TeamDetailProps {
 }
 
 const TeamDetail: React.FC<TeamDetailProps> = ({ team, onBack }) => {
-  // Use organization-scoped users
-  const { organizationUsers, projects, tasks } = useProjectData();
-  const teamMembers = organizationUsers.filter(u => team.members.includes(u.id));
-  const teamProjects = projects.filter(p => team.projectIds.includes(p.id));
+  const { users, projects } = useProjectData();
 
-  // Calculate task stats for each member
+  // Fetch team-specific data from API
+  const [teamMembers, setTeamMembers] = useState<User[]>([]);
+  const [memberTasksMap, setMemberTasksMap] = useState<Map<string, any[]>>(new Map());
+  const [projectTasksMap, setProjectTasksMap] = useState<Map<string, any[]>>(new Map());
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Get team projects from context (filtered by team.projectIds)
+  const teamProjects = projects.filter(p => team.projectIds?.includes(p.id));
+
+  useEffect(() => {
+    const fetchTeamData = async () => {
+      setIsLoading(true);
+      try {
+        // Get team members from API
+        const members = await api.getUsersInTeam(team.id);
+        setTeamMembers(members);
+
+        // Fetch tasks for each member
+        const tasksMap = new Map<string, any[]>();
+        await Promise.all(
+          members.map(async (member) => {
+            const memberTasks = await api.getTasks(users, { assignee_id: member.id });
+            tasksMap.set(member.id, memberTasks);
+          })
+        );
+        setMemberTasksMap(tasksMap);
+
+        // Fetch tasks for each project
+        const projTasksMap = new Map<string, any[]>();
+        await Promise.all(
+          (team.projectIds || []).map(async (projectId: string) => {
+            const projTasks = await api.getTasks(users, { project_id: projectId });
+            projTasksMap.set(projectId, projTasks);
+          })
+        );
+        setProjectTasksMap(projTasksMap);
+      } catch (error) {
+        console.error('Failed to fetch team data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchTeamData();
+  }, [team.id, team.projectIds, users]);
+
+  // Calculate task stats for each member using API-fetched data
   const getMemberStats = (memberId: string) => {
-    const memberTasks = tasks.filter(t => t.assignee?.id === memberId);
+    const memberTasks = memberTasksMap.get(memberId) || [];
     const completed = memberTasks.filter(t => t.columnId === 'done').length;
     const inProgress = memberTasks.filter(t => t.columnId === 'inprogress').length;
     const blocked = memberTasks.filter(t => t.columnId === 'blocked').length;
@@ -508,6 +574,8 @@ const TeamDetail: React.FC<TeamDetailProps> = ({ team, onBack }) => {
     totalPoints: teamMembers.reduce((acc, m) => acc + getMemberStats(m.id).totalPoints, 0),
     completedPoints: teamMembers.reduce((acc, m) => acc + getMemberStats(m.id).completedPoints, 0),
   };
+
+  if (isLoading) return <div className="flex items-center justify-center h-64 text-gray-500">Loading team data...</div>;
 
   return (
     <div className="flex-1 overflow-y-auto bg-white dark:bg-[#0B0C0E] p-8 custom-scrollbar animate-in fade-in slide-in-from-right-4 duration-300 h-full">
@@ -638,9 +706,9 @@ const TeamDetail: React.FC<TeamDetailProps> = ({ team, onBack }) => {
               </div>
             ) : (
               teamProjects.map(project => {
-                const projectTasks = tasks.filter(t => t.projectId === project.id);
-                const projectCompleted = projectTasks.filter(t => t.columnId === 'done').length;
-                const projectInProgress = projectTasks.filter(t => t.columnId === 'inprogress').length;
+                const projectTasks = projectTasksMap.get(project.id) || [];
+                const projectCompleted = projectTasks.filter((t: any) => t.columnId === 'done').length;
+                const projectInProgress = projectTasks.filter((t: any) => t.columnId === 'inprogress').length;
                 return (
                   <div key={project.id} className="p-4 hover:bg-gray-50 dark:hover:bg-[#1F2128]/50 transition-colors cursor-pointer group">
                     <div className="flex items-center gap-4">

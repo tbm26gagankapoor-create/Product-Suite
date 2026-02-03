@@ -50,6 +50,31 @@ export interface Subtask {
   created_at: string;
 }
 
+export interface TaskLink {
+  id: string;
+  blocking_task_id: string;
+  blocked_task_id: string;
+  link_type: 'blocks' | 'relates_to' | 'duplicates';
+  created_by: string | null;
+  created_at: string;
+  blocking_task?: {
+    id: string;
+    task_key: string;
+    title: string;
+    type: string;
+    priority: string;
+    column_id: string;
+  };
+  blocked_task?: {
+    id: string;
+    task_key: string;
+    title: string;
+    type: string;
+    priority: string;
+    column_id: string;
+  };
+}
+
 export interface CreateTaskInput {
   project_id: string;
   title: string;
@@ -63,6 +88,7 @@ export interface CreateTaskInput {
   column_id?: string;
   due_date?: string;
   start_date?: string;
+  parent_epic_id?: string;
 }
 
 export interface TaskWithDetails extends Task {
@@ -92,7 +118,7 @@ async function generateTaskKey(projectId: string): Promise<string> {
 }
 
 export const tasksService = {
-  async getAll(filters?: { project_id?: string; sprint_id?: string; assignee_id?: string }): Promise<TaskWithDetails[]> {
+  async getAll(filters?: { project_id?: string; sprint_id?: string; assignee_id?: string; reporter_id?: string; user_id?: string }): Promise<TaskWithDetails[]> {
     let tasks: Task[];
 
     if (filters?.project_id) {
@@ -107,6 +133,13 @@ export const tasksService = {
     }
     if (filters?.assignee_id) {
       tasks = tasks.filter(t => t.assignee_id === filters.assignee_id);
+    }
+    if (filters?.reporter_id) {
+      tasks = tasks.filter(t => t.reporter_id === filters.reporter_id);
+    }
+    // user_id filter: tasks where user is assignee OR reporter
+    if (filters?.user_id) {
+      tasks = tasks.filter(t => t.assignee_id === filters.user_id || t.reporter_id === filters.user_id);
     }
 
     // Enrich tasks with details
@@ -178,7 +211,7 @@ export const tasksService = {
       project_id: input.project_id,
       column_id: columnId || '',
       sprint_id: input.sprint_id || null,
-      parent_epic_id: null,
+      parent_epic_id: input.parent_epic_id || null,
       title: input.title,
       description: input.description || null,
       type: input.type || 'task',
@@ -288,5 +321,104 @@ export const tasksService = {
 
   async deleteSubtask(subtaskId: string): Promise<boolean> {
     return database.delete('subtasks', subtaskId);
+  },
+
+  // ============================================
+  // Task Links (Dependencies)
+  // ============================================
+
+  async getTaskLinks(taskId: string): Promise<{ blockedBy: TaskLink[]; blocks: TaskLink[] }> {
+    // Get links where this task is blocked by others
+    const blockedByLinks = await database.findMany<TaskLink>('task_links', { blocked_task_id: taskId });
+    // Get links where this task blocks others
+    const blocksLinks = await database.findMany<TaskLink>('task_links', { blocking_task_id: taskId });
+
+    // Enrich with task details
+    const enrichedBlockedBy = await Promise.all(blockedByLinks.map(async (link) => {
+      const blockingTask = await database.findById<Task>('tasks', link.blocking_task_id);
+      return {
+        ...link,
+        blocking_task: blockingTask ? {
+          id: blockingTask.id,
+          task_key: blockingTask.task_key,
+          title: blockingTask.title,
+          type: blockingTask.type,
+          priority: blockingTask.priority,
+          column_id: blockingTask.column_id,
+        } : undefined,
+      };
+    }));
+
+    const enrichedBlocks = await Promise.all(blocksLinks.map(async (link) => {
+      const blockedTask = await database.findById<Task>('tasks', link.blocked_task_id);
+      return {
+        ...link,
+        blocked_task: blockedTask ? {
+          id: blockedTask.id,
+          task_key: blockedTask.task_key,
+          title: blockedTask.title,
+          type: blockedTask.type,
+          priority: blockedTask.priority,
+          column_id: blockedTask.column_id,
+        } : undefined,
+      };
+    }));
+
+    return { blockedBy: enrichedBlockedBy, blocks: enrichedBlocks };
+  },
+
+  async addTaskLink(blockedTaskId: string, blockingTaskId: string, linkType: string = 'blocks', createdBy?: string): Promise<TaskLink> {
+    const link: TaskLink = {
+      id: generateUUID(),
+      blocking_task_id: blockingTaskId,
+      blocked_task_id: blockedTaskId,
+      link_type: (linkType as 'blocks' | 'relates_to' | 'duplicates') || 'blocks',
+      created_by: createdBy || null,
+      created_at: now(),
+    };
+
+    await database.insert('task_links', link);
+
+    // Return enriched link
+    const blockingTask = await database.findById<Task>('tasks', blockingTaskId);
+    return {
+      ...link,
+      blocking_task: blockingTask ? {
+        id: blockingTask.id,
+        task_key: blockingTask.task_key,
+        title: blockingTask.title,
+        type: blockingTask.type,
+        priority: blockingTask.priority,
+        column_id: blockingTask.column_id,
+      } : undefined,
+    };
+  },
+
+  async removeTaskLink(linkId: string): Promise<boolean> {
+    return database.delete('task_links', linkId);
+  },
+
+  async getAvailableLinksForTask(taskId: string): Promise<{ id: string; task_key: string; title: string; type: string; priority: string }[]> {
+    // Get the current task to find its project
+    const task = await database.findById<Task>('tasks', taskId);
+    if (!task) return [];
+
+    // Get all tasks in the same project
+    const projectTasks = await database.findMany<Task>('tasks', { project_id: task.project_id });
+
+    // Get existing links for this task
+    const existingLinks = await database.findMany<TaskLink>('task_links', { blocked_task_id: taskId });
+    const linkedTaskIds = new Set(existingLinks.map(l => l.blocking_task_id));
+
+    // Filter out the current task and already linked tasks
+    return projectTasks
+      .filter(t => t.id !== taskId && !linkedTaskIds.has(t.id))
+      .map(t => ({
+        id: t.id,
+        task_key: t.task_key,
+        title: t.title,
+        type: t.type,
+        priority: t.priority,
+      }));
   },
 };

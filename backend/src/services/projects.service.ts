@@ -33,6 +33,10 @@ export interface CreateProjectInput {
   image_url?: string;
   icon?: string;
   icon_color?: string;
+  // Document fields
+  vision?: string;
+  prd?: string;
+  docs?: Record<string, string>;
 }
 
 async function getProjectStats(projectId: string): Promise<{ total_tasks: number; completed_tasks: number; active_sprints: number; team_size: number }> {
@@ -91,6 +95,17 @@ export const projectsService = {
     return projectsWithStats;
   },
 
+  // Get projects where a specific user is a member (for displaying user's projects)
+  async getByMemberId(memberId: string): Promise<ProjectWithStats[]> {
+    const memberships = await database.findMany<any>('project_members', { user_id: memberId });
+    const memberProjectIds = memberships.map(pm => pm.project_id);
+
+    const projects = await Promise.all(
+      memberProjectIds.map(id => this.getById(id))
+    );
+    return projects.filter((p): p is ProjectWithStats => p !== null);
+  },
+
   async userHasAccess(projectId: string, userId: string, isAdmin: boolean): Promise<boolean> {
     if (isAdmin) return true;
 
@@ -138,6 +153,10 @@ export const projectsService = {
       image_url: input.image_url || null,
       icon: input.icon || null,
       icon_color: input.icon_color || null,
+      // Document fields
+      vision: input.vision || null,
+      prd: input.prd || null,
+      docs: input.docs || null,
       created_at: now(),
       updated_at: now(),
     };

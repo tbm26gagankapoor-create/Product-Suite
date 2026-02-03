@@ -11,6 +11,7 @@ export interface DatabaseSchema {
   tasks: any[];
   subtasks: any[];
   task_tags: any[];
+  task_links: any[];
   comments: any[];
   attachments: any[];
   activity_log: any[];

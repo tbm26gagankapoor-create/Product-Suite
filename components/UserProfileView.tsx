@@ -22,8 +22,9 @@ import {
   X
 } from 'lucide-react';
 import { useProjectData } from '../context/ProjectDataContext';
-import { User } from '../types';
+import { User, Team, Project } from '../types';
 import { useToast } from '../context/ToastContext';
+import { api } from '../lib/api';
 
 // Helper for relative time
 const timeAgo = (date: Date) => {
@@ -42,10 +43,10 @@ const timeAgo = (date: Date) => {
 };
 
 const UserProfileView: React.FC = () => {
-  const { tasks, currentUser, updateCurrentUser, teams, projects } = useProjectData();
+  const { myTasks, currentUser, updateCurrentUser, users } = useProjectData();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { error: showError, success } = useToast();
-  
+
   const [activeTab, setActiveTab] = useState<'overview' | 'activity' | 'projects' | 'settings'>('overview');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -56,6 +57,12 @@ const UserProfileView: React.FC = () => {
       location: '', bio: '', website: '', jobTitle: ''
   });
 
+  // Fetch user-specific data from API
+  const [userTasks, setUserTasks] = useState<any[]>([]);
+  const [userTeams, setUserTeams] = useState<Team[]>([]);
+  const [userProjects, setUserProjects] = useState<Project[]>([]);
+  const [isLoadingData, setIsLoadingData] = useState(true);
+
   // Sync with current user from context
   useEffect(() => {
       if (currentUser) {
@@ -63,22 +70,41 @@ const UserProfileView: React.FC = () => {
       }
   }, [currentUser]);
 
+  // Fetch user's teams and projects from API
+  useEffect(() => {
+      const fetchUserData = async () => {
+          if (!currentUser) return;
+          setIsLoadingData(true);
+          try {
+              const [tasksData, teamsData, projectsData] = await Promise.all([
+                  api.getTasks(users, { assignee_id: currentUser.id }),
+                  api.getTeamsForUser(currentUser.id),
+                  api.getProjectsForUser(currentUser.id),
+              ]);
+              setUserTasks(tasksData);
+              setUserTeams(teamsData);
+              setUserProjects(projectsData);
+          } catch (error) {
+              console.error('Failed to fetch user data:', error);
+          } finally {
+              setIsLoadingData(false);
+          }
+      };
+      fetchUserData();
+  }, [currentUser, users]);
+
   if (!currentUser) return <div className="p-8 text-center text-gray-500">Loading profile...</div>;
 
-  // Stats
-  const userTasks = tasks.filter(t => t.assignee.id === currentUser.id);
+  // Stats (using API-fetched data)
   const completedTasks = userTasks.filter(t => t.columnId === 'done').length;
   const activeTasksCount = userTasks.filter(t => t.columnId !== 'done').length;
-  const userProjects = projects.filter(p => p.members.includes(currentUser.id));
-  const userTeams = teams.filter(t => t.members.includes(currentUser.id));
 
-  // Dynamic Activity Stream (Only derived from real tasks)
+  // Dynamic Activity Stream (Using API-fetched myTasks - tasks where user is assignee OR reporter)
   const activityStream = useMemo(() => {
       const stream: any[] = [];
-      const now = new Date();
 
-      tasks.forEach(task => {
-          // 1. Task Creation
+      myTasks.forEach(task => {
+          // 1. Task Creation (user is reporter)
           if (task.reporter?.id === currentUser.id) {
               const date = task.startDate ? new Date(task.startDate) : new Date();
               stream.push({
@@ -95,8 +121,8 @@ const UserProfileView: React.FC = () => {
               });
           }
 
-          // 2. Task Completion
-          if (task.assignee.id === currentUser.id && task.columnId === 'done') {
+          // 2. Task Completion (user is assignee)
+          if (task.assignee?.id === currentUser.id && task.columnId === 'done') {
                const date = new Date(); // Simplified as task completion time isn't stored in this Task type
                stream.push({
                   id: `complete-${task.id}`,
@@ -114,7 +140,7 @@ const UserProfileView: React.FC = () => {
       });
 
       return stream.sort((a, b) => b.date.getTime() - a.date.getTime());
-  }, [tasks, currentUser.id]);
+  }, [myTasks, currentUser.id]);
 
   const handleSaveProfile = async () => {
       setIsSaving(true);

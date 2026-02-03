@@ -94,9 +94,9 @@ const JiraImportModal: React.FC<JiraImportModalProps> = ({ isOpen, onClose }) =>
           setImportProgress(40);
 
           // 2. Create Project in App
-          const newProjectId = `p-${Date.now()}`;
+          const tempProjectId = `p-${Date.now()}`;
           const newProject: Project = {
-              id: newProjectId,
+              id: tempProjectId,
               name: selectedProject.name,
               key: selectedProject.key,
               description: `Imported from Jira ${selectedProject.key}`,
@@ -107,14 +107,15 @@ const JiraImportModal: React.FC<JiraImportModalProps> = ({ isOpen, onClose }) =>
               tags: ['Jira Import'],
               color: 'from-blue-600 to-cyan-500'
           };
-          addProject(newProject);
+          const savedProject = await addProject(newProject);
+          const projectId = savedProject?.id || tempProjectId;
           setImportProgress(50);
 
           // 3. Create Default Sprint
           const sprintId = `s-${Date.now()}`;
           const newSprint: Sprint = {
               id: sprintId,
-              projectId: newProjectId,
+              projectId: projectId,
               name: `${selectedProject.key} First Sprint`,
               startDate: new Date().toISOString(),
               endDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
@@ -168,7 +169,7 @@ const JiraImportModal: React.FC<JiraImportModalProps> = ({ isOpen, onClose }) =>
 
               const newTask: Task = {
                   id: issue.key,
-                  projectId: newProjectId,
+                  projectId: projectId,
                   title: issue.fields.summary,
                   description: description,
                   columnId: mapStatus(issue.fields.status.name),

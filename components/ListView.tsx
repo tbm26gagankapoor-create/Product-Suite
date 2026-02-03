@@ -232,7 +232,7 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
                   <Cell>
                       <div className="flex items-center gap-1.5">
                           {getPriorityIcon(task.priority)}
-                          <span className="text-xs text-gray-600 dark:text-gray-400 capitalize">{task.priority.toLowerCase()}</span>
+                          <span className="text-xs text-gray-600 dark:text-gray-400 capitalize">{(task.priority || 'medium').toLowerCase()}</span>
                       </div>
                   </Cell>
 

@@ -608,6 +608,29 @@ const oauthStateSchema = new Schema<IOAuthState>({
 });
 
 // ===================
+// Task Link Model (Dependencies)
+// ===================
+export interface ITaskLink extends Document {
+  id: string;
+  blocking_task_id: string;
+  blocked_task_id: string;
+  link_type: string;
+  created_by?: string;
+  created_at: Date;
+}
+
+const taskLinkSchema = new Schema<ITaskLink>({
+  id: { type: String, required: true, unique: true, index: true },
+  blocking_task_id: { type: String, required: true, index: true },
+  blocked_task_id: { type: String, required: true, index: true },
+  link_type: { type: String, default: 'blocks' },
+  created_by: String,
+  created_at: { type: Date, default: Date.now },
+});
+
+taskLinkSchema.index({ blocking_task_id: 1, blocked_task_id: 1 }, { unique: true });
+
+// ===================
 // Export Models
 // ===================
 export const User = mongoose.model<IUser>('User', userSchema);
@@ -631,6 +654,7 @@ export const Team = mongoose.model<ITeam>('Team', teamSchema);
 export const TeamMember = mongoose.model<ITeamMember>('TeamMember', teamMemberSchema);
 export const TeamProject = mongoose.model<ITeamProject>('TeamProject', teamProjectSchema);
 export const OAuthState = mongoose.model<IOAuthState>('OAuthState', oauthStateSchema);
+export const TaskLink = mongoose.model<ITaskLink>('TaskLink', taskLinkSchema);
 
 // Model map for database abstraction
 export const models: Record<string, mongoose.Model<any>> = {
@@ -647,6 +671,7 @@ export const models: Record<string, mongoose.Model<any>> = {
   tasks: Task,
   subtasks: Subtask,
   task_tags: TaskTag,
+  task_links: TaskLink,
   comments: Comment,
   attachments: Attachment,
   activity_log: ActivityLog,

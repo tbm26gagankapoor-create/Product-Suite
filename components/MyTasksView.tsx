@@ -22,7 +22,7 @@ import TaskDetailModal from './TaskDetailModal';
 import { useProjectData } from '../context/ProjectDataContext';
 
 const MyTasksView: React.FC = () => {
-  const { tasks, updateTask, currentUser, projects } = useProjectData();
+  const { myTasks: allMyTasks, updateTask, currentUser, projects } = useProjectData();
   // Extended filter state to include specific widget filters
   const [filter, setFilter] = useState<'all' | 'incomplete' | 'completed' | 'overdue' | 'today'>('incomplete');
   const [activeTab, setActiveTab] = useState('list');
@@ -33,12 +33,12 @@ const MyTasksView: React.FC = () => {
       return <div className="p-8 text-center text-gray-500">Please log in to view your tasks.</div>;
   }
 
-  // Filter tasks for current user (Assignee OR Reporter)
-  const myTasks = tasks.filter(task => {
-    const isAssigned = task.assignee?.id === currentUser.id || task.reporter?.id === currentUser.id;
-    const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+  // myTasks comes from API (filtered by user_id - assignee OR reporter)
+  // Only apply search filter on client side
+  const myTasks = allMyTasks.filter(task => {
+    const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           task.id.toLowerCase().includes(searchQuery.toLowerCase());
-    return isAssigned && matchesSearch;
+    return matchesSearch;
   });
 
   const handleTaskUpdate = (updatedTask: Task) => {

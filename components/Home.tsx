@@ -21,14 +21,14 @@ interface HomeProps {
 }
 
 const Home: React.FC<HomeProps> = ({ onViewChange }) => {
-  const { tasks, projects, sprints, currentUser, organizationUsers: users, updateTask, addTask, addSprint, addProject, addEpic } = useProjectData();
+  const { tasks, myTasks: allMyTasks, projects, sprints, currentUser, organizationUsers: users, updateTask, addTask, addSprint, addProject, addEpic } = useProjectData();
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isSprintModalOpen, setIsSprintModalOpen] = useState(false);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
   const [createTaskType, setCreateTaskType] = useState<'task' | 'epic'>('task');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  
+
   // Real activity logs
   const [recentUpdates, setRecentUpdates] = useState<any[]>([]);
 
@@ -38,7 +38,7 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
               id: log.id,
               user: log.user || { name: 'System', avatarUrl: '' },
               action: log.action,
-              target: 'Entity', 
+              target: 'Entity',
               project: 'Infinia',
               time: new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               type: log.entity_type
@@ -46,15 +46,12 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
       });
   }, []);
 
-  // Filter tasks for current user
-  const myTasks = tasks.filter(t => t.assignee.id === currentUser?.id).slice(0, 5);
+  // myTasks comes from API (filtered by user_id - assignee OR reporter)
+  const myTasks = allMyTasks.slice(0, 5);
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-  // Calculate Overall Workload Health - only tasks where user is assignee or reporter
-  const allActiveTasks = tasks.filter(t =>
-    t.columnId !== 'done' &&
-    (t.assignee?.id === currentUser?.id || t.reporter?.id === currentUser?.id)
-  );
+  // Calculate Overall Workload Health - using API-filtered myTasks (excludes done)
+  const allActiveTasks = allMyTasks.filter(t => t.columnId !== 'done');
   const pointsAllocated = allActiveTasks.reduce((acc, t) => acc + (t.points || 0), 0);
   
   const todayDate = new Date();
@@ -156,13 +153,13 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
       bg: 'bg-blue-100 dark:bg-[#1E2330]',
       target: 'sprints' as View 
     },
-    { 
-      label: 'My Tasks', 
-      value: myTasks.length.toString(), 
-      icon: GitCommit, 
-      color: 'text-amber-500', 
+    {
+      label: 'My Tasks',
+      value: allMyTasks.length.toString(),
+      icon: GitCommit,
+      color: 'text-amber-500',
       bg: 'bg-amber-100 dark:bg-[#2A2215]',
-      target: 'my-tasks' as View 
+      target: 'my-tasks' as View
     },
     { 
       label: 'Blockers', 
@@ -303,7 +300,7 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
             <div className="bg-white dark:bg-[#15171E] rounded-2xl border border-gray-200 dark:border-[#1F2128] shadow-sm overflow-hidden min-h-[300px]">
                  <div className="px-8 py-6 border-b border-gray-200 dark:border-[#1F2128] flex items-center gap-3">
                     <h2 className="text-lg font-bold text-[#172B4D] dark:text-white">My Priorities</h2>
-                    <span className="bg-blue-100 text-blue-700 dark:bg-[#2D2F36] dark:text-blue-400 text-xs px-2 py-0.5 rounded-full font-bold">{myTasks.length}</span>
+                    <span className="bg-blue-100 text-blue-700 dark:bg-[#2D2F36] dark:text-blue-400 text-xs px-2 py-0.5 rounded-full font-bold">{allMyTasks.length}</span>
                 </div>
 
                 <div className="divide-y divide-gray-100 dark:divide-[#1F2128]">
@@ -326,7 +323,7 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
                             <div className="flex items-center gap-2">
                                 <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase">{task.id}</span>
                                 <span className="text-[9px] font-bold bg-gray-100 dark:bg-[#2D2F36] text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded border border-gray-200 dark:border-[#3D404A] uppercase tracking-wide">
-                                    {task.columnId.replace('inprogress', 'IN PROGRESS').replace('todo', 'TO DO')}
+                                    {(task.columnId || 'todo').replace('inprogress', 'IN PROGRESS').replace('todo', 'TO DO')}
                                 </span>
                             </div>
                         </div>

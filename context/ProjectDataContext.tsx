@@ -30,6 +30,10 @@ function mapProject(data: any): Project {
     imageUrl: data.image_url || undefined,
     icon: data.icon || undefined,
     iconColor: data.icon_color || undefined,
+    // Document fields
+    vision: data.vision || undefined,
+    prd: data.prd || undefined,
+    docs: data.docs || undefined,
   };
 }
 
@@ -78,6 +82,7 @@ function mapTask(data: any, users: User[]): Task {
     assignee,
     reporter,
     sprintId: data.sprint_id,
+    parentEpicId: data.parent_epic_id,
     tags: data.tags || [],
     commentsCount: data.comments_count || 0,
     startDate: data.start_date,
@@ -135,6 +140,7 @@ function mapUser(data: any): User {
 interface ProjectDataContextType {
   projects: Project[];
   tasks: Task[];
+  myTasks: Task[]; // Tasks where current user is assignee OR reporter (from API)
   sprints: Sprint[];
   users: User[];
   teams: Team[];
@@ -159,6 +165,7 @@ interface ProjectDataContextType {
   deleteTask: (taskId: string) => void;
   addSprint: (sprint: Sprint) => void;
   updateSprint: (sprint: Sprint) => void;
+  startSprint: (sprintId: string) => Promise<Sprint | null>;
   addTeam: (team: Team) => void;
   addComment: (taskId: string, comment: Comment) => void;
   generateNextId: (projectId: string, type?: string) => string;
@@ -172,6 +179,7 @@ const ProjectDataContext = createContext<ProjectDataContextType | undefined>(und
 export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [myTasks, setMyTasks] = useState<Task[]>([]); // Tasks where user is assignee OR reporter
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -362,6 +370,22 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         setSprints(mappedSprints);
         setTeams(mappedTeams);
 
+        // 5. Fetch "my tasks" from API using user_id filter (tasks where user is assignee OR reporter)
+        if (profile?.id) {
+          try {
+            const myTasksRes = await fetch(`/api/v1/tasks?user_id=${profile.id}`, { headers });
+            const myTasksData = await myTasksRes.json();
+            const mappedMyTasks = (myTasksData.data || []).map((t: any) => mapTask(t, mappedUsers));
+            setMyTasks(mappedMyTasks);
+            console.log(`Loaded ${mappedMyTasks.length} tasks for current user (assignee OR reporter)`);
+          } catch (e) {
+            console.error('Failed to fetch my tasks:', e);
+            setMyTasks([]);
+          }
+        } else {
+          setMyTasks([]);
+        }
+
         setConnectionStatus('connected');
         console.log(`Loaded: ${mappedProjects.length} projects, ${mappedTasks.length} tasks, ${mappedSprints.length} sprints, ${mappedTeams.length} teams, ${mappedUsers.length} users`);
         console.log('DEBUG Users:', mappedUsers.map(u => ({ id: u.id, name: u.name, orgId: u.organizationId })));
@@ -392,6 +416,13 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           code: project.key,
           description: project.description,
           owner_id: currentUser?.id,
+          // Include all document and visual fields
+          image_url: project.imageUrl,
+          icon: project.icon,
+          icon_color: project.iconColor,
+          vision: project.vision,
+          prd: project.prd,
+          docs: project.docs,
         }),
       });
       const data = await response.json();
@@ -460,6 +491,11 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           reporter_id: task.reporter?.id || currentUser?.id,
           sprint_id: task.sprintId,
           column_id: task.columnId,
+          // Link to parent epic
+          parent_epic_id: task.parentEpicId,
+          // Dates
+          due_date: task.dueDate,
+          start_date: task.startDate,
         }),
       });
       const data = await response.json();
@@ -485,8 +521,13 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
               project_id: epic.projectId,
               title: epic.title,
               description: epic.description,
-              type: 'feature',
+              type: 'epic',
+              priority: epic.priority || 'MEDIUM',
+              points: epic.points || 0,
+              assignee_id: epic.assignee?.id,
               reporter_id: epic.reporter?.id || currentUser?.id,
+              column_id: epic.columnId,
+              start_date: epic.startDate,
             }),
           });
           const data = await response.json();
@@ -602,6 +643,44 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       console.error("Failed to sync sprint update", e);
     }
   }, []);
+
+  const startSprint = useCallback(async (sprintId: string): Promise<Sprint | null> => {
+    const sprint = sprints.find(s => s.id === sprintId);
+    if (!sprint) return null;
+
+    // Optimistically update: set this sprint to active, mark others in same project as completed
+    setSprints(prev => prev.map(s => {
+      if (s.id === sprintId) {
+        return { ...s, status: 'active' };
+      }
+      // Auto-complete other active sprints in the same project
+      if (s.projectId === sprint.projectId && s.status === 'active') {
+        return { ...s, status: 'completed' };
+      }
+      return s;
+    }));
+
+    try {
+      const response = await fetch(`/api/v1/sprints/${sprintId}/start`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
+      const data = await response.json();
+      if (data.success) {
+        const startedSprint = mapSprint(data.data);
+        setSprints(prev => prev.map(s => s.id === sprintId ? startedSprint : s));
+        return startedSprint;
+      }
+      // Revert on failure
+      setSprints(prev => prev.map(s => s.id === sprintId ? sprint : s));
+      return null;
+    } catch (e) {
+      console.error("Failed to start sprint", e);
+      // Revert on error
+      setSprints(prev => prev.map(s => s.id === sprintId ? sprint : s));
+      return null;
+    }
+  }, [sprints]);
 
   // --- Team Actions ---
   const addTeam = useCallback(async (team: Team) => {
@@ -767,6 +846,7 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const value = useMemo(() => ({
     projects,
     tasks,
+    myTasks,
     sprints,
     users,
     teams,
@@ -790,13 +870,14 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     deleteTask,
     addSprint,
     updateSprint,
+    startSprint,
     addTeam,
     addComment,
     generateNextId,
     updateCurrentUser,
     refreshOrganization,
     switchOrganization
-  }), [projects, tasks, sprints, users, teams, organizationUsers, organizationTeams, currentUser, currentOrganization, organizationMembers, userOrganizations, isOrgAdmin, isLoading, connectionStatus, connectionError, fetchData, generateNextId, addComment, updateCurrentUser, refreshOrganization, switchOrganization, addProject, updateProject, deleteProject, addTask, addEpic, addTeam, addSprint, updateSprint, updateTask, deleteTask]);
+  }), [projects, tasks, myTasks, sprints, users, teams, organizationUsers, organizationTeams, currentUser, currentOrganization, organizationMembers, userOrganizations, isOrgAdmin, isLoading, connectionStatus, connectionError, fetchData, generateNextId, addComment, updateCurrentUser, refreshOrganization, switchOrganization, addProject, updateProject, deleteProject, addTask, addEpic, addTeam, addSprint, updateSprint, startSprint, updateTask, deleteTask]);
 
   return (
     <ProjectDataContext.Provider value={value}>

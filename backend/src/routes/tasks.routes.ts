@@ -11,7 +11,7 @@ router.use(authMiddleware);
 // Get all tasks (filtered by user's accessible projects)
 router.get('/', async (req: AuthRequest, res: Response) => {
   const user = req.user;
-  const { project_id, sprint_id, assignee_id } = req.query;
+  const { project_id, sprint_id, assignee_id, reporter_id, user_id } = req.query;
 
   // If no user, return empty list
   if (!user) {
@@ -27,6 +27,8 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     project_id: project_id as string,
     sprint_id: sprint_id as string,
     assignee_id: assignee_id as string,
+    reporter_id: reporter_id as string,
+    user_id: user_id as string,
   });
 
   // Filter tasks to only those from accessible projects
@@ -46,7 +48,7 @@ router.get('/:id', async (req, res) => {
 
 // Create task
 router.post('/', async (req, res) => {
-  const { project_id, title, description, type, priority, points, assignee_id, reporter_id, sprint_id, column_id, due_date, start_date } = req.body;
+  const { project_id, title, description, type, priority, points, assignee_id, reporter_id, sprint_id, column_id, due_date, start_date, parent_epic_id } = req.body;
 
   if (!project_id || !title) {
     return res.status(400).json({
@@ -68,6 +70,7 @@ router.post('/', async (req, res) => {
     column_id,
     due_date,
     start_date,
+    parent_epic_id,
   });
 
   res.status(201).json({ success: true, data: task });
@@ -152,6 +155,61 @@ router.delete('/:taskId/subtasks/:subtaskId', async (req, res) => {
     return res.status(404).json({ success: false, error: 'Subtask not found' });
   }
   res.json({ success: true, message: 'Subtask deleted' });
+});
+
+// --- Task Links (Dependencies) ---
+
+// Get task links (blocked by and blocks)
+router.get('/:id/links', async (req, res) => {
+  try {
+    const links = await tasksService.getTaskLinks(req.params.id);
+    res.json({ success: true, data: links });
+  } catch (error: any) {
+    console.error('Error fetching task links:', error);
+    res.status(500).json({ success: false, error: { message: error.message || 'Failed to fetch task links' } });
+  }
+});
+
+// Get available tasks for linking
+router.get('/:id/available-links', async (req, res) => {
+  try {
+    const tasks = await tasksService.getAvailableLinksForTask(req.params.id);
+    res.json({ success: true, data: tasks });
+  } catch (error: any) {
+    console.error('Error fetching available links:', error);
+    res.status(500).json({ success: false, error: { message: error.message || 'Failed to fetch available links' } });
+  }
+});
+
+// Add a blocking task link
+router.post('/:id/links', async (req: AuthRequest, res) => {
+  try {
+    const { blocking_task_id, link_type } = req.body;
+
+    if (!blocking_task_id) {
+      return res.status(400).json({ success: false, error: { message: 'blocking_task_id is required' } });
+    }
+
+    const link = await tasksService.addTaskLink(req.params.id, blocking_task_id, link_type, req.user?.id);
+    res.status(201).json({ success: true, data: link });
+  } catch (error: any) {
+    console.error('Error adding task link:', error);
+    res.status(500).json({ success: false, error: { message: error.message || 'Failed to add task link' } });
+  }
+});
+
+// Remove a task link
+router.delete('/:id/links/:linkId', async (req, res) => {
+  try {
+    const deleted = await tasksService.removeTaskLink(req.params.linkId);
+    if (!deleted) {
+      return res.status(404).json({ success: false, error: { message: 'Link not found' } });
+    }
+    res.json({ success: true, message: 'Link removed' });
+  } catch (error: any) {
+    console.error('Error removing task link:', error);
+    res.status(500).json({ success: false, error: { message: error.message || 'Failed to remove task link' } });
+  }
 });
 
 export default router;

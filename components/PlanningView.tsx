@@ -1,13 +1,15 @@
 
 import React, { useState } from 'react';
-import { 
-  Plus, 
-  MoreHorizontal, 
+import {
+  Plus,
+  MoreHorizontal,
   ChevronDown,
   Calendar,
   Layout,
   Target,
-  ArrowRight
+  ArrowRight,
+  TrendingUp,
+  Zap
 } from 'lucide-react';
 import { Task, Sprint } from '../types';
 import SprintModal from './SprintModal';
@@ -35,7 +37,18 @@ const PlanningView: React.FC<PlanningViewProps> = ({ projectId }) => {
   const projectSprints = sprints.filter(s => s.projectId === projectId);
   const projectTasks = tasks.filter(t => t.projectId === projectId);
   const backlogTasks = projectTasks.filter(t => !t.sprintId && t.columnId !== 'done');
-  
+
+  // Calculate velocity from completed sprints (last 3)
+  const completedSprints = projectSprints.filter(s => s.status === 'completed');
+  const recentCompletedSprints = completedSprints.slice(-3);
+  const velocityData = recentCompletedSprints.map(sprint => {
+    const sprintTasks = projectTasks.filter(t => t.sprintId === sprint.id && t.columnId === 'done');
+    return sprintTasks.reduce((acc, t) => acc + (t.points || 0), 0);
+  });
+  const averageVelocity = velocityData.length > 0
+    ? Math.round(velocityData.reduce((a, b) => a + b, 0) / velocityData.length)
+    : 0;
+
   // Filter sprints based on tab
   const visibleSprints = projectSprints.filter(s => {
       if (activeTab === 'Ongoing') return s.status === 'active';
@@ -118,7 +131,11 @@ const PlanningView: React.FC<PlanningViewProps> = ({ projectId }) => {
               <div className="text-sm font-medium text-[#172B4D] dark:text-gray-200 truncate">{task.title}</div>
           </div>
           <div className="flex-shrink-0">
-              <img src={task.assignee.avatarUrl} alt={task.assignee.name} className="w-6 h-6 rounded-full border border-gray-100 dark:border-[#2D2F36]" title={task.assignee.name} />
+              {task.assignee ? (
+                  <img src={task.assignee.avatarUrl} alt={task.assignee.name} className="w-6 h-6 rounded-full border border-gray-100 dark:border-[#2D2F36]" title={task.assignee.name} />
+              ) : (
+                  <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-[#2D2F36] border border-gray-100 dark:border-[#2D2F36]" title="Unassigned" />
+              )}
           </div>
       </div>
   );
@@ -180,8 +197,21 @@ const PlanningView: React.FC<PlanningViewProps> = ({ projectId }) => {
           {/* Header Area */}
           <div className="px-8 py-6 pb-0 flex-shrink-0">
               <div className="flex items-center justify-between mb-6">
-                  <h1 className="text-2xl font-bold text-[#172B4D] dark:text-white">Sprints</h1>
-                  <button 
+                  <div className="flex items-center gap-6">
+                      <h1 className="text-2xl font-bold text-[#172B4D] dark:text-white">Sprints</h1>
+                      {averageVelocity > 0 && (
+                          <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 dark:bg-purple-500/10 rounded-lg border border-purple-100 dark:border-purple-500/20">
+                              <TrendingUp size={14} className="text-purple-500" />
+                              <span className="text-xs font-bold text-purple-700 dark:text-purple-400">
+                                  Velocity: {averageVelocity} pts/sprint
+                              </span>
+                              <span className="text-[10px] text-purple-500 dark:text-purple-400 opacity-70">
+                                  (avg of {recentCompletedSprints.length} sprint{recentCompletedSprints.length !== 1 ? 's' : ''})
+                              </span>
+                          </div>
+                      )}
+                  </div>
+                  <button
                     onClick={() => setIsSprintModalOpen(true)}
                     className="bg-[#172B4D] dark:bg-white text-white dark:text-black px-4 py-2 rounded-lg text-sm font-bold shadow-sm hover:opacity-90 transition-opacity flex items-center gap-2"
                   >
@@ -237,7 +267,7 @@ const PlanningView: React.FC<PlanningViewProps> = ({ projectId }) => {
                               </div>
 
                               <div className="flex items-center justify-between mb-2">
-                                  <h3 
+                                  <h3
                                     className="font-bold text-lg text-[#172B4D] dark:text-white truncate pr-2 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                                     onClick={() => setSelectedSprintId(sprint.id)}
                                     title="View Sprint Details"
@@ -248,6 +278,36 @@ const PlanningView: React.FC<PlanningViewProps> = ({ projectId }) => {
                                       <span>{totalPoints} pts</span>
                                   </div>
                               </div>
+
+                              {/* Capacity indicator */}
+                              {averageVelocity > 0 && sprint.status !== 'completed' && (
+                                  <div className="mb-3">
+                                      <div className="flex items-center justify-between text-[10px] mb-1">
+                                          <span className="text-gray-500 dark:text-gray-400">Capacity</span>
+                                          <span className={`font-medium ${
+                                              totalPoints > averageVelocity * 1.2
+                                                  ? 'text-red-500'
+                                                  : totalPoints > averageVelocity
+                                                  ? 'text-amber-500'
+                                                  : 'text-green-500'
+                                          }`}>
+                                              {totalPoints}/{averageVelocity} pts
+                                          </span>
+                                      </div>
+                                      <div className="h-1.5 bg-gray-100 dark:bg-[#2D2F36] rounded-full overflow-hidden">
+                                          <div
+                                              className={`h-full rounded-full transition-all ${
+                                                  totalPoints > averageVelocity * 1.2
+                                                      ? 'bg-red-500'
+                                                      : totalPoints > averageVelocity
+                                                      ? 'bg-amber-500'
+                                                      : 'bg-green-500'
+                                              }`}
+                                              style={{ width: `${Math.min(100, (totalPoints / averageVelocity) * 100)}%` }}
+                                          />
+                                      </div>
+                                  </div>
+                              )}
                               {sprint.goal && (
                                 <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 italic">"{sprint.goal}"</p>
                               )}

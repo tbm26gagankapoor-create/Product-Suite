@@ -38,9 +38,9 @@ export interface DocumentVersion {
 export class DocumentsService {
   // Document section IDs
   static SECTIONS = [
-    'prd', 'roadmap', 'business', 'data', 'app',
-    'tech', 'design', 'adrs', 'specs',
-    'biz-flow', 'sys-flow', 'integrations'
+    'prd', 'roadmap', 'modules', 'business', 'data', 'app',
+    'tech', 'design-guidelines', 'design', 'adrs', 'specs',
+    'user-flows', 'biz-flow', 'sys-flow', 'integrations'
   ];
 
   // Get all documents for project

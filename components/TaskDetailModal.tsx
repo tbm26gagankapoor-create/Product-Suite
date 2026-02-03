@@ -93,11 +93,33 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
 }) => {
   const { sprints, projects, tasks: allTasks, organizationUsers: users, addTask, updateTask, deleteTask, generateNextId, addComment, currentUser } = useProjectData();
 
-  const globalTask = allTasks.find((t: Task) => t.id === task.id) || task;
-  const currentProject = projects.find((p: any) => p.id === globalTask.projectId);
+  // Safely get global task with fallbacks for missing properties
+  const globalTask = task ? (allTasks.find((t: Task) => t.id === task.id) || task) : null;
 
-  const [currentTask, setCurrentTask] = useState<Task>(globalTask);
-  const [descriptionBuffer, setDescriptionBuffer] = useState(globalTask.description || '');
+  // Ensure globalTask has required properties with defaults
+  const safeGlobalTask: Task = globalTask ? {
+    ...globalTask,
+    type: globalTask.type || 'task',
+    priority: globalTask.priority || 'MEDIUM',
+    columnId: globalTask.columnId || 'todo',
+    tags: globalTask.tags || [],
+    commentsCount: globalTask.commentsCount || 0,
+  } as Task : {
+    id: '',
+    projectId: '',
+    title: '',
+    columnId: 'todo',
+    type: 'task',
+    priority: 'MEDIUM',
+    tags: [],
+    commentsCount: 0,
+    assignee: { id: '', name: '', avatarUrl: '', email: '' },
+    reporter: { id: '', name: '', avatarUrl: '', email: '' },
+  } as Task;
+  const currentProject = projects.find((p: any) => p.id === safeGlobalTask.projectId);
+
+  const [currentTask, setCurrentTask] = useState<Task>(safeGlobalTask);
+  const [descriptionBuffer, setDescriptionBuffer] = useState(safeGlobalTask.description || '');
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [showAiPanel, setShowAiPanel] = useState(false);
@@ -111,7 +133,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [showSprintDropdown, setShowSprintDropdown] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   const [isAddingTag, setIsAddingTag] = useState(false);
-  const [attachments, setAttachments] = useState<{ id: string; name: string; url: string; type: string }[]>((globalTask as any).attachments || []);
+  const [attachments, setAttachments] = useState<{ id: string; name: string; url: string; type: string }[]>((safeGlobalTask as any).attachments || []);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [isLoadingActivity, setIsLoadingActivity] = useState(false);
 
@@ -123,15 +145,24 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [blockingSearchTerm, setBlockingSearchTerm] = useState('');
   const [isLoadingLinks, setIsLoadingLinks] = useState(false);
 
-  const isEpic = currentTask.type === 'epic';
+  const isEpic = (currentTask.type || 'task') === 'epic';
   const childTasks = allTasks.filter((t: Task) => t.parentEpicId === currentTask.id);
 
   useEffect(() => {
-    setCurrentTask(globalTask);
-    if (!isEditingDescription) {
-      setDescriptionBuffer(globalTask.description || '');
+    if (globalTask) {
+      setCurrentTask({
+        ...globalTask,
+        type: globalTask.type || 'task',
+        priority: globalTask.priority || 'MEDIUM',
+        columnId: globalTask.columnId || 'todo',
+        tags: globalTask.tags || [],
+        commentsCount: globalTask.commentsCount || 0,
+      } as Task);
+      if (!isEditingDescription) {
+        setDescriptionBuffer(globalTask.description || '');
+      }
     }
-  }, [globalTask, isEditingDescription]);
+  }, [globalTask?.id, isEditingDescription]);
 
   // Fetch activity logs when modal opens
   useEffect(() => {
@@ -141,9 +172,11 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
       setIsLoadingActivity(true);
       try {
         // Use uuid (backend ID) if available, otherwise fall back to id
-        const taskId = (globalTask as any).uuid || globalTask.id;
-        const activities = await activityService.getForTask(taskId);
-        setActivityLogs(activities);
+        const taskId = (globalTask as any)?.uuid || globalTask?.id;
+        if (taskId) {
+          const activities = await activityService.getForTask(taskId);
+          setActivityLogs(Array.isArray(activities) ? activities : []);
+        }
       } catch (error) {
         console.error('Failed to fetch activity:', error);
       } finally {
@@ -152,7 +185,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     };
 
     fetchActivity();
-  }, [isOpen, globalTask.id, (globalTask as any).uuid]);
+  }, [isOpen, globalTask?.id, (globalTask as any)?.uuid]);
 
   // Fetch task links when modal opens
   useEffect(() => {
@@ -161,10 +194,12 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     const fetchLinks = async () => {
       setIsLoadingLinks(true);
       try {
-        const taskId = (globalTask as any).uuid || globalTask.id;
-        const links = await tasksService.getTaskLinks(taskId);
-        setBlockedByTasks(links.blockedBy || []);
-        setBlocksTasks(links.blocks || []);
+        const taskId = (globalTask as any)?.uuid || globalTask?.id;
+        if (taskId) {
+          const links = await tasksService.getTaskLinks(taskId);
+          setBlockedByTasks(Array.isArray(links?.blockedBy) ? links.blockedBy : []);
+          setBlocksTasks(Array.isArray(links?.blocks) ? links.blocks : []);
+        }
       } catch (error) {
         console.error('Failed to fetch task links:', error);
       } finally {
@@ -173,7 +208,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     };
 
     fetchLinks();
-  }, [isOpen, globalTask.id, (globalTask as any).uuid]);
+  }, [isOpen, globalTask?.id, (globalTask as any)?.uuid]);
 
   if (!isOpen) return null;
 
@@ -305,7 +340,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const filteredAvailableTasks = availableTasksForLinking.filter(t => {
     if (!blockingSearchTerm) return true;
     const term = blockingSearchTerm.toLowerCase();
-    return t.title.toLowerCase().includes(term) || t.task_key.toLowerCase().includes(term);
+    return (t.title || '').toLowerCase().includes(term) || (t.task_key || '').toLowerCase().includes(term);
   });
 
   const handleTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => handleUpdateCurrentTask({ type: e.target.value as any });
@@ -1019,8 +1054,8 @@ Tips:
                         });
                       });
 
-                      // Add activity logs
-                      activityLogs.forEach((activity) => {
+                      // Add activity logs (ensure it's an array)
+                      (Array.isArray(activityLogs) ? activityLogs : []).forEach((activity) => {
                         combinedActivity.push({
                           type: 'activity',
                           data: activity,

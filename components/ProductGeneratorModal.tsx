@@ -927,6 +927,20 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
   };
 
   const handleGeneratePlan = async () => {
+      // Ensure all documentation is complete before generating plan
+      const allDocsComplete = DOC_NAV_ITEMS.every(doc =>
+          docGenerationProgress[doc.id] === 'completed' || generatedDocs[doc.id]
+      );
+
+      if (!allDocsComplete) {
+          const pendingDocs = DOC_NAV_ITEMS.filter(doc =>
+              !generatedDocs[doc.id] && docGenerationProgress[doc.id] !== 'completed'
+          ).map(doc => doc.label);
+
+          alert(`Please wait for all documentation to be generated before creating the plan.\n\nPending documents:\n${pendingDocs.join('\n')}`);
+          return;
+      }
+
       setStep('generating_docs');
       setLoadingStatus('Preparing project plan context...');
 
@@ -938,141 +952,312 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
 
       setLoadingStatus('Analyzing documentation for epic breakdown...');
 
-      const prompt = `
-        Role: Senior Technical Lead & Project Architect.
-        Task: Create a highly detailed, exhaustive project execution plan based on the provided documentation.
-
-        DOCUMENTATION CONTEXT:
-        ${contextToUse}
-
-        STRICT REQUIREMENTS:
-        1. **Granularity**: Break down features into the "minutest" possible jobs (Atomic Developer Tasks).
-           - BAD: "Build Authentication"
-           - GOOD: "Setup Users Table", "Create Login API Endpoint", "Implement JWT Logic", "Build Login UI Form", "Add Form Validation".
-        2. **Completeness**: Do NOT limit the number of Epics or Tasks. Generate as many as required to build the full product described in the context.
-        3. **Structure**: Group tasks logically into Epics.
-        4. **Task Types**: Distinguish between 'story' (user value), 'task' (technical chore/setup), and 'bug' (if noted).
-        5. **Estimates**: Provide points (1, 2, 3, 5, 8) for each task. Small atomic tasks should be 1 or 2 points.
-        6. **Descriptions**: For each task, generate a RICH HTML description containing:
-           - **User Story**: (If applicable) "As a user..."
-           - **Implementation Details**: Specific steps, libraries, or logic to be used.
-           - **Acceptance Criteria**: A bulleted list of what defines "Done".
-
-        CRITICAL OUTPUT INSTRUCTIONS:
-        - Output ONLY valid JSON, nothing else.
-        - Do NOT include any thinking, reasoning, or explanation.
-        - Do NOT wrap the JSON in markdown code blocks.
-        - Do NOT include <think> tags or any other XML tags.
-        - Start your response directly with the opening brace {
-
-        OUTPUT FORMAT (return exactly this structure):
+      // Define epic categories for parallel generation - each will make a separate API call
+      const epicCategories = [
         {
-          "epics": [
-            {
-                "title": "Epic Title",
-                "description": "High level summary...",
-                "tasks": [
-                    {
-                        "title": "Setup Database Schema for Users",
-                        "description": "<p><strong>Implementation:</strong> Create migration file. <strong>Criteria:</strong><ul><li>Schema validated</li><li>Types generated</li></ul></p>",
-                        "type": "task",
-                        "points": 2,
-                        "role": "Backend"
-                    }
-                ]
-            }
-          ]
+          id: 'infrastructure',
+          name: 'Infrastructure & Setup',
+          emoji: '🏗️',
+          focus: 'Project Setup, CI/CD, environments, tooling, repository structure, development workflows',
+          docTypes: ['Technology Architecture', 'ADRs'],
+          minTasks: 8
+        },
+        {
+          id: 'database',
+          name: 'Database & Data Layer',
+          emoji: '🗄️',
+          focus: 'Database schemas, migrations, seeds, indexes, data models, ETL pipelines, data validation',
+          docTypes: ['Data Architecture', 'Technical Specifications'],
+          minTasks: 10
+        },
+        {
+          id: 'auth',
+          name: 'Authentication & Authorization',
+          emoji: '🔐',
+          focus: 'Login, signup, password reset, JWT tokens, sessions, roles, permissions, OAuth, SSO',
+          docTypes: ['PRD', 'Application Architecture', 'Technical Specifications'],
+          minTasks: 12
+        },
+        {
+          id: 'user_management',
+          name: 'User Management',
+          emoji: '👤',
+          focus: 'User profiles, settings, preferences, avatars, account management, notifications',
+          docTypes: ['PRD', 'Business Workflows'],
+          minTasks: 8
+        },
+        {
+          id: 'core_features_1',
+          name: 'Core Features - Part 1',
+          emoji: '🎯',
+          focus: 'Primary product features from PRD sections 1-3, main user journeys, key functionality',
+          docTypes: ['PRD', 'Business Architecture', 'Roadmap'],
+          minTasks: 15
+        },
+        {
+          id: 'core_features_2',
+          name: 'Core Features - Part 2',
+          emoji: '🎯',
+          focus: 'Secondary product features from PRD sections 4+, additional functionality, advanced features',
+          docTypes: ['PRD', 'Business Architecture', 'Roadmap'],
+          minTasks: 15
+        },
+        {
+          id: 'api_development',
+          name: 'API Development',
+          emoji: '🔌',
+          focus: 'REST/GraphQL endpoints, request validation, error handling, rate limiting, API versioning',
+          docTypes: ['Technical Specifications', 'Application Architecture'],
+          minTasks: 12
+        },
+        {
+          id: 'ui_components',
+          name: 'UI Components & Design System',
+          emoji: '🎨',
+          focus: 'Reusable components, design system, forms, buttons, modals, navigation, layouts',
+          docTypes: ['Design Documents', 'PRD'],
+          minTasks: 12
+        },
+        {
+          id: 'ui_pages',
+          name: 'UI Pages & User Flows',
+          emoji: '📱',
+          focus: 'Page implementations, user flows, responsive design, animations, accessibility',
+          docTypes: ['Design Documents', 'PRD', 'Business Workflows'],
+          minTasks: 12
+        },
+        {
+          id: 'analytics',
+          name: 'Analytics & Monitoring',
+          emoji: '📊',
+          focus: 'Event tracking, logging, dashboards, alerts, performance monitoring, error tracking',
+          docTypes: ['System Workflows', 'Technology Architecture'],
+          minTasks: 8
+        },
+        {
+          id: 'testing',
+          name: 'Testing & Quality Assurance',
+          emoji: '🧪',
+          focus: 'Unit tests, integration tests, e2e tests, performance tests, security tests, test infrastructure',
+          docTypes: ['ADRs', 'Technical Specifications'],
+          minTasks: 10
+        },
+        {
+          id: 'deployment',
+          name: 'Deployment & DevOps',
+          emoji: '🚀',
+          focus: 'Staging, production environments, rollback strategies, containerization, scaling',
+          docTypes: ['Technology Architecture', 'System Workflows'],
+          minTasks: 8
+        },
+        {
+          id: 'integrations',
+          name: 'Third-Party Integrations',
+          emoji: '🔗',
+          focus: 'External APIs, webhooks, payment gateways, email services, cloud services, sync jobs',
+          docTypes: ['Integration Workflows', 'Technical Specifications'],
+          minTasks: 10
+        },
+        {
+          id: 'documentation',
+          name: 'Documentation & Onboarding',
+          emoji: '📖',
+          focus: 'API documentation, user guides, developer onboarding, README files, architecture docs',
+          docTypes: ['All Documents'],
+          minTasks: 6
         }
-      `;
+      ];
+
+      // Helper to generate prompt for a specific category
+      const generateCategoryPrompt = (category: typeof epicCategories[0], context: string) => `
+You are a Senior Product Manager creating a DETAILED epic for: ${category.emoji} ${category.name}
+
+PRODUCT CONTEXT:
+Product: ${productName}
+Vision: ${refinedVision.substring(0, 3000)}
+
+RELEVANT DOCUMENTATION:
+${context.substring(0, 40000)}
+
+YOUR TASK:
+Generate 2-3 comprehensive epics focused ONLY on "${category.name}" covering: ${category.focus}
+
+REQUIREMENTS:
+- Each epic MUST have ${category.minTasks}-15 granular, actionable tasks
+- Tasks should be atomic - one clear action per task
+- Include implementation details in descriptions
+
+TASK DESCRIPTION FORMAT (use HTML):
+<p>
+  <strong>📋 User Story:</strong> As a [role], I want [feature] so that [benefit].<br/><br/>
+  <strong>📄 Source:</strong> ${category.docTypes.join('/')}<br/><br/>
+  <strong>🔧 Implementation:</strong>
+  <ul>
+    <li>File paths to create/modify</li>
+    <li>Libraries to use</li>
+    <li>Key code patterns</li>
+  </ul>
+  <strong>✅ Acceptance Criteria:</strong>
+  <ul>
+    <li>Testable condition 1</li>
+    <li>Testable condition 2</li>
+  </ul>
+</p>
+
+TASK TYPES: 'story' (user-facing), 'task' (technical), 'feature' (new capability), 'bug' (fix)
+STORY POINTS: 1 (tiny), 2 (small), 3 (medium), 5 (large), 8 (very large)
+ROLES: "Frontend", "Backend", "Full-Stack", "DevOps", "QA", "Design"
+
+OUTPUT FORMAT (STRICT JSON ONLY - NO MARKDOWN):
+{
+  "epics": [
+    {
+      "title": "${category.emoji} Epic Title",
+      "description": "2-3 sentence description of business value",
+      "tasks": [
+        {
+          "title": "Specific actionable task",
+          "description": "<p>...</p>",
+          "type": "task",
+          "points": 3,
+          "role": "Full-Stack"
+        }
+      ]
+    }
+  ]
+}
+
+Generate comprehensive, production-ready tasks. A real team will build from this plan.`;
+
+      // Helper to parse epics from response
+      const parseEpicsFromResponse = (responseText: string): any[] => {
+        try {
+          const text = cleanJson(responseText || '[]');
+          const parsed = JSON.parse(text);
+
+          if (parsed.epics && Array.isArray(parsed.epics)) {
+            return parsed.epics;
+          } else if (Array.isArray(parsed)) {
+            return parsed;
+          } else if (typeof parsed === 'object' && parsed !== null) {
+            const findEpicsArray = (obj: any): any[] | null => {
+              if (Array.isArray(obj)) {
+                if (obj.length > 0 && (obj[0].tasks || obj[0].title)) return obj;
+                return null;
+              }
+              if (typeof obj === 'object' && obj !== null) {
+                for (const key of Object.keys(obj)) {
+                  const result = findEpicsArray(obj[key]);
+                  if (result) return result;
+                }
+              }
+              return null;
+            };
+            return findEpicsArray(parsed) || [];
+          }
+        } catch (e) {
+          console.error("Failed to parse epics JSON", e);
+        }
+        return [];
+      };
 
       try {
-          setLoadingStatus('Generating epics and tasks with AI...');
+          setLoadingStatus('Generating comprehensive project plan (0/14 categories)...');
 
-          const response = await generateWithRetry({
-              model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
-              contents: [{ role: 'user', parts: [{ text: prompt }] }],
-              config: {
-                  responseMimeType: "application/json"
+          let allEpics: any[] = [];
+          let completedCategories = 0;
+          const totalCategories = epicCategories.length;
+
+          // Process categories in batches of 3 to avoid overwhelming the API
+          const batchSize = 3;
+          for (let i = 0; i < epicCategories.length; i += batchSize) {
+            const batch = epicCategories.slice(i, i + batchSize);
+
+            const batchPromises = batch.map(async (category) => {
+              try {
+                const categoryPrompt = generateCategoryPrompt(category, contextToUse);
+
+                const response = await generateWithRetry({
+                  model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
+                  contents: [{ role: 'user', parts: [{ text: categoryPrompt }] }],
+                  config: { responseMimeType: "application/json" }
+                });
+
+                const epics = parseEpicsFromResponse(response.text || '');
+                console.log(`Category ${category.name}: generated ${epics.length} epics with ${epics.reduce((acc: number, e: any) => acc + (e.tasks?.length || 0), 0)} tasks`);
+
+                completedCategories++;
+                setLoadingStatus(`Generating comprehensive project plan (${completedCategories}/${totalCategories} categories)...`);
+
+                return epics;
+              } catch (error) {
+                console.error(`Failed to generate epics for ${category.name}:`, error);
+                completedCategories++;
+                setLoadingStatus(`Generating comprehensive project plan (${completedCategories}/${totalCategories} categories)...`);
+                return [];
               }
-          });
+            });
 
-          setLoadingStatus('Processing project plan...');
-          console.log('Plan generation response:', response.text?.substring(0, 500));
+            const batchResults = await Promise.all(batchPromises);
+            batchResults.forEach(epics => {
+              allEpics = [...allEpics, ...epics];
+            });
 
-          let rawEpics: any[] = [];
-          try {
-              const text = cleanJson(response.text || '[]');
-              console.log('Parsed text for epics:', text.substring(0, 500));
-              const parsed = JSON.parse(text);
-              console.log('Parsed object keys:', Object.keys(parsed || {}));
-
-              if (parsed.epics && Array.isArray(parsed.epics)) {
-                  rawEpics = parsed.epics;
-                  console.log('Found epics array with', rawEpics.length, 'epics');
-              } else if (Array.isArray(parsed)) {
-                  rawEpics = parsed;
-              } else if (typeof parsed === 'object' && parsed !== null) {
-                  const findEpicsArray = (obj: any): any[] | null => {
-                      if (Array.isArray(obj)) {
-                          if (obj.length > 0 && (obj[0].tasks || obj[0].title)) return obj;
-                          return null;
-                      }
-                      if (typeof obj === 'object' && obj !== null) {
-                          for (const key of Object.keys(obj)) {
-                              const result = findEpicsArray(obj[key]);
-                              if (result) return result;
-                          }
-                      }
-                      return null;
-                  };
-
-                  const found = findEpicsArray(parsed);
-                  if (found) rawEpics = found;
-              }
-          } catch (e) {
-              console.error("Failed to parse JSON", e);
-              rawEpics = [];
+            // Small delay between batches to avoid rate limiting
+            if (i + batchSize < epicCategories.length) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
           }
 
-          console.log('Total rawEpics found:', rawEpics.length);
+          setLoadingStatus('Processing and organizing project plan...');
+          console.log('Total epics generated:', allEpics.length);
+          console.log('Total tasks:', allEpics.reduce((acc, e) => acc + (e.tasks?.length || 0), 0));
 
-          // If no epics were generated, retry once with a simpler prompt
-          if (rawEpics.length === 0) {
-              console.warn('No epics were parsed from the AI response. Retrying with simpler prompt...');
-              setLoadingStatus('Retrying plan generation...');
+          let rawEpics = allEpics;
 
-              const retryPrompt = `Based on this product vision, create a project plan with epics and tasks.
+          // If we got very few epics, try a simplified fallback
+          if (rawEpics.length < 5) {
+              console.warn('Not enough epics generated. Running fallback generation...');
+              setLoadingStatus('Running fallback generation for missing areas...');
+
+              const fallbackPrompt = `You are a Senior Product Manager. Create a comprehensive project plan.
 
 Product: ${productName}
-Vision: ${refinedVision.substring(0, 2000)}
+Vision: ${refinedVision.substring(0, 5000)}
 
-Return JSON format:
-{"epics":[{"title":"Epic Name","description":"Description","tasks":[{"title":"Task","description":"Details","type":"task","points":2,"role":"Developer"}]}]}
+Generate 10-15 epics covering ALL aspects of building this product:
+- Infrastructure & Setup
+- Database & Data Layer
+- Authentication & Security
+- User Management
+- Core Features (multiple epics)
+- API Development
+- UI/UX Implementation
+- Testing & QA
+- Deployment
+- Integrations
+- Documentation
 
-Generate 3-5 epics with 3-5 tasks each. Output ONLY valid JSON, no explanation.`;
+Each epic needs 8-12 detailed tasks with descriptions including user story, implementation steps, and acceptance criteria.
 
-              const retryResponse = await generateWithRetry({
+OUTPUT ONLY VALID JSON:
+{"epics":[{"title":"Epic","description":"Description","tasks":[{"title":"Task","description":"<p>Details...</p>","type":"task","points":3,"role":"Full-Stack"}]}]}`;
+
+              const fallbackResponse = await generateWithRetry({
                   model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
-                  contents: [{ role: 'user', parts: [{ text: retryPrompt }] }],
+                  contents: [{ role: 'user', parts: [{ text: fallbackPrompt }] }],
                   config: { responseMimeType: "application/json" }
               });
 
-              try {
-                  const retryText = cleanJson(retryResponse.text || '{}');
-                  const retryParsed = JSON.parse(retryText);
-                  if (retryParsed.epics && Array.isArray(retryParsed.epics)) {
-                      rawEpics = retryParsed.epics;
-                  } else if (Array.isArray(retryParsed)) {
-                      rawEpics = retryParsed;
-                  }
-              } catch (retryError) {
-                  console.error('Retry parsing also failed:', retryError);
+              const fallbackEpics = parseEpicsFromResponse(fallbackResponse.text || '');
+              if (fallbackEpics.length > 0) {
+                rawEpics = [...rawEpics, ...fallbackEpics];
               }
+          }
 
-              // If still no epics, throw error
-              if (rawEpics.length === 0) {
-                  throw new Error('Failed to generate project plan. Please try again.');
-              }
+          // Final check
+          if (rawEpics.length === 0) {
+              throw new Error('Failed to generate project plan. Please try again.');
           }
 
           setLoadingStatus(`Building ${rawEpics.length} epics and assigning tasks...`);
@@ -1675,18 +1860,18 @@ STRICT RULES:
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-        <div className={`bg-white dark:bg-[#12141A] w-full rounded-2xl shadow-2xl border border-gray-200 dark:border-[#1F2128] overflow-hidden flex flex-col transition-all duration-500 ${step === 'review' || step === 'prd_view' || step === 'planning' || step === 'creating_project' ? 'max-w-6xl h-[85vh]' : 'max-w-xl'}`}>
+    <div className="fixed inset-0 z-50 bg-white dark:bg-[#0A0B0D] animate-in fade-in duration-200">
+        <div className="h-full w-full flex flex-col overflow-hidden">
 
             {/* Header */}
             {step !== 'creating_project' && (
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-[#1F2128] flex justify-between items-center bg-white dark:bg-[#12141A] z-10 flex-shrink-0">
+            <div className="px-6 py-3 border-b border-gray-200 dark:border-[#1F2128] flex justify-between items-center bg-white dark:bg-[#0A0B0D] z-10 flex-shrink-0">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
-                        <Sparkles size={20} />
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+                        <Sparkles size={18} />
                     </div>
                     <div>
-                        <h2 className="text-base font-bold text-[#172B4D] dark:text-white">Product Architect</h2>
+                        <h2 className="text-sm font-bold text-[#172B4D] dark:text-white">Product Architect</h2>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
                             {productName ? productName : 'AI-powered product creation'}
                         </p>
@@ -2222,7 +2407,7 @@ STRICT RULES:
                                         </div>
 
                                         {/* Suggestions - Right */}
-                                        <div className="w-64 flex-shrink-0 flex flex-col bg-gray-50/50 dark:bg-[#0B0C0E]/50">
+                                        <div className="w-80 flex-shrink-0 flex flex-col bg-gray-50 dark:bg-[#0B0C0E] border-l border-gray-200 dark:border-[#1F2128]">
                                             <div className="p-4 border-b border-gray-100 dark:border-[#1F2128] flex items-center justify-between flex-shrink-0">
                                                 <div className="flex items-center gap-2">
                                                     <Zap size={14} className="text-amber-500" />
@@ -2282,11 +2467,11 @@ STRICT RULES:
 
                                 {/* PRD View Step */}
                                 {step === 'prd_view' && (
-                                    <div className={`flex h-full ${
+                                    <div className={`flex w-full h-full overflow-hidden ${
                                       isTransitioning ? 'opacity-0' : transitionDirection === 'forward' ? 'animate-slideInFromRight' : 'animate-slideInFromLeft'
                                     }`}>
                                         {/* Document Navigation */}
-                                        <div className="w-56 bg-gray-50 dark:bg-[#0B0C0E] border-r border-gray-100 dark:border-[#1F2128] flex flex-col flex-shrink-0">
+                                        <div className="w-56 bg-gray-50 dark:bg-[#0B0C0E] border-r border-gray-200 dark:border-[#1F2128] flex flex-col flex-shrink-0 overflow-hidden">
                                             <div className="p-3 border-b border-gray-100 dark:border-[#1F2128]">
                                                 <h3 className="text-[10px] font-bold uppercase text-gray-400 tracking-wider">Documents</h3>
                                             </div>
@@ -2318,7 +2503,7 @@ STRICT RULES:
                                         </div>
 
                                         {/* Document Content */}
-                                        <div className="flex-1 p-6 bg-gray-100/50 dark:bg-[#0B0C0E]/50 overflow-y-auto custom-scrollbar">
+                                        <div className="flex-1 p-6 bg-gray-100/50 dark:bg-[#0B0C0E]/50 overflow-y-auto min-w-0">
                                              {/* Step Summary from Vision */}
                                              <div className="max-w-4xl mx-auto mb-4">
                                                <StepSummary stepName="Vision" onEdit={() => handleStepChange('review', 'backward')}>
@@ -2396,7 +2581,7 @@ STRICT RULES:
                                         </div>
 
                                         {/* Right Sidebar - AI Chat Assistant (Claude Code style) */}
-                                        <div className={`${isChatPanelOpen ? 'w-96' : 'w-12'} bg-white dark:bg-[#12141A] border-l border-gray-100 dark:border-[#1F2128] flex flex-col flex-shrink-0 transition-all duration-300`}>
+                                        <div className={`${isChatPanelOpen ? 'w-80' : 'w-12'} bg-white dark:bg-[#0A0B0D] border-l border-gray-200 dark:border-[#1F2128] flex flex-col flex-shrink-0 overflow-hidden transition-all duration-300`}>
                                             {/* Chat Header */}
                                             <div className="p-3 border-b border-gray-100 dark:border-[#1F2128] flex items-center justify-between">
                                                 {isChatPanelOpen ? (
@@ -2557,9 +2742,10 @@ STRICT RULES:
 
                                 {/* Planning Step */}
                                 {step === 'planning' && (
-                                    <div className={`p-6 max-w-5xl mx-auto space-y-4 ${
+                                    <div className={`w-full h-full overflow-y-auto p-6 ${
                                       isTransitioning ? 'opacity-0' : transitionDirection === 'forward' ? 'animate-slideInFromRight' : 'animate-slideInFromLeft'
                                     }`}>
+                                      <div className="max-w-7xl mx-auto space-y-4">
                                         {/* Step Summary from Documents */}
                                         <StepSummary stepName="Documents" onEdit={() => handleStepChange('prd_view', 'backward')}>
                                           <div className="flex items-center justify-between">
@@ -2774,6 +2960,7 @@ STRICT RULES:
                                         >
                                             <Plus size={14} /> Add Epic
                                         </button>
+                                      </div>
                                     </div>
                                 )}
 
@@ -2833,7 +3020,7 @@ STRICT RULES:
 
             {/* Footer Actions */}
             {(step === 'review' || step === 'prd_view' || step === 'planning') && (
-                <div className="px-6 py-4 border-t border-gray-100 dark:border-[#1F2128] bg-gray-50/50 dark:bg-[#0B0C0E]/50 flex justify-between items-center z-10 flex-shrink-0">
+                <div className="px-6 py-3 border-t border-gray-200 dark:border-[#1F2128] bg-white dark:bg-[#0A0B0D] flex justify-between items-center z-10 flex-shrink-0">
                     <button
                         onClick={() => handleStepChange(getPreviousStep(), 'backward')}
                         disabled={isTransitioning}
@@ -2852,14 +3039,33 @@ STRICT RULES:
                                 <FileText size={14} /> Generate Documents
                             </button>
                         )}
-                        {step === 'prd_view' && (
-                            <button
-                                onClick={handleGeneratePlan}
-                                className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg text-xs font-bold shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 flex items-center gap-2 transition-all"
-                            >
-                                <Layout size={14} /> Generate Plan
-                            </button>
-                        )}
+                        {step === 'prd_view' && (() => {
+                            const allDocsComplete = DOC_NAV_ITEMS.every(doc =>
+                                docGenerationProgress[doc.id] === 'completed' || generatedDocs[doc.id]
+                            );
+                            const pendingDocs = DOC_NAV_ITEMS.filter(doc =>
+                                !generatedDocs[doc.id] && docGenerationProgress[doc.id] !== 'completed'
+                            );
+                            const isGenerating = Object.values(docGenerationProgress).some(s => s === 'generating');
+
+                            return (
+                                <div className="flex items-center gap-2">
+                                    {!allDocsComplete && (
+                                        <span className="text-xs text-amber-400">
+                                            {isGenerating ? 'Generating docs...' : `${pendingDocs.length} docs pending`}
+                                        </span>
+                                    )}
+                                    <button
+                                        onClick={handleGeneratePlan}
+                                        disabled={!allDocsComplete || isGenerating}
+                                        className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg text-xs font-bold shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title={!allDocsComplete ? 'All documentation must be generated before creating the plan' : ''}
+                                    >
+                                        <Layout size={14} /> Generate Plan
+                                    </button>
+                                </div>
+                            );
+                        })()}
                         {step === 'planning' && (
                             <button
                                 onClick={handleFinalize}

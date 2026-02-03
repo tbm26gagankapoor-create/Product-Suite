@@ -11,10 +11,17 @@ router.use(authMiddleware);
 // Get all users (filtered by user's organizations)
 router.get('/', async (req: AuthRequest, res: Response) => {
   const user = req.user;
+  const { team_id } = req.query;
 
   // If no user, return empty list
   if (!user) {
     return res.json({ success: true, data: [] });
+  }
+
+  // If team_id filter is provided, get users in that team
+  if (team_id) {
+    const users = await usersService.getByTeamId(team_id as string);
+    return res.json({ success: true, data: users });
   }
 
   // Get user's organization memberships

@@ -81,4 +81,15 @@ export const usersService = {
   async validatePassword(user: User, password: string): Promise<boolean> {
     return bcrypt.compare(password, user.password_hash || '');
   },
+
+  // Get users by team membership
+  async getByTeamId(teamId: string): Promise<Omit<User, 'password_hash'>[]> {
+    const teamMembers = await database.findMany<any>('team_members', { team_id: teamId });
+    const userIds = teamMembers.map(tm => tm.user_id);
+
+    const users = await Promise.all(
+      userIds.map(id => this.getById(id))
+    );
+    return users.filter((u): u is Omit<User, 'password_hash'> => u !== null);
+  },
 };
