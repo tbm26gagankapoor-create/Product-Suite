@@ -25,7 +25,7 @@ interface EditUserModalProps {
   currentUserIsAdmin?: boolean;
 }
 
-const ROLE_OPTIONS = [
+const DESIGNATION_OPTIONS = [
   { value: 'Member', label: 'Member', description: 'Can view and work on assigned tasks' },
   { value: 'Admin', label: 'Admin', description: 'Can manage users, teams, and settings' },
   { value: 'Viewer', label: 'Viewer', description: 'Read-only access to projects' },
@@ -42,7 +42,7 @@ const EditUserModal: React.FC<EditUserModalProps> = ({
 }) => {
   const [formData, setFormData] = useState({
     name: '',
-    role: 'Member',
+    designation: 'Member',
     jobTitle: '',
     location: '',
     bio: '',
@@ -58,7 +58,7 @@ const EditUserModal: React.FC<EditUserModalProps> = ({
     if (user) {
       setFormData({
         name: user.name || '',
-        role: user.role || 'Member',
+        designation: user.designation || 'Member',
         jobTitle: user.jobTitle || '',
         location: user.location || '',
         bio: user.bio || '',
@@ -78,12 +78,12 @@ const EditUserModal: React.FC<EditUserModalProps> = ({
     try {
       await onSave(user.id, {
         name: formData.name,
-        role: formData.role,
+        designation: formData.designation,
         jobTitle: formData.jobTitle,
         location: formData.location,
         bio: formData.bio,
         website: formData.website,
-        isAdmin: formData.role === 'Admin',
+        isAdmin: formData.designation === 'Admin',
       });
       setSuccessMessage('User updated successfully');
       setTimeout(() => {
@@ -226,28 +226,28 @@ const EditUserModal: React.FC<EditUserModalProps> = ({
               </div>
             </div>
 
-            {/* Role */}
+            {/* Designation */}
             {currentUserIsAdmin && (
               <div>
                 <label className="block text-xs font-bold uppercase text-gray-500 tracking-wider mb-2">
-                  Role
+                  Designation
                 </label>
                 <div className="space-y-2">
-                  {ROLE_OPTIONS.map((option) => (
+                  {DESIGNATION_OPTIONS.map((option) => (
                     <label
                       key={option.value}
                       className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                        formData.role === option.value
+                        formData.designation === option.value
                           ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
                           : 'border-gray-200 dark:border-[#2D2F36] hover:border-gray-300 dark:hover:border-gray-600'
                       }`}
                     >
                       <input
                         type="radio"
-                        name="role"
+                        name="designation"
                         value={option.value}
-                        checked={formData.role === option.value}
-                        onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                        checked={formData.designation === option.value}
+                        onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
                         className="mt-1 text-blue-600 focus:ring-blue-500"
                       />
                       <div className="flex-1">

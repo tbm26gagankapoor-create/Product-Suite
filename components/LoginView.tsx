@@ -16,7 +16,7 @@ import { useTheme } from '../context/ThemeContext';
 import ParticleBackground from './ParticleBackground';
 
 // Backend API URL
-const API_URL = import.meta.env.VITE_API_URL || 'https://product-suite-production.up.railway.app/api/v1';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
 
 interface LoginViewProps {
   onLogin: () => void;
@@ -274,7 +274,10 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin, onForgotPassword }) => {
                     className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed mt-2"
                 >
                     {isLoading ? (
-                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span className="flex items-center gap-2">
+                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            <span>{isLogin ? 'Signing in...' : 'Creating account...'}</span>
+                        </span>
                     ) : (
                         <>
                             {isLogin ? 'Sign In' : 'Create Account'}

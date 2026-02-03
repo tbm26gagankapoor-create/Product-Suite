@@ -1,0 +1,292 @@
+import database, { generateUUID, now } from '../lib/database.js';
+
+export interface Task {
+  id: string;
+  task_key: string;
+  project_id: string;
+  column_id: string;
+  sprint_id: string | null;
+  parent_epic_id: string | null;
+  title: string;
+  description: string | null;
+  type: string;
+  priority: string;
+  status: string | null;
+  points: number | null;
+  assignee_id: string | null;
+  reporter_id: string | null;
+  due_date: string | null;
+  start_date: string | null;
+  actual_start_date: string | null;
+  completed_date: string | null;
+  time_spent: string | null;
+  estimate: string | null;
+  impact_score: number | null;
+  product_theme: string | null;
+  acceptance_criteria: string[] | null;
+  customer_value: string | null;
+  technical_debt: boolean | null;
+  environment: string[] | null;
+  labels: string[] | null;
+  resolution: string | null;
+  external_links: string[] | null;
+  blocked_by: string[] | null;
+  blocks: string[] | null;
+  image_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Subtask {
+  id: string;
+  task_id: string;
+  title: string;
+  type: string;
+  status: string;
+  is_completed: boolean;
+  assignee_id: string | null;
+  sprint_id: string | null;
+  due_date: string | null;
+  created_at: string;
+}
+
+export interface CreateTaskInput {
+  project_id: string;
+  title: string;
+  description?: string;
+  type?: string;
+  priority?: string;
+  points?: number;
+  assignee_id?: string;
+  reporter_id?: string;
+  sprint_id?: string;
+  column_id?: string;
+  due_date?: string;
+  start_date?: string;
+}
+
+export interface TaskWithDetails extends Task {
+  column_title?: string;
+  assignee_name?: string;
+  assignee_avatar?: string;
+  tags?: any[];
+  comments_count?: number;
+  subtasks_count?: number;
+  has_description?: boolean;
+}
+
+// Helper to generate task key
+async function generateTaskKey(projectId: string): Promise<string> {
+  const project = await database.findById<any>('projects', projectId);
+  const projectCode = project?.code || 'TSK';
+
+  // Get all tasks for this project to determine next number
+  const tasks = await database.findMany<Task>('tasks', { project_id: projectId });
+  const maxNum = tasks.reduce((max, task) => {
+    const match = task.task_key?.match(/-(\d+)$/);
+    const num = match ? parseInt(match[1], 10) : 0;
+    return Math.max(max, num);
+  }, 0);
+
+  return `${projectCode}-${maxNum + 1}`;
+}
+
+export const tasksService = {
+  async getAll(filters?: { project_id?: string; sprint_id?: string; assignee_id?: string }): Promise<TaskWithDetails[]> {
+    let tasks: Task[];
+
+    if (filters?.project_id) {
+      tasks = await database.findMany<Task>('tasks', { project_id: filters.project_id });
+    } else {
+      tasks = await database.getAll<Task>('tasks');
+    }
+
+    // Apply additional filters
+    if (filters?.sprint_id) {
+      tasks = tasks.filter(t => t.sprint_id === filters.sprint_id);
+    }
+    if (filters?.assignee_id) {
+      tasks = tasks.filter(t => t.assignee_id === filters.assignee_id);
+    }
+
+    // Enrich tasks with details
+    return Promise.all(tasks.map(task => this.enrichTask(task)));
+  },
+
+  async getById(id: string): Promise<TaskWithDetails | null> {
+    // Try by ID first, then by task_key
+    let task = await database.findById<Task>('tasks', id);
+    if (!task) {
+      task = await database.findOne<Task>('tasks', { task_key: id });
+    }
+    if (!task) return null;
+    return this.enrichTask(task);
+  },
+
+  async enrichTask(task: Task): Promise<TaskWithDetails> {
+    // Get column title
+    const column = task.column_id ? await database.findById<any>('columns_status', task.column_id) : null;
+
+    // Get assignee info
+    const assignee = task.assignee_id ? await database.findById<any>('users', task.assignee_id) : null;
+
+    // Get tags
+    const taskTags = await database.findMany<any>('task_tags', { task_id: task.id });
+    const tags = await Promise.all(taskTags.map(async tt => {
+      const tag = await database.findById<any>('tags', tt.tag_id);
+      return tag;
+    }));
+
+    // Get counts
+    const comments = await database.findMany<any>('comments', { task_id: task.id });
+    const subtasks = await database.findMany<any>('subtasks', { task_id: task.id });
+
+    return {
+      ...task,
+      column_title: column?.title || null,
+      assignee_name: assignee?.name || null,
+      assignee_avatar: assignee?.avatar_url || null,
+      tags: tags.filter(Boolean),
+      comments_count: comments.length,
+      subtasks_count: subtasks.length,
+      has_description: !!task.description && task.description.length > 0,
+    };
+  },
+
+  async create(input: CreateTaskInput): Promise<TaskWithDetails> {
+    const taskKey = await generateTaskKey(input.project_id);
+
+    // Get default column if not provided
+    let columnId = input.column_id;
+    if (!columnId) {
+      const defaultColumn = await database.findOne<any>('columns_status', {
+        project_id: input.project_id,
+        is_default: true
+      });
+      columnId = defaultColumn?.id;
+
+      // If no default, get first column
+      if (!columnId) {
+        const columns = await database.findMany<any>('columns_status', { project_id: input.project_id });
+        columnId = columns[0]?.id;
+      }
+    }
+
+    const task: Task = {
+      id: generateUUID(),
+      task_key: taskKey,
+      project_id: input.project_id,
+      column_id: columnId || '',
+      sprint_id: input.sprint_id || null,
+      parent_epic_id: null,
+      title: input.title,
+      description: input.description || null,
+      type: input.type || 'task',
+      priority: input.priority || 'MEDIUM',
+      status: null,
+      points: input.points || null,
+      assignee_id: input.assignee_id || null,
+      reporter_id: input.reporter_id || null,
+      due_date: input.due_date || null,
+      start_date: input.start_date || null,
+      actual_start_date: null,
+      completed_date: null,
+      time_spent: null,
+      estimate: null,
+      impact_score: null,
+      product_theme: null,
+      acceptance_criteria: null,
+      customer_value: null,
+      technical_debt: null,
+      environment: null,
+      labels: null,
+      resolution: null,
+      external_links: null,
+      blocked_by: null,
+      blocks: null,
+      image_url: null,
+      created_at: now(),
+      updated_at: now(),
+    };
+
+    await database.insert('tasks', task);
+    return this.enrichTask(task);
+  },
+
+  async update(id: string, updates: Partial<CreateTaskInput>): Promise<TaskWithDetails | null> {
+    const existing = await database.findById<Task>('tasks', id);
+    if (!existing) {
+      // Try by task_key
+      const byKey = await database.findOne<Task>('tasks', { task_key: id });
+      if (!byKey) return null;
+      id = byKey.id;
+    }
+
+    const updated = await database.update<Task>('tasks', id, {
+      ...updates,
+      updated_at: now(),
+    });
+
+    if (!updated) return null;
+    return this.enrichTask(updated);
+  },
+
+  async delete(id: string): Promise<boolean> {
+    // Try by ID first
+    let task = await database.findById<Task>('tasks', id);
+    if (!task) {
+      task = await database.findOne<Task>('tasks', { task_key: id });
+      if (task) id = task.id;
+    }
+    if (!task) return false;
+
+    // Delete related data
+    await database.deleteMany('subtasks', { task_id: id });
+    await database.deleteMany('task_tags', { task_id: id });
+    await database.deleteMany('comments', { task_id: id });
+    await database.deleteMany('attachments', { task_id: id });
+
+    return database.delete('tasks', id);
+  },
+
+  // Move task to different column
+  async moveToColumn(id: string, columnId: string): Promise<TaskWithDetails | null> {
+    return this.update(id, { column_id: columnId } as any);
+  },
+
+  // Assign task to sprint
+  async assignToSprint(id: string, sprintId: string | null): Promise<TaskWithDetails | null> {
+    return this.update(id, { sprint_id: sprintId } as any);
+  },
+
+  // Subtask management
+  async getSubtasks(taskId: string): Promise<Subtask[]> {
+    return database.findMany<Subtask>('subtasks', { task_id: taskId });
+  },
+
+  async createSubtask(taskId: string, input: { title: string; assignee_id?: string }): Promise<Subtask> {
+    const subtask: Subtask = {
+      id: generateUUID(),
+      task_id: taskId,
+      title: input.title,
+      type: 'task',
+      status: 'pending',
+      is_completed: false,
+      assignee_id: input.assignee_id || null,
+      sprint_id: null,
+      due_date: null,
+      created_at: now(),
+    };
+
+    await database.insert('subtasks', subtask);
+    return subtask;
+  },
+
+  async updateSubtask(subtaskId: string, updates: Partial<Subtask>): Promise<Subtask | null> {
+    return database.update<Subtask>('subtasks', subtaskId, updates);
+  },
+
+  async deleteSubtask(subtaskId: string): Promise<boolean> {
+    return database.delete('subtasks', subtaskId);
+  },
+};

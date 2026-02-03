@@ -9,7 +9,7 @@ export interface IUser extends Document {
   email: string;
   password_hash?: string;
   avatar_url?: string;
-  role?: string;
+  designation?: string;
   organization_id?: string;
   oauth_provider?: 'microsoft' | 'google' | 'github';
   oauth_provider_id?: string;
@@ -30,7 +30,7 @@ const userSchema = new Schema<IUser>({
   email: { type: String, required: true, unique: true, index: true },
   password_hash: String,
   avatar_url: String,
-  role: { type: String, default: 'Member' },
+  designation: { type: String, default: 'Member' },
   organization_id: { type: String, index: true },
   oauth_provider: String,
   oauth_provider_id: String,

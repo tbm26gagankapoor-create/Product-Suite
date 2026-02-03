@@ -7,7 +7,7 @@ export interface User {
   email: string;
   password_hash?: string;
   avatar_url: string | null;
-  role: string | null;
+  designation: string | null;
   organization_id?: string;
   created_at: string;
   updated_at: string;
@@ -18,7 +18,7 @@ export interface CreateUserInput {
   email: string;
   password: string;
   avatar_url?: string;
-  role?: string;
+  designation?: string;
 }
 
 export const usersService = {
@@ -50,7 +50,7 @@ export const usersService = {
       email: input.email.toLowerCase(),
       password_hash: await bcrypt.hash(input.password, 10),
       avatar_url: input.avatar_url || null,
-      role: input.role || null,
+      designation: input.designation || null,
       created_at: now(),
       updated_at: now(),
     };

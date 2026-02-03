@@ -16,6 +16,61 @@ interface AuthRequest extends Request {
 }
 
 /**
+ * GET /api/v1/invites?organization_id=xxx&status=pending
+ * Get invites with query parameters
+ */
+router.get('/', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { organization_id, status } = req.query;
+    const userId = req.user?.id;
+
+    if (!organization_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'organization_id query parameter is required',
+      });
+    }
+
+    // Check if user is a member of the organization
+    const membership = await organizationsService.getMember(organization_id as string, userId!);
+    if (!membership) {
+      return res.status(403).json({
+        success: false,
+        error: 'You must be a member of this organization',
+      });
+    }
+
+    let invites = await invitesService.getByOrganization(organization_id as string);
+
+    // Filter by status if provided
+    if (status) {
+      invites = invites.filter(invite => invite.status === status);
+    }
+
+    // Enrich with inviter info
+    const enrichedInvites = await Promise.all(invites.map(async invite => {
+      const inviter = await database.findById<any>('users', invite.invited_by);
+      return {
+        ...invite,
+        invitedByName: inviter?.name || 'Unknown',
+        isValid: invitesService.isValid(invite),
+      };
+    }));
+
+    res.json({
+      success: true,
+      data: enrichedInvites,
+    });
+  } catch (error) {
+    console.error('Error fetching invites:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch invitations',
+    });
+  }
+});
+
+/**
  * POST /api/v1/invites
  * Create an invite and send email
  */

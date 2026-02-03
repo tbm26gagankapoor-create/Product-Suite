@@ -241,8 +241,8 @@ const UserManagementView: React.FC = () => {
                 <thead>
                   <tr className="bg-gray-50/50 dark:bg-[#1F2128]/50 border-b border-gray-200 dark:border-[#1F2128]">
                     <th className="py-3 px-6 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Member</th>
+                    <th className="py-3 px-6 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Designation</th>
                     <th className="py-3 px-6 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Role</th>
-                    <th className="py-3 px-6 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Org Role</th>
                     <th className="py-3 px-6 text-[11px] font-bold text-gray-400 uppercase tracking-wider">Joined</th>
                     <th className="py-3 px-6 text-[11px] font-bold text-gray-400 uppercase tracking-wider text-right">Actions</th>
                   </tr>
@@ -270,7 +270,7 @@ const UserManagementView: React.FC = () => {
                       </td>
                       <td className="py-4 px-6">
                         <span className="inline-block px-2 py-1 rounded bg-gray-100 dark:bg-[#2D2F36] text-xs font-medium text-gray-700 dark:text-gray-300">
-                          {member.user?.role || 'Member'}
+                          {member.user?.designation || 'Member'}
                         </span>
                       </td>
                       <td className="py-4 px-6">

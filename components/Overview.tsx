@@ -492,7 +492,7 @@ const Overview: React.FC<OverviewProps> = ({ onNavigate, activeProject, onProjec
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="text-sm font-medium text-[#172B4D] dark:text-gray-200 truncate">{user.name}</div>
-                                            <div className="text-xs text-gray-500 truncate">{user.role}</div>
+                                            <div className="text-xs text-gray-500 truncate">{user.designation}</div>
                                         </div>
                                     </div>
                                  );

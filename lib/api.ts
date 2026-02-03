@@ -5,8 +5,8 @@
 
 import { Project, Task, Sprint, User, Team, Comment } from '../types';
 
-// Use environment variable or default to production backend
-const API_BASE = import.meta.env.VITE_API_URL || 'https://product-suite-production.up.railway.app/api/v1';
+// Use environment variable or default to local backend
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
 
 // --- Auth Headers ---
 function getAuthHeaders(): HeadersInit {
@@ -33,9 +33,9 @@ async function handleResponse<T>(response: Response): Promise<T> {
 const mapUserFromDB = (data: any): User => ({
   id: data.id,
   name: data.name || 'User',
-  role: data.role || 'Member',
+  designation: data.designation || 'Member',
   avatarUrl: data.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.name || 'User')}`,
-  isAdmin: data.role === 'Admin',
+  isAdmin: data.designation === 'Admin',
   email: data.email,
   organizationId: data.organization_id,
   location: data.location,
@@ -252,7 +252,7 @@ export const api = {
   async updateUser(id: string, updates: Partial<User>): Promise<User> {
     const dbUpdates: any = {};
     if (updates.name) dbUpdates.name = updates.name;
-    if (updates.role) dbUpdates.role = updates.role;
+    if (updates.designation) dbUpdates.designation = updates.designation;
     if (updates.avatarUrl) dbUpdates.avatar_url = updates.avatarUrl;
     if (updates.location) dbUpdates.location = updates.location;
     if (updates.bio) dbUpdates.bio = updates.bio;
@@ -260,7 +260,7 @@ export const api = {
     if (updates.jobTitle) dbUpdates.job_title = updates.jobTitle;
     if (updates.organizationId) dbUpdates.organization_id = updates.organizationId;
     if (updates.status) dbUpdates.status = updates.status;
-    if (updates.isAdmin !== undefined) dbUpdates.role = updates.isAdmin ? 'Admin' : updates.role || 'Member';
+    if (updates.isAdmin !== undefined) dbUpdates.designation = updates.isAdmin ? 'Admin' : updates.designation || 'Member';
 
     const response = await fetch(`${API_BASE}/users/${id}`, {
       method: 'PATCH',
@@ -273,13 +273,25 @@ export const api = {
 
   // Teams
   async getTeams(): Promise<Team[]> {
-    // Teams not fully implemented in local backend yet
-    return [];
+    const response = await fetch(`${API_BASE}/teams`, { headers: getAuthHeaders() });
+    const data = await response.json();
+    if (!data.success) return [];
+    return (data.data || []).map(mapTeamFromDB);
   },
 
   async createTeam(team: Team): Promise<Team> {
-    console.log('Team creation not implemented in local backend');
-    return team;
+    const response = await fetch(`${API_BASE}/teams`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        name: team.name,
+        description: team.description,
+        organization_id: team.organizationId,
+        member_ids: team.members,
+      }),
+    });
+    const result = await handleResponse<any>(response);
+    return mapTeamFromDB(result);
   },
 
   // Projects

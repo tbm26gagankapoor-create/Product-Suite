@@ -5,7 +5,7 @@ export interface User {
   id: string;
   name: string;
   avatarUrl: string;
-  role?: string;
+  designation?: string;
   isAdmin?: boolean;
   email?: string;
   organizationId?: string; // Current active organization

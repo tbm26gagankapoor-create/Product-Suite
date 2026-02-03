@@ -119,8 +119,8 @@ function mapUser(data: any): User {
     name: data.name,
     email: data.email,
     avatarUrl: data.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.name)}`,
-    role: data.role || 'Member',
-    isAdmin: data.role === 'Admin',
+    designation: data.designation || 'Member',
+    isAdmin: data.designation === 'Admin',
     organizationId: data.organization_id,
     location: data.location,
     bio: data.bio,
@@ -207,8 +207,8 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
                     name: parsedUser.name,
                     email: parsedUser.email,
                     avatarUrl: parsedUser.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(parsedUser.name)}`,
-                    role: parsedUser.role || 'Member',
-                    isAdmin: parsedUser.role === 'Admin'
+                    designation: parsedUser.designation || 'Member',
+                    isAdmin: parsedUser.designation === 'Admin'
                 };
 
                 // Try to get fresh data from server
@@ -224,11 +224,17 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
                                 name: data.data.name,
                                 email: data.data.email,
                                 avatarUrl: data.data.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.data.name)}`,
-                                role: data.data.role || 'Member',
-                                isAdmin: data.data.role === 'Admin'
+                                designation: data.data.designation || 'Member',
+                                isAdmin: data.data.designation === 'Admin'
                             };
                             localStorage.setItem('infinia_user', JSON.stringify(data.data));
                         }
+                    } else if (response.status === 401 || response.status === 404) {
+                        // Token is invalid or user no longer exists - clear cache and reset
+                        console.log('Token invalid or user not found, clearing cached data');
+                        localStorage.removeItem('infinia_token');
+                        localStorage.removeItem('infinia_user');
+                        profile = null;
                     }
                 } catch (e) {
                     console.log('Could not refresh user from server, using cached data');
@@ -357,7 +363,8 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         setTeams(mappedTeams);
 
         setConnectionStatus('connected');
-        console.log(`Loaded: ${mappedProjects.length} projects, ${mappedTasks.length} tasks, ${mappedSprints.length} sprints, ${mappedTeams.length} teams`);
+        console.log(`Loaded: ${mappedProjects.length} projects, ${mappedTasks.length} tasks, ${mappedSprints.length} sprints, ${mappedTeams.length} teams, ${mappedUsers.length} users`);
+        console.log('DEBUG Users:', mappedUsers.map(u => ({ id: u.id, name: u.name, orgId: u.organizationId })));
 
       } catch (error: any) {
         console.error("Data Fetch Error:", error);
@@ -734,16 +741,20 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, [projects, tasks]);
 
   // Compute organization-scoped users and teams
-  // Use organizationMembers as the source of truth for who belongs to the organization
+  // Filter users by their organization_id field - users belong to org if their organizationId matches
   const organizationUsers = useMemo(() => {
+    console.log('DEBUG organizationUsers - currentOrg:', currentOrganization?.id, 'users count:', users.length);
+    console.log('DEBUG users orgIds:', users.map(u => ({ name: u.name, orgId: u.organizationId })));
     if (!currentOrganization?.id) {
       // If no org context, return all users (fallback)
+      console.log('DEBUG: No org context, returning all users');
       return users;
     }
-    // Filter users based on organization membership, not the user's organizationId field
-    const memberUserIds = new Set(organizationMembers.map(m => m.userId));
-    return users.filter(u => memberUserIds.has(u.id));
-  }, [users, currentOrganization, organizationMembers]);
+    // Filter users based on their organizationId field
+    const filtered = users.filter(u => u.organizationId === currentOrganization.id);
+    console.log('DEBUG filtered users:', filtered.length);
+    return filtered;
+  }, [users, currentOrganization]);
 
   const organizationTeams = useMemo(() => {
     if (!currentOrganization?.id) {

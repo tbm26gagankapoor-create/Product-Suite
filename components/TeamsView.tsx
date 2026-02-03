@@ -127,7 +127,7 @@ const UserDetail: React.FC<UserDetailProps> = ({ userId, onBack, onSelectTeam })
                 {user.isAdmin && <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-500/30 uppercase tracking-wide">Admin</span>}
               </h1>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                <span className="font-semibold text-[#172B4D] dark:text-gray-200">{user.role || 'Team Member'}</span>
+                <span className="font-semibold text-[#172B4D] dark:text-gray-200">{user.designation || 'Team Member'}</span>
                 <span className="text-gray-300 dark:text-gray-600">|</span>
                 <span className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400"><Mail size={14} /> {user.email}</span>
               </div>
@@ -989,12 +989,12 @@ const TeamsView: React.FC = () => {
                                 </td>
                                 <td className="py-4 px-6">
                                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
-                                     user.role === 'Admin'
+                                     user.designation === 'Admin'
                                        ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
                                        : 'bg-gray-100 dark:bg-[#2D2F36] text-gray-700 dark:text-gray-300'
                                    }`}>
-                                     {user.role === 'Admin' && <Shield size={10} />}
-                                     {user.role || 'Member'}
+                                     {user.designation === 'Admin' && <Shield size={10} />}
+                                     {user.designation || 'Member'}
                                    </span>
                                 </td>
                                 <td className="py-4 px-6">

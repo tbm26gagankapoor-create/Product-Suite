@@ -679,7 +679,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                               <img src={user.avatarUrl} className="w-8 h-8 rounded-lg border border-gray-200 dark:border-gray-600 object-cover" />
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-medium text-[#172B4D] dark:text-gray-200">{user.name}</div>
-                                <div className="text-[10px] text-gray-400">{user.role || 'Team Member'}</div>
+                                <div className="text-[10px] text-gray-400">{user.designation || 'Team Member'}</div>
                               </div>
                               {isSelected && <Check size={16} className="text-blue-500 flex-shrink-0" />}
                             </button>

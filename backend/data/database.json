@@ -1,84 +1,934 @@
 {
   "users": [
     {
-      "id": "6e1612af-4b65-4c02-bbeb-7a84bb52b091",
-      "name": "Gagan Kapoor",
-      "email": "gagankapoor996@gmail.com",
-      "password_hash": "$2a$12$PJzk2vFTuqg98okqYpYaj.L4Uy5tuW5IQwyfpIpnyOlVah4lSRR4.",
-      "avatar_url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAYGBgYHBgcICAcKCwoLCg8ODAwODxYQERAREBYiFRkVFRkVIh4kHhweJB42KiYmKjY+NDI0PkxERExfWl98fKcBBgYGBgcGBwgIBwoLCgsKDw4MDA4PFhAREBEQFiIVGRUVGRUiHiQeHB4kHjYqJiYqNj40MjQ+TERETF9aX3x8p//CABEIAKQApQMBIgACEQEDEQH/xAAwAAACAwEBAAAAAAAAAAAAAAAABAEDBQIGAQEBAQEBAAAAAAAAAAAAAAAAAQIDBP/aAAwDAQACEAMQAAAC8oAAAS1rRmOs9Zq1kwvHF9CdrNWrhUbc2YZbVqAAAAAGmPxMxZnRfwtKzxnV269CFiWXItnLKt6GNsSnnBhfUAKGltuLZicuic+bC/0k35Tr1vUvnqPWVV4idPO1i1a1a46cQZrQwPSZ8ZIGo7r5ehl3HFU01mX0Lpem8qZ36efH6S6tXnyx3G0c2zpe2rWBhZ2V3vSJPGmibxt2xfjfnVulrdC267HVyxvjJd/Ippy3Fetcxd/Nm/Prb2b08yeovqTT7vm/T85lGsdceedzu9eecl9qbqiUZ29Sklo8u9GjzXauhoUWX3I+jZzq9Cq5XzdjE1mTrOkaM0p2EXNcIia5b+1blV2Er89XqaFMdXa1nqcGrpU1mKNclKbdPWMxWyNYyjgbnYw9BlivpeSyKuFb1cLTmtRbRr4etBu3uzrFtwuvHTaxO9Z3mMbvN7zvT+NigDpgmAfpX7knvnu3txLqX2XXi559fUYmfOsx1Bvn11xJ3PFRKgAAAATAXWK2DE8dkTIQSESAFdBZQAAAAAAAAAHQF1wLPIC9YJAAAAAAB//EAAL/2gAMAwEAAgADAAAAIQAEI8M0oAAAAMDP9AzeJygAkwqJhGw/FQC6gdOKYeDlDdcNw/xZEdG8h2xDWxdfkJQvZ9hg4AMXmvJAixeJ/XNPwEDnCxqp9wqAAAHDYRT88AAAAAHHHPAAAAP/xAAC/9oADAMBAAIAAwAAABDzzfpuWHPzzzyfpljyg/Lbz2v2YD4XsGTywonV0CroKc0qWiUtOpD/AC+0YPog/wDHrZzcjCKRCbpfd8LBcZNhJDh0/PO5VL/Kap9fPLIb567SbPPPPPPAn4fPPPP/xAApEQACAgEDAgUEAwAAAAAAAAABAgARAxASMQQhEyAwQUIVIiNRMmJx/9oACAECAQE/ANGcCHIf3NwgMLMODEyn5Dys0czmBZtr30qKxUwEEaOaGjciZMwVqAnjOTUDmKdwmMTIBtmJqNaOdPkDGxb3JuFDxAoAike0TiZTQmBTmbYhF6OT+on8ZkchTtiuT3gYwsZvIsrzMT2qg81OobiPePKpWK/YdoVEIEOBSrUIcZxvRESjG4mFByTL+4VAu8ENF6fabIuVXtLh06pVOMtXcTGUoENGYRWuwJi5niqlTeCKry9QPwv/AJFaBiZ02CgGI5jYEux2MfHk+PM6TJlcMHHGtQTIm9Ss+n/3mLpETuTZg7a9vRv0B5//xAAnEQACAgEEAQQCAwEAAAAAAAABAgADEQQSITEQICJBUQUTFDBhcf/aAAgBAwEBPwDwBmBR9TafqGbQexGr+vSBK0z1AqiGz/JkH4m2GEA+R4pACEyupSm5jP1UjnIhRGHEf2EiOYvMdeM+BBUcReEK/MUE1gRFqx78xshgF6litu3fE1GP2cTSpus64Hc1jLQruwO0QEMAR0YhqzgMI7Deoml09Vt+S2BtgRyzKFGAe4aDx7xAi9ZlVNbEK/U1dYW9yp4zxNFUw3sMdS3O33iFOeIC+e5XqbFwDNPrG3qwMrvFi8TFpA2WKojk5UOwY/Ymo1L14UDOYi1k5aG40N7ejLNWt2FBEBXHYjV7bW/7FE5XkT8dcxYLGa3rEQMTzNQAQMiMEG4DMeixwTuwIlJrPBz4vTIDCVibMzS0H+RWQfmBVjYE1eoy21T1FuZQQQCDKXrJCt0TNdp6KiGrPB6HlUCwStyjBhF/JYUe3mW62yz/AAQ8+SSfQD6SR/QIYfT/AP/EADQQAAEDAgMGBAYBBAMAAAAAAAEAAgMEERIhMRATIzJBUQVhcYEUIDBCUqEjFXKRsTPB8P/aAAgBAQABPwL5QC42Auo6Fx5zh/abRwN+2/qpGANZgA1Ub+gu0poIN+6lN/TEnRRujDjhzAt3T6JjhiY0tHc6KSnkYT18x9OGlc/XIKOJkfKFbudkukfr/wBprMLszqck89APXopMVmg25kzdg/4yRcTiaSoPs/tU1LHJ5HupYnxGzh9CClw5v17dtnQ+ibG57gAMupWCJnNI1Gbs9iFTY2cFv2HJwUjWSWs61u6s5vMPddWv8iCotW/2nY5jXts4XCqKZ0Rvq35qWCwxnm6eSA2BmJSVWHhDcIT3h2aet6Qt6t7fVbwtOqEmJp9FDzD0WNvdbxlzmiGubY5hVEBid5HT5KaLG650G0KWdkYw/wCUZ3HlPshvHaNRil/FMpJXnRDwt/dS+HysTssimOIKkkdwgFYszmsRVPIb4eiljbIwtKe0scWnpsAubKKMMYBtbqFPfEV4bAHuddR0zANEYG9k2IBWT25LxGBosR3TW2UzradlfpspecAJpb2v7rxGIECQMt32UTW7wuc24ARdT9nhfxEcL9hc1hF8ypy4PsvCCTIUXsZzOAXxMP5hGZndSV9OzVy/qNM7rZeJ8oPRYzdSO4B67afntbXJRte0vDvJFocHA9U4FriD0VPwsHmrXuPJGzQnTaYVO/i1U5xOBVEaiLJjQMX3qbd5lzyT1TQ29xdNinfSulyyvl6LDiIyTDr/ABIwCS+B1hhvhRAGnsnu0G2CPFE4/cCCFFTsmaJS7MhOp6dhtm49l4rT7moHZ7AVF4QzC28x0UlDCyNzt4TYKSQE3Gfmi9TtBe63sqeldLDiEjW8XD5qmpn/AAjA53UlHw8WtlZChiY3udAFHG2OIMGgC+HhZwu0vwr4SP8AJfDMBvZR0sTcTnsxZnJVLMErgNOm1v8AG1p7iy8NnjfFu/ubr6JgxBziddFX0zKrdAHkv+1RVkk+LG0WH39FNLG6PhOLS6myefXLZLFipxUN+6129lQ2dE3yLlTm0LVNLYap07omvkxAutkEPE5N3ZwJPom1UzwWyA4fRU0kaEiAOOXsbqSmjqd44EjdgAnoUaR99QhSSNPEmRCS1xkGlUWJs8rcWHLDfzQ/5Wt6Mbn7plLHnxlPkMrhfJo6BMexkTh9rlV00UjRumgOHTunU0rTZwshVYabcgDzK8PkPxGD8x+084LNVXibHiGqpMT7tYy1uZzkYHZYp1PE+MXbPfyKibJv2OLMN9Qi6xULGmNhJ0F3BSR2j3cMeTnXPko6eNhuc/VPkZIzjpyPMJwA5HaKNuN0meZHGFLK9rGsDymTvYMib9VGL2T39BosRTKm4wyDE1TU2WOJxI7dQmyGJ7Xt1ChrnzTfydsk93Dmt43yTq2MG2Ip9U0+i3mJ10buODvr6I4CzI8Nkw4h5I4R7IYJwWYkOd2RNjkt8CcwPZSuIdn7IyqnkG4aetkTtjlLSpYPiCDGBj6t7otfG8g5OaVBU3jxOGWiLqctF05tFfkRdTNya1b6+TQqeLAwk6ptQ67wfZMEzs8VvdSSSXIc4g+a3817hyCeQ1SDGw/pSnRUrtWoIooXKEm705v9I0xexrm8/Ud1QXxTwvHTRS0fVhsjDJ1cmwdyoY89EwZIQRHVo1UzTdwUcDHt3k0ht+PVbsSTWYOHr6J1FBHAS0FzrZe6wOxLMOUhu9x81E/A8HYdjpOjUMvNyY/Doc+6pZml7RgF7a9U8J7ShGo2Jq8SqWOkDGfZ9yHiM3CHAO/2U6dsw4SqSJxqb9AM1VSE4Y2O0/fkp6ezN4Abdb9FM+NsZtfFtppLtw9QnFE3WIBYk0rw5l57/iP9qyLUI0Aq2vDBuojxdT22YimOsbptRJ/7JPkx4SCRb3Ub43RcwItxKocx0pwco02tJabhbwObdF2wNQCoqgQTXdynIptni7DcLAVNVU8PNIL9hmVUeIyS8LOFv72WWSxeSxK6lmI4QfX5QbK90Nl9gc5vK4j0KMkp1kefdW+d8lshr9Bp+o+XoPpNkIQcD9B0rQnPLvqh7h1TZCdpyRlciSfof//EACgQAQACAgICAQMEAwEAAAAAAAEAESExQVFhcRCBkaEgscHRMOHw8f/aAAgBAQABPyH9JxS6Jm6VXgtKK17JRi6VXJF25LjnsiCmFT/cDI2+9qFUz2gncl3/AAvMNqqeQr/HRv8AMYWYe5TdODHfx+Mm4pbXsXGS7bsmB/uEeMKOAlWAXaLYF7hd0hj0zf2S9Q8b+Z9Gh4f1grRDoV8eHt5gR/M/aIBpoNSndqWOZ9IlNPp+zMvh7MLEGvDsRtAeBnUUv6oPcICf8PwwIkqTLp69/qpgy06d+5QfDl6yP2lbG60Z+tziH2m98yhTB2MD9TcOfEMl8se5bwjJn96mI4xkAmGdz3P4/Rjz+yGD42Iu3rhHW5PsgbIX9pT2lSvHhgSzrMC883qYbdviXGu/tM1DHul7emcqOnpg25VfCEDK0QE8b9/Nc0uRrPURT1NexPCaclYKrmgFwe5cwcs9IJBOIqRrUHKy3nv4T0DpvDr4Yw1RjLKefqblstXpIShVlNEULhgjXEC+6M6F9MEWiaThi38penm2yCLMstIXOJmZDJxe8Q3aRAdBiamrDNoypl6tZ5+88I2r/mOxWf4jAMFczIyw7qcgWFeZfBFlmqLoisz3JzmOFG3D5g5MOxtIaAKpeYdJFBnuCWMgnC9RzOx+qvMqAj38CVicM6pXnqCspdWfyy7gUGtdQWbA4Kly0laqOF4ZfxKe/LHEYx9FcxShEW6bi+fYPLEsFm7iCy4RYMw/9GGGZu3vzDbpOYDpjOJ13oAagWjRt05+Qk4irBcj/RBKBdehD82Q4rhW4cKn426ikrXQXRXcqU1b6IsV+UgBwKhxd5h+YdsrePrBuK+pZgch1GLtEdMzg68oqKUEUg6uEyXbD6y2P3i0NQaEE48StXXmapcQLXejjlZcJlD9yiw9jxwTCRGMBL6tgJHQGrLAljfe5T7dcnMvb3gOqQo/KDEuFrEWbmHou7ojmxrVuayL6E1jiIGrtDzGCp005ZjdqGnkxcDODdXc8zseZSMMsOtMojEryhKn2iehqPhmmpRzMZ+p2emWd0/+lxbgeyIBhensgtBdNwwu1Z4Zdn4pm7KbbtYN6cRh7AXScyrA0e5cbrgPXmXrd6eJZTfL/BKUNkpZWO6ipS8mZ/sCnwx7ifGPtiWsWXLeMAWPkr3IWW4OklG3K70ktzZerzH4Ze2OH5MqufibGPKxHRfTA6JVxi+KlGq0cqlFePmC9cxvWuO8Q6ZncZycEdPrkEMUKYJd5Vo68pd2938JXw4r7MStU+EHhZ2DDAEVAZmbTbzUDrVnHMU0EevtE1lAaOabfcviQtd8NRsCN1zDAE8QTDGk6/59RTceGY5i1JXx/RFW/m+PU2bQPV3HuIjXAJxhLFrJ3fQytRu7/cl84ArklKpjK+yG0ir6KdpmkTis/wCsGhZrr5y96PU8kRUaiGif+pZLrvp+Ebzxzmr4XVvQ/wACD3OAxEMbhndXuoJMI28ljO7L9HMzi1X6+RKZJg31Jjlr8FDOGj/tmNr6TM8ULREYWg/mQPkARaWg6ssqnXX6VWPkDBTcQtPyH7QWjOlsPD9df/wfrFIL7gSj5r4qVK+f7H/FgHM1z+vU0GWbJx1/l0Ebqvl0uapRNor/AIP/xAAnEAEAAwACAgIBBAMBAQAAAAABABEhMUFRYXGBECAwkaGxwdHh8P/aAAgBAQABPxD9LgbwCrKM6unwI8BCWz2wFVV0KGwCFVaAya4Phlp4/wAAj/C+4fWAC/ArYNFG2iyzN2UnWmu21QsmAAGsvTy/bcvvocFKaaGu35YKBEAd1ZCZWrrL6RHDG6p3xN9m5IO80aSvZqtWnzC8vOYK1Xb6Igx9TmSgHQTa9Z/WQcbxuPwmJ18O/A/rAAqtAarGB+VN/wBqAOiOo59OlUQQQfZwiU/FcwqBAQEh/Ua2P0RfMMApouBKSwd8HKuLC1THQ0bKhJmzaB/wzh0uPu0zZzbQGK7Ue30/UW7gtDG4XtAqPl9sCNX+Y2mEQ30Bgk7MUgLI3QBvu6lx2rlX/pC4rlULjiSiWtaDFF/4KeyIxUhqwR1MDyKIopwt1cTorgBA0dMpZdp/3vZ+i8uufDBAIM1AzHRahffYsFhPFlB8MWWngWvqK170IZHN2RGYGuKEfAKe+oDC5GnbcVURoXCF1ULsVfMrYVtmpAKzXZ0JKQDF+L7Rg8rB2LGvPZhCbCwb+WoA8OgBU4NrAioY0uPyZZB03GDjqjXMGKSaLdgCBsa8B3BavjJZAXYeQOIBtSgBR/IMDMjCtuZv4z7yTwiC1vsj+yDAAYXfs/A8cAJQXgLLki4qbTFLn8DMI3074BlKAeG4ql7waxoRnLGRGv47Wboy1FsJTNP6yLviRU2ty/bo9FNI+9wei4hMWPxHIaVN+QaibIVXVqUAhQCoiaCxLuB1QtBKfb4h2Go9HzcGosB4OIhjfEKYv9UXRP06LC1AiBVfViNxmj50yOK7snvoWV0xdjTVFxmL2cCeI4KcMH2GtOej2GMi4LYGtfhxRk7xDxyK4XK4RN16Mh94ZBEjFZtqIvlVQO0L6nCejaI3TPg+LHgiXDDQvPtImaoCvQUrywcJTzVKeiXpUqVC0Y85S6pASvQUI6IAyt8/LG6w94+aUgzUemjE8m0HwEfezo1vp3AuDp6Q6DGVeR/F3uxs2aO0z3fmFYLV4BtlkNlGaupGtRaZHu9sHJgBFqmFFzvrz8F8Ij7+YqRgw3wlxh2w4VpKaf8AuRsp+IXwkWVIQE3R0EtmbwCWFx7IkNI9CV1trMj+BhCuiF3tHSQLpcR1HLFaaEAjNx91QRXuo8DSKsQqKG3SvgIfWcm5fRFQQEEvzpAraAv1rXhiBoVTFQnvrRC+BkUShQcALNFaop+YeYoHp5Yq+/svarjrei3Ea6ZTRzVDwSMrRnxQRYDb8VDpcBTwGcWj03ll9kRVV8i5whUOp6PSB7Rst1w5PMuAVHKIoa4SVeutdIZaQSmuB5riad0g365lYpwrnMFdVcLP2j/uRL0f1HP46y/kEqVKaAaBJi6EwpRQKYle44Aa0uH7hokMIIvMOO+ASBP1GgHEHgFBcJ4AHqhi2Bl9h8HwIfCruK/o+2M0blFZ4qgEwY6vjlctu1LetMOA4SVS5cuZgP5krKypbYg0YBePzFhjVAp8+DMSSqi/CgVkeJie35gojw1K6BTWzIWUb11FJyqiThlT4WgSsgSjptd2ETlSE0ux0YoQ9gwjUhj66DH1U4XNa2XbzhElGkCufVB1A0LxZiX7hcX4XzLCcP1OMRfuZK43BCDhlm4rrPkz7RuVY449+8r5F6/W9k5by9ZCEA+YI/QGQFBpUABmXNYW3TccXaRw/wDoQ8wcC+qz1KD/AI2LUBho5Ffg8JcsNn0JyiDXYe5Xiap6idaaPlcxQBsSxl6LBex0IvL4glyC7ePdi25LOUHk92MniPM6RHI1B4JiUxP/AIlKw6I7p1of6whAmm9gHzF4FDb4nTNaAdyK6In9m6tUFhpca+0XF/k59oZFlV+z+b7M7e5qEYvx7McCL2w9qv8AlCXcJ9aGe6SVXxLmBNUgdEOUl8OO/ZGd1LwSks7CcjUvQAhCUgUaXGlHFC1i8bqFYyhelIEGlW5I7/NM5rGPeVV4GIUJbjurHzJQ/wCTIXZBLol4EnkUMXTmP4CNJeNOPtPwlPAQr2sEoi/qHmiXhlVa5+36WyseTzEVqHYxBNszRG3mD+RsR+wcjn6WGcAlEtmsCB+CRLXcKqq2v6nbJj8eH4iHUqEU/lIqWBa0HKznX5/5iq2/s0A0/uVdN+HGB+alSooFUCWB9biNcXQcfu4S14djdCTiEVRLanwETv5x/Y//2Q==",
-      "role": "Member",
-      "created_at": "2026-02-02T09:30:16.203Z",
-      "updated_at": "2026-02-02T11:00:27.913Z",
-      "organization_id": "42709602-cdea-4732-b400-d346316cede4",
-      "oauth_provider": "google",
-      "oauth_provider_id": "105605443256066003172"
-    }
-  ],
-  "projects": [],
-  "project_members": [],
-  "columns_status": [],
-  "sprints": [],
-  "tags": [],
-  "tasks": [],
-  "subtasks": [],
-  "task_tags": [],
-  "comments": [],
-  "attachments": [],
-  "activity_log": [],
-  "user_preferences": [],
-  "teams": [],
-  "team_members": [],
-  "team_projects": [],
-  "oauth_states": [],
-  "organizations": [
-    {
-      "id": "42709602-cdea-4732-b400-d346316cede4",
-      "name": "Infinite",
-      "slug": "infinite",
-      "domain": null,
-      "logo_url": null,
-      "owner_id": "6e1612af-4b65-4c02-bbeb-7a84bb52b091",
-      "settings": {
-        "allowDomainJoin": true,
-        "requireApproval": true,
-        "defaultRole": "member"
-      },
-      "created_at": "2026-02-02T09:30:36.967Z",
-      "updated_at": "2026-02-02T09:30:36.967Z"
-    }
-  ],
-  "organization_members": [
-    {
-      "id": "5252ad47-d497-445b-ac28-a994b6659656",
-      "organization_id": "42709602-cdea-4732-b400-d346316cede4",
-      "user_id": "6e1612af-4b65-4c02-bbeb-7a84bb52b091",
-      "role": "admin",
-      "joined_at": "2026-02-02T09:30:36.967Z"
-    }
-  ],
-  "organization_join_requests": [],
-  "organization_invites": [
-    {
-      "id": "ebb46b1c-c911-4a20-bfd2-1101f1e9e2d4",
-      "organization_id": "42709602-cdea-4732-b400-d346316cede4",
-      "email": "gagan.kapoor@netgroup.ai",
-      "role": "member",
-      "invited_by": "6e1612af-4b65-4c02-bbeb-7a84bb52b091",
-      "status": "pending",
-      "created_at": "2026-02-02T10:18:55.350Z",
-      "expires_at": "2026-02-09T10:21:29.342Z",
-      "accepted_at": null
+      "id": "user-001",
+      "name": "Alice Smith",
+      "email": "alice@infinia.com",
+      "password_hash": "$2a$10$znbgOAKuidaosAcxCafwXewBF6f/ZADRF725LZ.brE9Gfz56z7Dm6",
+      "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=Alice",
+      "designation": "Product Owner",
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
     },
     {
-      "id": "6f4ecff1-a709-4523-af68-f7f7e2408f75",
-      "organization_id": "42709602-cdea-4732-b400-d346316cede4",
-      "email": "gagan.gogi996@gmail.com",
+      "id": "user-002",
+      "name": "Bob Johnson",
+      "email": "bob@infinia.com",
+      "password_hash": "$2a$10$znbgOAKuidaosAcxCafwXewBF6f/ZADRF725LZ.brE9Gfz56z7Dm6",
+      "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=Bob",
+      "designation": "Frontend Lead",
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "user-003",
+      "name": "Charlie Davis",
+      "email": "charlie@infinia.com",
+      "password_hash": "$2a$10$znbgOAKuidaosAcxCafwXewBF6f/ZADRF725LZ.brE9Gfz56z7Dm6",
+      "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=Charlie",
+      "designation": "UI/UX Designer",
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "user-004",
+      "name": "Dave Wilson",
+      "email": "dave@infinia.com",
+      "password_hash": "$2a$10$znbgOAKuidaosAcxCafwXewBF6f/ZADRF725LZ.brE9Gfz56z7Dm6",
+      "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=Dave",
+      "designation": "Backend Lead",
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "user-005",
+      "name": "Eve Brown",
+      "email": "eve@infinia.com",
+      "password_hash": "$2a$10$znbgOAKuidaosAcxCafwXewBF6f/ZADRF725LZ.brE9Gfz56z7Dm6",
+      "avatar_url": "https://api.dicebear.com/7.x/avataaars/svg?seed=Eve",
+      "designation": "QA Engineer",
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    }
+  ],
+  "projects": [
+    {
+      "id": "proj-001",
+      "name": "Infinia Platform",
+      "description": "Main product management platform with comprehensive features for team collaboration",
+      "code": "INF",
+      "status": "In Progress",
+      "progress_percentage": 68,
+      "is_favorite": true,
+      "owner_id": "user-001",
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "proj-002",
+      "name": "StrataScratch",
+      "description": "Data analytics and reporting dashboard",
+      "code": "STR",
+      "status": "In Progress",
+      "progress_percentage": 42,
+      "is_favorite": false,
+      "owner_id": "user-004",
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    }
+  ],
+  "project_members": [
+    {
+      "id": "pm-001",
+      "project_id": "proj-001",
+      "user_id": "user-001",
+      "role": "owner",
+      "joined_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "pm-002",
+      "project_id": "proj-001",
+      "user_id": "user-002",
+      "role": "admin",
+      "joined_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "pm-003",
+      "project_id": "proj-001",
+      "user_id": "user-003",
       "role": "member",
-      "invited_by": "6e1612af-4b65-4c02-bbeb-7a84bb52b091",
-      "status": "pending",
-      "created_at": "2026-02-02T10:31:47.482Z",
-      "expires_at": "2026-02-09T10:32:39.143Z",
-      "accepted_at": null
+      "joined_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "pm-004",
+      "project_id": "proj-001",
+      "user_id": "user-004",
+      "role": "member",
+      "joined_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "pm-005",
+      "project_id": "proj-001",
+      "user_id": "user-005",
+      "role": "member",
+      "joined_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "pm-006",
+      "project_id": "proj-002",
+      "user_id": "user-004",
+      "role": "owner",
+      "joined_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "pm-007",
+      "project_id": "proj-002",
+      "user_id": "user-001",
+      "role": "member",
+      "joined_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "pm-008",
+      "project_id": "proj-002",
+      "user_id": "user-005",
+      "role": "member",
+      "joined_at": "2026-02-02T14:50:04.316Z"
+    }
+  ],
+  "columns_status": [
+    {
+      "id": "col-001",
+      "project_id": "proj-001",
+      "title": "IDEA",
+      "display_order": 0,
+      "color": "gray",
+      "is_default": false,
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "col-002",
+      "project_id": "proj-001",
+      "title": "TO DO",
+      "display_order": 1,
+      "color": "blue",
+      "is_default": true,
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "col-003",
+      "project_id": "proj-001",
+      "title": "IN PROGRESS",
+      "display_order": 2,
+      "color": "yellow",
+      "is_default": false,
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "col-004",
+      "project_id": "proj-001",
+      "title": "TESTING",
+      "display_order": 3,
+      "color": "purple",
+      "is_default": false,
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "col-005",
+      "project_id": "proj-001",
+      "title": "DONE",
+      "display_order": 4,
+      "color": "green",
+      "is_default": false,
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "col-006",
+      "project_id": "proj-002",
+      "title": "IDEA",
+      "display_order": 0,
+      "color": "gray",
+      "is_default": false,
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "col-007",
+      "project_id": "proj-002",
+      "title": "TO DO",
+      "display_order": 1,
+      "color": "blue",
+      "is_default": true,
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "col-008",
+      "project_id": "proj-002",
+      "title": "IN PROGRESS",
+      "display_order": 2,
+      "color": "yellow",
+      "is_default": false,
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "col-009",
+      "project_id": "proj-002",
+      "title": "TESTING",
+      "display_order": 3,
+      "color": "purple",
+      "is_default": false,
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "col-010",
+      "project_id": "proj-002",
+      "title": "DONE",
+      "display_order": 4,
+      "color": "green",
+      "is_default": false,
+      "created_at": "2026-02-02T14:50:04.316Z"
+    }
+  ],
+  "sprints": [
+    {
+      "id": "sprint-001",
+      "project_id": "proj-001",
+      "name": "Sprint 25: Mobile Optimization",
+      "goal": "Improve mobile experience and performance across all views",
+      "start_date": "2025-01-06",
+      "end_date": "2025-01-20",
+      "status": "active",
+      "velocity": 45,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "sprint-002",
+      "project_id": "proj-001",
+      "name": "Sprint 26: UI Polish",
+      "goal": "Refine UI components and improve accessibility",
+      "start_date": "2025-01-21",
+      "end_date": "2025-02-03",
+      "status": "planned",
+      "velocity": null,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "sprint-003",
+      "project_id": "proj-002",
+      "name": "Sprint 12: Data Pipeline",
+      "goal": "Build data ingestion pipeline",
+      "start_date": "2025-01-06",
+      "end_date": "2025-01-20",
+      "status": "active",
+      "velocity": 38,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    }
+  ],
+  "tags": [
+    {
+      "id": "tag-001",
+      "project_id": "proj-001",
+      "label": "Frontend",
+      "color": "blue",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tag-002",
+      "project_id": "proj-001",
+      "label": "Backend",
+      "color": "purple",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tag-003",
+      "project_id": "proj-001",
+      "label": "Design",
+      "color": "green",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tag-004",
+      "project_id": "proj-001",
+      "label": "UI/UX",
+      "color": "yellow",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tag-005",
+      "project_id": "proj-001",
+      "label": "Bug",
+      "color": "red",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tag-006",
+      "project_id": "proj-001",
+      "label": "Performance",
+      "color": "purple",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tag-007",
+      "project_id": "proj-001",
+      "label": "API",
+      "color": "blue",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tag-008",
+      "project_id": "proj-001",
+      "label": "Mobile",
+      "color": "green",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tag-009",
+      "project_id": "proj-001",
+      "label": "AI",
+      "color": "purple",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tag-010",
+      "project_id": "proj-001",
+      "label": "Tech Debt",
+      "color": "gray",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tag-011",
+      "project_id": "proj-001",
+      "label": "High Priority",
+      "color": "red",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tag-012",
+      "project_id": "proj-002",
+      "label": "Analytics",
+      "color": "blue",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tag-013",
+      "project_id": "proj-002",
+      "label": "Data",
+      "color": "green",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tag-014",
+      "project_id": "proj-002",
+      "label": "Visualization",
+      "color": "purple",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "task-001",
+      "project_id": "proj-001",
+      "column_id": "col-003",
+      "sprint_id": "sprint-001",
+      "assignee_id": "user-002",
+      "reporter_id": "user-001",
+      "task_key": "INF-101",
+      "title": "Dark Mode Support",
+      "description": "Implement system-wide dark mode with toggle support. Should respect system preferences and allow manual override.",
+      "type": "feature",
+      "priority": "HIGH",
+      "points": 8,
+      "estimate": "3d",
+      "time_spent": "1d 4h",
+      "start_date": "2025-01-08",
+      "due_date": "2025-01-15",
+      "completed_at": null,
+      "impact_score": 85,
+      "product_theme": "Delight Users",
+      "image_url": "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=400",
+      "has_description": true,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "task-002",
+      "project_id": "proj-001",
+      "column_id": "col-003",
+      "sprint_id": "sprint-001",
+      "assignee_id": "user-003",
+      "reporter_id": "user-001",
+      "task_key": "INF-102",
+      "title": "Unified Dashboard V2",
+      "description": "Redesign the main dashboard with improved widget layout and customization options.",
+      "type": "feature",
+      "priority": "HIGH",
+      "points": 13,
+      "estimate": "5d",
+      "time_spent": "2d",
+      "start_date": "2025-01-06",
+      "due_date": "2025-01-18",
+      "completed_at": null,
+      "impact_score": 92,
+      "product_theme": "Delight Users",
+      "image_url": null,
+      "has_description": true,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "task-003",
+      "project_id": "proj-001",
+      "column_id": "col-002",
+      "sprint_id": "sprint-001",
+      "assignee_id": "user-004",
+      "reporter_id": "user-004",
+      "task_key": "INF-201",
+      "title": "Optimize Database Queries",
+      "description": "Improve query performance for task list and sprint views. Target: 50% reduction in load time.",
+      "type": "task",
+      "priority": "MEDIUM",
+      "points": 5,
+      "estimate": "2d",
+      "time_spent": null,
+      "start_date": "2025-01-10",
+      "due_date": "2025-01-17",
+      "completed_at": null,
+      "impact_score": 75,
+      "product_theme": "Scale",
+      "image_url": null,
+      "has_description": true,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "task-004",
+      "project_id": "proj-001",
+      "column_id": "col-002",
+      "sprint_id": "sprint-001",
+      "assignee_id": "user-003",
+      "reporter_id": "user-001",
+      "task_key": "INF-202",
+      "title": "User Profile Page",
+      "description": "Create comprehensive user profile page with activity history, settings, and team information.",
+      "type": "story",
+      "priority": "MEDIUM",
+      "points": 5,
+      "estimate": "2d",
+      "time_spent": null,
+      "start_date": "2025-01-12",
+      "due_date": "2025-01-19",
+      "completed_at": null,
+      "impact_score": 68,
+      "product_theme": "Delight Users",
+      "image_url": null,
+      "has_description": true,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "task-005",
+      "project_id": "proj-001",
+      "column_id": "col-001",
+      "sprint_id": null,
+      "assignee_id": "user-001",
+      "reporter_id": "user-001",
+      "task_key": "INF-301",
+      "title": "AI-Powered Search Assistant",
+      "description": "Integrate Claude AI for intelligent search across tasks, documents, and project data.",
+      "type": "feature",
+      "priority": "HIGH",
+      "points": 21,
+      "estimate": "2w",
+      "time_spent": null,
+      "start_date": null,
+      "due_date": null,
+      "completed_at": null,
+      "impact_score": 95,
+      "product_theme": "Innovation",
+      "image_url": null,
+      "has_description": true,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "task-006",
+      "project_id": "proj-001",
+      "column_id": "col-001",
+      "sprint_id": null,
+      "assignee_id": "user-002",
+      "reporter_id": "user-001",
+      "task_key": "INF-302",
+      "title": "Mobile App Offline Mode",
+      "description": "Enable offline functionality with smart sync for mobile applications.",
+      "type": "story",
+      "priority": "MEDIUM",
+      "points": 13,
+      "estimate": "1w",
+      "time_spent": null,
+      "start_date": null,
+      "due_date": null,
+      "completed_at": null,
+      "impact_score": 78,
+      "product_theme": "Scale",
+      "image_url": null,
+      "has_description": true,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "task-007",
+      "project_id": "proj-001",
+      "column_id": "col-005",
+      "sprint_id": null,
+      "assignee_id": "user-004",
+      "reporter_id": "user-004",
+      "task_key": "INF-99",
+      "title": "Legacy Data Migration",
+      "description": "Migrate data from legacy system to new database schema.",
+      "type": "feature",
+      "priority": "HIGH",
+      "points": 8,
+      "estimate": "3d",
+      "time_spent": "3d 2h",
+      "start_date": "2024-12-15",
+      "due_date": "2024-12-20",
+      "completed_at": null,
+      "impact_score": 70,
+      "product_theme": "Scale",
+      "image_url": null,
+      "has_description": true,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    }
+  ],
+  "subtasks": [
+    {
+      "id": "sub-001",
+      "parent_task_id": "task-001",
+      "sprint_id": "sprint-001",
+      "assignee_id": "user-002",
+      "title": "Implement theme context provider",
+      "description": null,
+      "type": "task",
+      "status": "done",
+      "is_completed": true,
+      "display_order": 1,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "sub-002",
+      "parent_task_id": "task-001",
+      "sprint_id": "sprint-001",
+      "assignee_id": "user-003",
+      "title": "Design dark color palette",
+      "description": null,
+      "type": "task",
+      "status": "done",
+      "is_completed": true,
+      "display_order": 2,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "sub-003",
+      "parent_task_id": "task-001",
+      "sprint_id": "sprint-001",
+      "assignee_id": "user-002",
+      "title": "Update all components for dark mode",
+      "description": null,
+      "type": "task",
+      "status": "in-progress",
+      "is_completed": false,
+      "display_order": 3,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "sub-004",
+      "parent_task_id": "task-002",
+      "sprint_id": "sprint-001",
+      "assignee_id": "user-003",
+      "title": "Create wireframes and mockups",
+      "description": null,
+      "type": "task",
+      "status": "done",
+      "is_completed": true,
+      "display_order": 1,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "sub-005",
+      "parent_task_id": "task-002",
+      "sprint_id": "sprint-001",
+      "assignee_id": "user-002",
+      "title": "Implement widget grid system",
+      "description": null,
+      "type": "task",
+      "status": "in-progress",
+      "is_completed": false,
+      "display_order": 2,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    }
+  ],
+  "task_tags": [
+    {
+      "id": "tt-001",
+      "task_id": "task-001",
+      "tag_id": "tag-001",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tt-002",
+      "task_id": "task-001",
+      "tag_id": "tag-004",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tt-003",
+      "task_id": "task-002",
+      "tag_id": "tag-001",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tt-004",
+      "task_id": "task-002",
+      "tag_id": "tag-003",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tt-005",
+      "task_id": "task-002",
+      "tag_id": "tag-004",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tt-006",
+      "task_id": "task-003",
+      "tag_id": "tag-002",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tt-007",
+      "task_id": "task-003",
+      "tag_id": "tag-006",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tt-008",
+      "task_id": "task-004",
+      "tag_id": "tag-001",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tt-009",
+      "task_id": "task-004",
+      "tag_id": "tag-003",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tt-010",
+      "task_id": "task-005",
+      "tag_id": "tag-009",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tt-011",
+      "task_id": "task-005",
+      "tag_id": "tag-001",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tt-012",
+      "task_id": "task-005",
+      "tag_id": "tag-002",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tt-013",
+      "task_id": "task-006",
+      "tag_id": "tag-008",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tt-014",
+      "task_id": "task-006",
+      "tag_id": "tag-001",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tt-015",
+      "task_id": "task-007",
+      "tag_id": "tag-002",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tt-016",
+      "task_id": "task-007",
+      "tag_id": "tag-010",
+      "created_at": "2026-02-02T14:50:04.316Z"
+    }
+  ],
+  "comments": [
+    {
+      "id": "com-001",
+      "task_id": "task-001",
+      "user_id": "user-001",
+      "parent_comment_id": null,
+      "content": "This is a high priority feature. Lets make sure we get the color contrast right for accessibility.",
+      "is_edited": false,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "com-002",
+      "task_id": "task-001",
+      "user_id": "user-003",
+      "parent_comment_id": null,
+      "content": "I have prepared the color palette based on WCAG guidelines. Ready for implementation.",
+      "is_edited": false,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "com-003",
+      "task_id": "task-001",
+      "user_id": "user-002",
+      "parent_comment_id": null,
+      "content": "Theme context is now implemented. Moving on to component updates.",
+      "is_edited": false,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "com-004",
+      "task_id": "task-002",
+      "user_id": "user-001",
+      "parent_comment_id": null,
+      "content": "The new dashboard mockups look great! Lets proceed with implementation.",
+      "is_edited": false,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "com-005",
+      "task_id": "task-002",
+      "user_id": "user-003",
+      "parent_comment_id": null,
+      "content": "Thanks! Ill be available for any design clarifications during implementation.",
+      "is_edited": false,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "com-006",
+      "task_id": "task-003",
+      "user_id": "user-004",
+      "parent_comment_id": null,
+      "content": "Identified 3 N+1 query issues. Will fix in this sprint.",
+      "is_edited": false,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "com-007",
+      "task_id": "task-005",
+      "user_id": "user-001",
+      "parent_comment_id": null,
+      "content": "This will be a game-changer for user productivity. Prioritizing for next quarter.",
+      "is_edited": false,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    }
+  ],
+  "attachments": [],
+  "activity_log": [],
+  "teams": [
+    {
+      "id": "team-001",
+      "name": "Platform Team",
+      "description": "Core platform development team responsible for infrastructure and shared services",
+      "avatar_url": null,
+      "organization_id": null,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "team-002",
+      "name": "Frontend Team",
+      "description": "User interface and experience team",
+      "avatar_url": null,
+      "organization_id": null,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "team-003",
+      "name": "Data Team",
+      "description": "Analytics and data pipeline team",
+      "avatar_url": null,
+      "organization_id": null,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    }
+  ],
+  "team_members": [
+    {
+      "id": "tm-001",
+      "team_id": "team-001",
+      "user_id": "user-001",
+      "role": "lead",
+      "joined_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tm-002",
+      "team_id": "team-001",
+      "user_id": "user-004",
+      "role": "member",
+      "joined_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tm-003",
+      "team_id": "team-002",
+      "user_id": "user-002",
+      "role": "lead",
+      "joined_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tm-004",
+      "team_id": "team-002",
+      "user_id": "user-003",
+      "role": "member",
+      "joined_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tm-005",
+      "team_id": "team-003",
+      "user_id": "user-004",
+      "role": "lead",
+      "joined_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tm-006",
+      "team_id": "team-003",
+      "user_id": "user-005",
+      "role": "member",
+      "joined_at": "2026-02-02T14:50:04.316Z"
+    }
+  ],
+  "team_projects": [
+    {
+      "id": "tp-001",
+      "team_id": "team-001",
+      "project_id": "proj-001",
+      "assigned_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tp-002",
+      "team_id": "team-002",
+      "project_id": "proj-001",
+      "assigned_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "tp-003",
+      "team_id": "team-003",
+      "project_id": "proj-002",
+      "assigned_at": "2026-02-02T14:50:04.316Z"
+    }
+  ],
+  "user_preferences": [
+    {
+      "id": "pref-001",
+      "user_id": "user-001",
+      "theme": "light",
+      "default_project_id": "proj-001",
+      "notification_email": true,
+      "notification_push": true,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "pref-002",
+      "user_id": "user-002",
+      "theme": "dark",
+      "default_project_id": "proj-001",
+      "notification_email": true,
+      "notification_push": true,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "pref-003",
+      "user_id": "user-003",
+      "theme": "system",
+      "default_project_id": "proj-001",
+      "notification_email": true,
+      "notification_push": false,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "pref-004",
+      "user_id": "user-004",
+      "theme": "dark",
+      "default_project_id": "proj-002",
+      "notification_email": true,
+      "notification_push": true,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
+    },
+    {
+      "id": "pref-005",
+      "user_id": "user-005",
+      "theme": "light",
+      "default_project_id": "proj-001",
+      "notification_email": false,
+      "notification_push": true,
+      "created_at": "2026-02-02T14:50:04.316Z",
+      "updated_at": "2026-02-02T14:50:04.316Z"
     }
   ]
 }

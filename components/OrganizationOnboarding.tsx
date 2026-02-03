@@ -38,7 +38,6 @@ interface OrganizationOnboardingProps {
     organizationName?: string;
     profileData?: ProfileData;
   }) => void;
-  onSkip?: () => void;
   existingOrganizations?: Organization[]; // Orgs matching user's domain
 }
 
@@ -49,7 +48,6 @@ const OrganizationOnboarding: React.FC<OrganizationOnboardingProps> = ({
   userName,
   userAvatarUrl,
   onComplete,
-  onSkip,
   existingOrganizations = []
 }) => {
   const [step, setStep] = useState<OnboardingStep>('welcome');
@@ -211,23 +209,12 @@ const OrganizationOnboarding: React.FC<OrganizationOnboardingProps> = ({
                 Let's set up your workspace. Organizations help you collaborate with your team, manage projects, and control access.
               </p>
 
-              <div className="space-y-3">
-                <button
-                  onClick={() => setStep('profile')}
-                  className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-[#172B4D] dark:bg-white text-white dark:text-[#172B4D] font-bold rounded-xl hover:opacity-90 transition-all shadow-lg"
-                >
-                  Get Started <ArrowRight size={18} />
-                </button>
-
-                {onSkip && (
-                  <button
-                    onClick={onSkip}
-                    className="w-full px-6 py-3 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-                  >
-                    Skip for now
-                  </button>
-                )}
-              </div>
+              <button
+                onClick={() => setStep('profile')}
+                className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-[#172B4D] dark:bg-white text-white dark:text-[#172B4D] font-bold rounded-xl hover:opacity-90 transition-all shadow-lg"
+              >
+                Get Started <ArrowRight size={18} />
+              </button>
             </div>
           )}
 

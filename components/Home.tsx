@@ -50,8 +50,11 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
   const myTasks = tasks.filter(t => t.assignee.id === currentUser?.id).slice(0, 5);
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-  // Calculate Overall Workload Health
-  const allActiveTasks = tasks.filter(t => t.columnId !== 'done');
+  // Calculate Overall Workload Health - only tasks where user is assignee or reporter
+  const allActiveTasks = tasks.filter(t =>
+    t.columnId !== 'done' &&
+    (t.assignee?.id === currentUser?.id || t.reporter?.id === currentUser?.id)
+  );
   const pointsAllocated = allActiveTasks.reduce((acc, t) => acc + (t.points || 0), 0);
   
   const todayDate = new Date();

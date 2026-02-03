@@ -1035,8 +1035,44 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
           }
 
           console.log('Total rawEpics found:', rawEpics.length);
+
+          // If no epics were generated, retry once with a simpler prompt
           if (rawEpics.length === 0) {
-              console.warn('No epics were parsed from the AI response. Raw response:', response.text?.substring(0, 1000));
+              console.warn('No epics were parsed from the AI response. Retrying with simpler prompt...');
+              setLoadingStatus('Retrying plan generation...');
+
+              const retryPrompt = `Based on this product vision, create a project plan with epics and tasks.
+
+Product: ${productName}
+Vision: ${refinedVision.substring(0, 2000)}
+
+Return JSON format:
+{"epics":[{"title":"Epic Name","description":"Description","tasks":[{"title":"Task","description":"Details","type":"task","points":2,"role":"Developer"}]}]}
+
+Generate 3-5 epics with 3-5 tasks each. Output ONLY valid JSON, no explanation.`;
+
+              const retryResponse = await generateWithRetry({
+                  model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
+                  contents: [{ role: 'user', parts: [{ text: retryPrompt }] }],
+                  config: { responseMimeType: "application/json" }
+              });
+
+              try {
+                  const retryText = cleanJson(retryResponse.text || '{}');
+                  const retryParsed = JSON.parse(retryText);
+                  if (retryParsed.epics && Array.isArray(retryParsed.epics)) {
+                      rawEpics = retryParsed.epics;
+                  } else if (Array.isArray(retryParsed)) {
+                      rawEpics = retryParsed;
+                  }
+              } catch (retryError) {
+                  console.error('Retry parsing also failed:', retryError);
+              }
+
+              // If still no epics, throw error
+              if (rawEpics.length === 0) {
+                  throw new Error('Failed to generate project plan. Please try again.');
+              }
           }
 
           setLoadingStatus(`Building ${rawEpics.length} epics and assigning tasks...`);
@@ -1444,16 +1480,16 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
           const currentContent = generatedDocs[activeDocSection] || '';
           const sectionName = DOC_NAV_ITEMS.find(d => d.id === activeDocSection)?.label || 'Document';
 
-          // Get context from all generated docs for better answers
+          // Get FULL context from ALL generated docs for comprehensive answers
           const allDocsContext = Object.entries(generatedDocs)
               .filter(([_, content]) => content)
               .map(([id, content]) => {
                   const docName = DOC_NAV_ITEMS.find(d => d.id === id)?.label || id;
-                  // Strip HTML tags for context
-                  const textContent = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').substring(0, 2000);
-                  return `[${docName}]: ${textContent}`;
+                  // Strip HTML tags for context - include full content
+                  const textContent = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                  return `=== ${docName.toUpperCase()} ===\n${textContent}`;
               })
-              .join('\n\n');
+              .join('\n\n---\n\n');
 
           if (isEditRequest) {
               // Edit mode - modify the current document
@@ -1493,22 +1529,22 @@ Instructions:
                   }]);
               }
           } else {
-              // Question mode - answer based on document content
-              const prompt = `You are a helpful assistant with expertise in product documentation. Answer the user's question based on the following documentation context.
+              // Question mode - answer based on ALL document content
+              const prompt = `You are a precise product documentation assistant. Search ALL sections below to answer.
 
-Documentation Context:
+FULL PRODUCT DOCUMENTATION:
 ${allDocsContext}
 
-Currently viewing: ${sectionName}
+Question: "${userMessage}"
 
-User Question: "${userMessage}"
-
-Instructions:
-1. Answer the question based on the documentation provided
-2. Be concise but thorough
-3. If the answer isn't in the documentation, say so
-4. Reference specific sections when relevant
-5. Keep your response under 300 words`;
+STRICT RULES:
+- Search ALL document sections above to find the answer
+- Answer in 2-3 sentences MAX unless more detail is explicitly requested
+- Use bullet points for lists (max 4-5 items)
+- No introductory phrases - start directly with the answer
+- Cite which section(s) the info came from in parentheses at the end
+- If not found anywhere, say "Not covered in documentation"
+- Be specific with names, numbers, and facts`;
 
               const res = await generateWithRetry({
                   model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
@@ -1640,7 +1676,7 @@ Instructions:
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-        <div className={`bg-white dark:bg-[#12141A] w-full rounded-2xl shadow-2xl border border-gray-200 dark:border-[#1F2128] overflow-hidden flex flex-col transition-all duration-500 ${step === 'review' || step === 'prd_view' || step === 'planning' || step === 'creating_project' ? 'max-w-[1400px] h-[90vh]' : 'max-w-xl'}`}>
+        <div className={`bg-white dark:bg-[#12141A] w-full rounded-2xl shadow-2xl border border-gray-200 dark:border-[#1F2128] overflow-hidden flex flex-col transition-all duration-500 ${step === 'review' || step === 'prd_view' || step === 'planning' || step === 'creating_project' ? 'max-w-6xl h-[85vh]' : 'max-w-xl'}`}>
 
             {/* Header */}
             {step !== 'creating_project' && (
@@ -2137,18 +2173,17 @@ Instructions:
 
                 {/* Review, PRD View, Planning Steps */}
                 {(step === 'review' || step === 'prd_view' || step === 'planning') && (
-                     <div className="flex h-full animate-in fade-in duration-300">
+                     <div className="flex-1 flex flex-col min-h-0 overflow-hidden animate-in fade-in duration-300">
                         {/* Main Content Area */}
-                        <div className="flex-1 flex flex-col min-w-0">
-                            <div className="flex-1 overflow-y-auto custom-scrollbar">
+                        <div className="flex-1 flex min-h-0 overflow-hidden">
 
                                 {/* Review Step */}
                                 {step === 'review' && (
-                                    <div className={`flex h-full ${
+                                    <div className={`flex w-full h-full overflow-hidden ${
                                       isTransitioning ? 'opacity-0' : transitionDirection === 'forward' ? 'animate-slideInFromRight' : 'animate-slideInFromLeft'
                                     }`}>
                                         {/* Vision Editor - Left */}
-                                        <div className="flex-1 p-6 border-r border-gray-100 dark:border-[#1F2128] flex flex-col">
+                                        <div className="flex-1 p-6 border-r border-gray-100 dark:border-[#1F2128] flex flex-col min-w-0 overflow-hidden">
                                             {/* Step Summary from Input */}
                                             <StepSummary stepName="Define" onEdit={() => handleStepChange('input', 'backward')}>
                                               <div className="flex items-center gap-4">
@@ -2169,7 +2204,7 @@ Instructions:
                                               </div>
                                             </StepSummary>
 
-                                            <div className="flex items-center justify-between mb-4">
+                                            <div className="flex items-center justify-between mb-4 flex-shrink-0">
                                                 <div className="flex items-center gap-2">
                                                     <Lightbulb size={16} className="text-amber-500" />
                                                     <h3 className="text-sm font-bold text-[#172B4D] dark:text-white">Product Vision</h3>
@@ -2179,7 +2214,7 @@ Instructions:
                                                 </span>
                                             </div>
                                             <textarea
-                                                className="w-full h-[calc(100%-80px)] bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#1F2128] rounded-xl p-4 text-sm text-[#172B4D] dark:text-gray-200 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                                className="flex-1 w-full bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#1F2128] rounded-xl p-4 text-sm text-[#172B4D] dark:text-gray-200 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 overflow-y-auto"
                                                 value={refinedVision}
                                                 onChange={(e) => setRefinedVision(e.target.value)}
                                                 placeholder="Your product vision will appear here..."
@@ -2187,8 +2222,8 @@ Instructions:
                                         </div>
 
                                         {/* Suggestions - Right */}
-                                        <div className="w-80 flex flex-col bg-gray-50/50 dark:bg-[#0B0C0E]/50">
-                                            <div className="p-4 border-b border-gray-100 dark:border-[#1F2128] flex items-center justify-between">
+                                        <div className="w-64 flex-shrink-0 flex flex-col bg-gray-50/50 dark:bg-[#0B0C0E]/50">
+                                            <div className="p-4 border-b border-gray-100 dark:border-[#1F2128] flex items-center justify-between flex-shrink-0">
                                                 <div className="flex items-center gap-2">
                                                     <Zap size={14} className="text-amber-500" />
                                                     <h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider">Suggestions</h3>
@@ -2198,7 +2233,7 @@ Instructions:
                                                 </span>
                                             </div>
 
-                                            <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+                                            <div className="flex-1 overflow-y-auto p-3 space-y-2">
                                                 {suggestions.length > 0 ? suggestions.map(s => (
                                                     <button
                                                         key={s.id}
@@ -2231,7 +2266,7 @@ Instructions:
                                                 )}
                                             </div>
 
-                                            <div className="p-3 border-t border-gray-100 dark:border-[#1F2128]">
+                                            <div className="p-3 border-t border-gray-100 dark:border-[#1F2128] flex-shrink-0">
                                                 <button
                                                     onClick={handleMoreSuggestions}
                                                     disabled={isAiLoading}
@@ -2741,7 +2776,9 @@ Instructions:
                                         </button>
                                     </div>
                                 )}
-                            </div>
+
+                        </div>
+                        {/* Close Main Content Area */}
 
                             {/* Floating AI Chat - Fixed at bottom (only for review and planning, prd_view has sidebar chat) */}
                             {(step === 'review' || step === 'planning') && (
@@ -2790,7 +2827,6 @@ Instructions:
                                 </div>
                             </div>
                             )}
-                        </div>
                      </div>
                 )}
             </div>
@@ -2832,7 +2868,7 @@ Instructions:
                                 <Check size={14} /> Create Project
                             </button>
                         )}
-                    </div>``
+                    </div>
                 </div>
             )}
         </div>

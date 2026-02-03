@@ -7,7 +7,7 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
-  role: string;
+  designation: string;
   isAdmin: boolean;
 }
 
@@ -40,8 +40,8 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
         id: user.id,
         email: user.email,
         name: user.name,
-        role: user.role || 'Member',
-        isAdmin: user.role === 'Admin',
+        designation: user.designation || 'Member',
+        isAdmin: user.designation === 'Admin',
       };
     }
   } catch (error) {
@@ -78,8 +78,8 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
       id: user.id,
       email: user.email,
       name: user.name,
-      role: user.role || 'Member',
-      isAdmin: user.role === 'Admin',
+      designation: user.designation || 'Member',
+      isAdmin: user.designation === 'Admin',
     };
 
     next();

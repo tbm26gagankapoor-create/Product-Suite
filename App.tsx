@@ -15,6 +15,7 @@ import OAuthCallback from './components/OAuthCallback';
 import UserProfileView from './components/UserProfileView';
 import UserManagementView from './components/UserManagementView';
 import OrganizationOnboarding from './components/OrganizationOnboarding';
+import { AppLoadingScreen, DataLoadingScreen, ConnectionErrorScreen } from './components/LoadingScreens';
 import { ThemeProvider } from './context/ThemeContext';
 import { ProjectDataProvider, useProjectData } from './context/ProjectDataContext';
 import { ToastProvider, useToast } from './context/ToastContext';
@@ -40,7 +41,7 @@ const AppContent: React.FC = () => {
   const [activeProjectId, setActiveProjectId] = useState<string>('p1'); // Default to Infinia Platform
 
   // Consume Context
-  const { projects, refreshData, currentUser, currentOrganization, isLoading } = useProjectData();
+  const { projects, refreshData, currentUser, currentOrganization, isLoading, connectionStatus, connectionError } = useProjectData();
   const { success } = useToast();
   const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
 
@@ -128,9 +129,17 @@ const AppContent: React.FC = () => {
 
   // Loading Screen while checking auth
   if (isAuthChecking) {
+      return <AppLoadingScreen />;
+  }
+
+  // Connection Error Screen
+  if (isAuthenticated && connectionStatus === 'error') {
       return (
-          <div className="flex h-screen w-full items-center justify-center bg-white dark:bg-[#0B0C0E]">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <div className="flex h-screen bg-white dark:bg-[#0B0C0E]">
+              <ConnectionErrorScreen
+                  error={connectionError}
+                  onRetry={refreshData}
+              />
           </div>
       );
   }
@@ -167,6 +176,15 @@ const AppContent: React.FC = () => {
           />
         );
     }
+  }
+
+  // Initial data loading screen (after auth, before data is ready)
+  if (isLoading && !currentUser) {
+      return (
+          <div className="flex h-screen bg-white dark:bg-[#0B0C0E]">
+              <DataLoadingScreen message="Setting up your workspace..." showProgress />
+          </div>
+      );
   }
 
   // Onboarding Modal for new users without organization

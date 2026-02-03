@@ -1,17 +1,41 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { teamsService } from '../services/teams.service.js';
+import { authMiddleware, AuthRequest } from '../middleware/auth.middleware.js';
+import database from '../lib/database.js';
 
 const router = Router();
 
-// Get all teams
-router.get('/', (req, res) => {
-  const teams = teamsService.getAll();
+// Apply auth middleware to all routes
+router.use(authMiddleware);
+
+// Get all teams (filtered by user's organizations)
+router.get('/', async (req: AuthRequest, res: Response) => {
+  const user = req.user;
+
+  // If no user, return empty list
+  if (!user) {
+    return res.json({ success: true, data: [] });
+  }
+
+  // Get user's organization memberships
+  const memberships = await database.findMany<any>('organization_members', { user_id: user.id });
+  const userOrgIds = new Set(memberships.map((m: any) => m.organization_id));
+
+  // Get all teams
+  const allTeams = await teamsService.getAll();
+
+  // Filter teams by organization or where user is a team member
+  const teams = allTeams.filter(team =>
+    (team.organization_id && userOrgIds.has(team.organization_id)) ||
+    team.members.includes(user.id)
+  );
+
   res.json({ success: true, data: teams });
 });
 
 // Get team by ID
-router.get('/:id', (req, res) => {
-  const team = teamsService.getById(req.params.id);
+router.get('/:id', async (req, res) => {
+  const team = await teamsService.getById(req.params.id);
   if (!team) {
     return res.status(404).json({ success: false, error: 'Team not found' });
   }
@@ -19,7 +43,7 @@ router.get('/:id', (req, res) => {
 });
 
 // Create team
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { name, description, avatar_url, organization_id, member_ids } = req.body;
 
   if (!name) {
@@ -29,13 +53,13 @@ router.post('/', (req, res) => {
     });
   }
 
-  const team = teamsService.create({ name, description, avatar_url, organization_id, member_ids });
+  const team = await teamsService.create({ name, description, avatar_url, organization_id, member_ids });
   res.status(201).json({ success: true, data: team });
 });
 
 // Update team
-router.patch('/:id', (req, res) => {
-  const team = teamsService.update(req.params.id, req.body);
+router.patch('/:id', async (req, res) => {
+  const team = await teamsService.update(req.params.id, req.body);
   if (!team) {
     return res.status(404).json({ success: false, error: 'Team not found' });
   }
@@ -43,8 +67,8 @@ router.patch('/:id', (req, res) => {
 });
 
 // Delete team
-router.delete('/:id', (req, res) => {
-  const deleted = teamsService.delete(req.params.id);
+router.delete('/:id', async (req, res) => {
+  const deleted = await teamsService.delete(req.params.id);
   if (!deleted) {
     return res.status(404).json({ success: false, error: 'Team not found' });
   }
@@ -54,19 +78,19 @@ router.delete('/:id', (req, res) => {
 // --- Member Management ---
 
 // Get team members
-router.get('/:teamId/members', (req, res) => {
-  const members = teamsService.getMembers(req.params.teamId);
+router.get('/:teamId/members', async (req, res) => {
+  const members = await teamsService.getMembers(req.params.teamId);
   res.json({ success: true, data: members });
 });
 
 // Add member to team
-router.post('/:teamId/members', (req, res) => {
+router.post('/:teamId/members', async (req, res) => {
   const { user_id } = req.body;
   if (!user_id) {
     return res.status(400).json({ success: false, error: 'user_id is required' });
   }
 
-  const member = teamsService.addMember(req.params.teamId, user_id);
+  const member = await teamsService.addMember(req.params.teamId, user_id);
   if (!member) {
     return res.status(404).json({ success: false, error: 'Team not found' });
   }
@@ -74,8 +98,8 @@ router.post('/:teamId/members', (req, res) => {
 });
 
 // Remove member from team
-router.delete('/:teamId/members/:userId', (req, res) => {
-  const removed = teamsService.removeMember(req.params.teamId, req.params.userId);
+router.delete('/:teamId/members/:userId', async (req, res) => {
+  const removed = await teamsService.removeMember(req.params.teamId, req.params.userId);
   if (!removed) {
     return res.status(404).json({ success: false, error: 'Member not found' });
   }
@@ -83,26 +107,26 @@ router.delete('/:teamId/members/:userId', (req, res) => {
 });
 
 // Set all team members (replace)
-router.put('/:teamId/members', (req, res) => {
+router.put('/:teamId/members', async (req, res) => {
   const { user_ids } = req.body;
   if (!Array.isArray(user_ids)) {
     return res.status(400).json({ success: false, error: 'user_ids must be an array' });
   }
 
-  teamsService.setMembers(req.params.teamId, user_ids);
+  await teamsService.setMembers(req.params.teamId, user_ids);
   res.json({ success: true, message: 'Members updated' });
 });
 
 // --- Project Management ---
 
 // Add project to team
-router.post('/:teamId/projects', (req, res) => {
+router.post('/:teamId/projects', async (req, res) => {
   const { project_id } = req.body;
   if (!project_id) {
     return res.status(400).json({ success: false, error: 'project_id is required' });
   }
 
-  const teamProject = teamsService.addProject(req.params.teamId, project_id);
+  const teamProject = await teamsService.addProject(req.params.teamId, project_id);
   if (!teamProject) {
     return res.status(404).json({ success: false, error: 'Team not found' });
   }
@@ -110,8 +134,8 @@ router.post('/:teamId/projects', (req, res) => {
 });
 
 // Remove project from team
-router.delete('/:teamId/projects/:projectId', (req, res) => {
-  const removed = teamsService.removeProject(req.params.teamId, req.params.projectId);
+router.delete('/:teamId/projects/:projectId', async (req, res) => {
+  const removed = await teamsService.removeProject(req.params.teamId, req.params.projectId);
   if (!removed) {
     return res.status(404).json({ success: false, error: 'Project not found in team' });
   }

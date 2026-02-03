@@ -126,13 +126,21 @@ const SettingsView: React.FC = () => {
   const { theme, setTheme } = useTheme();
   const {
     connectionStatus, connectionError, refreshData, projects, tasks, sprints, teams,
-    currentUser, currentOrganization, organizationMembers, isOrgAdmin, refreshOrganization, users
+    currentUser, currentOrganization, organizationMembers, isOrgAdmin, refreshOrganization, users,
+    updateCurrentUser
   } = useProjectData();
   const { error: showError, success } = useToast();
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
   const [creatingOrg, setCreatingOrg] = useState(false);
   const [orgName, setOrgName] = useState('');
+
+  // Profile edit state
+  const [profileName, setProfileName] = useState(currentUser?.name || '');
+  const [profileJobTitle, setProfileJobTitle] = useState(currentUser?.jobTitle || '');
+  const [profileLocation, setProfileLocation] = useState(currentUser?.location || '');
+  const [profileBio, setProfileBio] = useState(currentUser?.bio || '');
+  const [savingProfile, setSavingProfile] = useState(false);
 
   // Organization edit state
   const [isEditingOrg, setIsEditingOrg] = useState(false);
@@ -189,6 +197,35 @@ const SettingsView: React.FC = () => {
       setOrgEditError(null);
     }
   }, [currentOrganization, isEditingOrg]);
+
+  // Initialize profile form when currentUser changes
+  useEffect(() => {
+    if (currentUser) {
+      setProfileName(currentUser.name || '');
+      setProfileJobTitle(currentUser.jobTitle || '');
+      setProfileLocation(currentUser.location || '');
+      setProfileBio(currentUser.bio || '');
+    }
+  }, [currentUser]);
+
+  // Handle profile save
+  const handleSaveProfile = async () => {
+    if (!currentUser || savingProfile) return;
+    setSavingProfile(true);
+    try {
+      await updateCurrentUser({
+        name: profileName,
+        jobTitle: profileJobTitle,
+        location: profileLocation,
+        bio: profileBio,
+      });
+      success('Profile updated successfully');
+    } catch (error: any) {
+      showError(error.message || 'Failed to update profile');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   const tabs = [
     { id: 'profile' as const, label: 'Profile', icon: User },
@@ -369,7 +406,7 @@ const SettingsView: React.FC = () => {
                         {currentUser?.name || 'User'}
                       </h3>
                       <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-                        {currentUser?.role || 'Team Member'}
+                        {currentUser?.designation || 'Team Member'}
                       </p>
                       <div className="flex gap-2">
                         <button className="px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors">
@@ -399,7 +436,8 @@ const SettingsView: React.FC = () => {
                       </label>
                       <input
                         type="text"
-                        defaultValue={currentUser?.name || ''}
+                        value={profileName}
+                        onChange={(e) => setProfileName(e.target.value)}
                         className="w-full px-4 py-2.5 bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-xl text-sm text-[#172B4D] dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                       />
                     </div>
@@ -409,8 +447,9 @@ const SettingsView: React.FC = () => {
                       </label>
                       <input
                         type="email"
-                        defaultValue={currentUser?.email || ''}
-                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-xl text-sm text-[#172B4D] dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                        value={currentUser?.email || ''}
+                        disabled
+                        className="w-full px-4 py-2.5 bg-gray-100 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-xl text-sm text-gray-500 dark:text-gray-400 cursor-not-allowed"
                       />
                     </div>
                     <div className="space-y-2">
@@ -419,8 +458,10 @@ const SettingsView: React.FC = () => {
                       </label>
                       <input
                         type="text"
-                        defaultValue={currentUser?.jobTitle || currentUser?.role || ''}
-                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-xl text-sm text-[#172B4D] dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                        value={profileJobTitle}
+                        onChange={(e) => setProfileJobTitle(e.target.value)}
+                        placeholder="e.g. Software Engineer"
+                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-xl text-sm text-[#172B4D] dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                       />
                     </div>
                     <div className="space-y-2">
@@ -429,7 +470,8 @@ const SettingsView: React.FC = () => {
                       </label>
                       <input
                         type="text"
-                        defaultValue={currentUser?.location || ''}
+                        value={profileLocation}
+                        onChange={(e) => setProfileLocation(e.target.value)}
                         placeholder="San Francisco, CA"
                         className="w-full px-4 py-2.5 bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-xl text-sm text-[#172B4D] dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                       />
@@ -441,15 +483,20 @@ const SettingsView: React.FC = () => {
                     </label>
                     <textarea
                       rows={3}
-                      defaultValue={currentUser?.bio || ''}
+                      value={profileBio}
+                      onChange={(e) => setProfileBio(e.target.value)}
                       placeholder="Tell us a bit about yourself..."
                       className="w-full px-4 py-2.5 bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-xl text-sm text-[#172B4D] dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
                     />
                   </div>
                   <div className="flex justify-end pt-2">
-                    <button className="flex items-center gap-2 px-5 py-2.5 bg-[#172B4D] dark:bg-white text-white dark:text-[#172B4D] font-semibold text-sm rounded-xl hover:opacity-90 transition-all shadow-lg">
+                    <button
+                      onClick={handleSaveProfile}
+                      disabled={savingProfile}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-[#172B4D] dark:bg-white text-white dark:text-[#172B4D] font-semibold text-sm rounded-xl hover:opacity-90 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
                       <Save size={16} />
-                      Save Changes
+                      {savingProfile ? 'Saving...' : 'Save Changes'}
                     </button>
                   </div>
                 </div>

@@ -9,7 +9,7 @@ const router = Router();
 router.use(authMiddleware);
 
 // Get all sprints (optionally filtered by project, with access control)
-router.get('/', (req: AuthRequest, res: Response) => {
+router.get('/', async (req: AuthRequest, res: Response) => {
   const user = req.user;
 
   // If no user (not logged in), return empty list
@@ -18,21 +18,21 @@ router.get('/', (req: AuthRequest, res: Response) => {
   }
 
   const projectId = req.query.project_id as string | undefined;
-  const sprints = sprintsService.getAllForUser(user.id, user.isAdmin, projectId);
+  const sprints = await sprintsService.getAllForUser(user.id, user.isAdmin, projectId);
   res.json({ success: true, data: sprints });
 });
 
 // Get sprint by ID (with access check)
-router.get('/:id', (req: AuthRequest, res: Response) => {
+router.get('/:id', async (req: AuthRequest, res: Response) => {
   const user = req.user;
   const sprintId = req.params.id;
 
   // Check access
-  if (user && !sprintsService.userHasAccess(sprintId, user.id, user.isAdmin)) {
+  if (user && !(await sprintsService.userHasAccess(sprintId, user.id, user.isAdmin))) {
     return res.status(403).json({ success: false, error: 'Access denied' });
   }
 
-  const sprint = sprintsService.getById(sprintId);
+  const sprint = await sprintsService.getById(sprintId);
   if (!sprint) {
     return res.status(404).json({ success: false, error: 'Sprint not found' });
   }
@@ -40,16 +40,16 @@ router.get('/:id', (req: AuthRequest, res: Response) => {
 });
 
 // Get active sprint for a project (with access check)
-router.get('/project/:projectId/active', (req: AuthRequest, res: Response) => {
+router.get('/project/:projectId/active', async (req: AuthRequest, res: Response) => {
   const user = req.user;
   const projectId = req.params.projectId;
 
   // Check project access
-  if (user && !projectsService.userHasAccess(projectId, user.id, user.isAdmin)) {
+  if (user && !(await projectsService.userHasAccess(projectId, user.id, user.isAdmin))) {
     return res.status(403).json({ success: false, error: 'Access denied' });
   }
 
-  const sprint = sprintsService.getActive(projectId);
+  const sprint = await sprintsService.getActive(projectId);
   if (!sprint) {
     return res.status(404).json({ success: false, error: 'No active sprint found' });
   }
@@ -57,7 +57,7 @@ router.get('/project/:projectId/active', (req: AuthRequest, res: Response) => {
 });
 
 // Create sprint (requires project access)
-router.post('/', (req: AuthRequest, res: Response) => {
+router.post('/', async (req: AuthRequest, res: Response) => {
   const user = req.user;
   const { project_id, name, goal, start_date, end_date } = req.body;
 
@@ -69,25 +69,25 @@ router.post('/', (req: AuthRequest, res: Response) => {
   }
 
   // Check project access
-  if (user && !projectsService.userHasAccess(project_id, user.id, user.isAdmin)) {
+  if (user && !(await projectsService.userHasAccess(project_id, user.id, user.isAdmin))) {
     return res.status(403).json({ success: false, error: 'Access denied to project' });
   }
 
-  const sprint = sprintsService.create({ project_id, name, goal, start_date, end_date });
+  const sprint = await sprintsService.create({ project_id, name, goal, start_date, end_date });
   res.status(201).json({ success: true, data: sprint });
 });
 
 // Update sprint (with access check)
-router.patch('/:id', (req: AuthRequest, res: Response) => {
+router.patch('/:id', async (req: AuthRequest, res: Response) => {
   const user = req.user;
   const sprintId = req.params.id;
 
   // Check access
-  if (user && !sprintsService.userHasAccess(sprintId, user.id, user.isAdmin)) {
+  if (user && !(await sprintsService.userHasAccess(sprintId, user.id, user.isAdmin))) {
     return res.status(403).json({ success: false, error: 'Access denied' });
   }
 
-  const sprint = sprintsService.update(sprintId, req.body);
+  const sprint = await sprintsService.update(sprintId, req.body);
   if (!sprint) {
     return res.status(404).json({ success: false, error: 'Sprint not found' });
   }
@@ -95,16 +95,16 @@ router.patch('/:id', (req: AuthRequest, res: Response) => {
 });
 
 // Start sprint (with access check)
-router.post('/:id/start', (req: AuthRequest, res: Response) => {
+router.post('/:id/start', async (req: AuthRequest, res: Response) => {
   const user = req.user;
   const sprintId = req.params.id;
 
   // Check access
-  if (user && !sprintsService.userHasAccess(sprintId, user.id, user.isAdmin)) {
+  if (user && !(await sprintsService.userHasAccess(sprintId, user.id, user.isAdmin))) {
     return res.status(403).json({ success: false, error: 'Access denied' });
   }
 
-  const sprint = sprintsService.startSprint(sprintId);
+  const sprint = await sprintsService.startSprint(sprintId);
   if (!sprint) {
     return res.status(404).json({ success: false, error: 'Sprint not found' });
   }
@@ -112,16 +112,16 @@ router.post('/:id/start', (req: AuthRequest, res: Response) => {
 });
 
 // Complete sprint (with access check)
-router.post('/:id/complete', (req: AuthRequest, res: Response) => {
+router.post('/:id/complete', async (req: AuthRequest, res: Response) => {
   const user = req.user;
   const sprintId = req.params.id;
 
   // Check access
-  if (user && !sprintsService.userHasAccess(sprintId, user.id, user.isAdmin)) {
+  if (user && !(await sprintsService.userHasAccess(sprintId, user.id, user.isAdmin))) {
     return res.status(403).json({ success: false, error: 'Access denied' });
   }
 
-  const sprint = sprintsService.completeSprint(sprintId);
+  const sprint = await sprintsService.completeSprint(sprintId);
   if (!sprint) {
     return res.status(404).json({ success: false, error: 'Sprint not found' });
   }
@@ -129,16 +129,16 @@ router.post('/:id/complete', (req: AuthRequest, res: Response) => {
 });
 
 // Delete sprint (with access check)
-router.delete('/:id', (req: AuthRequest, res: Response) => {
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
   const user = req.user;
   const sprintId = req.params.id;
 
   // Check access
-  if (user && !sprintsService.userHasAccess(sprintId, user.id, user.isAdmin)) {
+  if (user && !(await sprintsService.userHasAccess(sprintId, user.id, user.isAdmin))) {
     return res.status(403).json({ success: false, error: 'Access denied' });
   }
 
-  const deleted = sprintsService.delete(sprintId);
+  const deleted = await sprintsService.delete(sprintId);
   if (!deleted) {
     return res.status(404).json({ success: false, error: 'Sprint not found' });
   }

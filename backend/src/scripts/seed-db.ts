@@ -81,13 +81,13 @@ const database = {
   ],
 
   tasks: [
-    { id: 'task-001', project_id: 'proj-001', column_id: 'col-003', sprint_id: 'sprint-001', assignee_id: 'user-002', reporter_id: 'user-001', task_number: 101, title: 'Dark Mode Support', description: 'Implement system-wide dark mode with toggle support. Should respect system preferences and allow manual override.', type: 'feature', priority: 'HIGH', points: 8, estimate: '3d', time_spent: '1d 4h', start_date: '2025-01-08', due_date: '2025-01-15', completed_at: null, impact_score: 85, product_theme: 'Delight Users', image_url: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=400', has_description: true, created_at: timestamp, updated_at: timestamp },
-    { id: 'task-002', project_id: 'proj-001', column_id: 'col-003', sprint_id: 'sprint-001', assignee_id: 'user-003', reporter_id: 'user-001', task_number: 102, title: 'Unified Dashboard V2', description: 'Redesign the main dashboard with improved widget layout and customization options.', type: 'feature', priority: 'HIGH', points: 13, estimate: '5d', time_spent: '2d', start_date: '2025-01-06', due_date: '2025-01-18', completed_at: null, impact_score: 92, product_theme: 'Delight Users', image_url: null, has_description: true, created_at: timestamp, updated_at: timestamp },
-    { id: 'task-003', project_id: 'proj-001', column_id: 'col-002', sprint_id: 'sprint-001', assignee_id: 'user-004', reporter_id: 'user-004', task_number: 201, title: 'Optimize Database Queries', description: 'Improve query performance for task list and sprint views. Target: 50% reduction in load time.', type: 'task', priority: 'MEDIUM', points: 5, estimate: '2d', time_spent: null, start_date: '2025-01-10', due_date: '2025-01-17', completed_at: null, impact_score: 75, product_theme: 'Scale', image_url: null, has_description: true, created_at: timestamp, updated_at: timestamp },
-    { id: 'task-004', project_id: 'proj-001', column_id: 'col-002', sprint_id: 'sprint-001', assignee_id: 'user-003', reporter_id: 'user-001', task_number: 202, title: 'User Profile Page', description: 'Create comprehensive user profile page with activity history, settings, and team information.', type: 'story', priority: 'MEDIUM', points: 5, estimate: '2d', time_spent: null, start_date: '2025-01-12', due_date: '2025-01-19', completed_at: null, impact_score: 68, product_theme: 'Delight Users', image_url: null, has_description: true, created_at: timestamp, updated_at: timestamp },
-    { id: 'task-005', project_id: 'proj-001', column_id: 'col-001', sprint_id: null, assignee_id: 'user-001', reporter_id: 'user-001', task_number: 301, title: 'AI-Powered Search Assistant', description: 'Integrate Claude AI for intelligent search across tasks, documents, and project data.', type: 'feature', priority: 'HIGH', points: 21, estimate: '2w', time_spent: null, start_date: null, due_date: null, completed_at: null, impact_score: 95, product_theme: 'Innovation', image_url: null, has_description: true, created_at: timestamp, updated_at: timestamp },
-    { id: 'task-006', project_id: 'proj-001', column_id: 'col-001', sprint_id: null, assignee_id: 'user-002', reporter_id: 'user-001', task_number: 302, title: 'Mobile App Offline Mode', description: 'Enable offline functionality with smart sync for mobile applications.', type: 'story', priority: 'MEDIUM', points: 13, estimate: '1w', time_spent: null, start_date: null, due_date: null, completed_at: null, impact_score: 78, product_theme: 'Scale', image_url: null, has_description: true, created_at: timestamp, updated_at: timestamp },
-    { id: 'task-007', project_id: 'proj-001', column_id: 'col-005', sprint_id: null, assignee_id: 'user-004', reporter_id: 'user-004', task_number: 99, title: 'Legacy Data Migration', description: 'Migrate data from legacy system to new database schema.', type: 'feature', priority: 'HIGH', points: 8, estimate: '3d', time_spent: '3d 2h', start_date: '2024-12-15', due_date: '2024-12-20', completed_at: null, impact_score: 70, product_theme: 'Scale', image_url: null, has_description: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'task-001', project_id: 'proj-001', column_id: 'col-003', sprint_id: 'sprint-001', assignee_id: 'user-002', reporter_id: 'user-001', task_key: 'INF-101', title: 'Dark Mode Support', description: 'Implement system-wide dark mode with toggle support. Should respect system preferences and allow manual override.', type: 'feature', priority: 'HIGH', points: 8, estimate: '3d', time_spent: '1d 4h', start_date: '2025-01-08', due_date: '2025-01-15', completed_at: null, impact_score: 85, product_theme: 'Delight Users', image_url: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=400', has_description: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'task-002', project_id: 'proj-001', column_id: 'col-003', sprint_id: 'sprint-001', assignee_id: 'user-003', reporter_id: 'user-001', task_key: 'INF-102', title: 'Unified Dashboard V2', description: 'Redesign the main dashboard with improved widget layout and customization options.', type: 'feature', priority: 'HIGH', points: 13, estimate: '5d', time_spent: '2d', start_date: '2025-01-06', due_date: '2025-01-18', completed_at: null, impact_score: 92, product_theme: 'Delight Users', image_url: null, has_description: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'task-003', project_id: 'proj-001', column_id: 'col-002', sprint_id: 'sprint-001', assignee_id: 'user-004', reporter_id: 'user-004', task_key: 'INF-201', title: 'Optimize Database Queries', description: 'Improve query performance for task list and sprint views. Target: 50% reduction in load time.', type: 'task', priority: 'MEDIUM', points: 5, estimate: '2d', time_spent: null, start_date: '2025-01-10', due_date: '2025-01-17', completed_at: null, impact_score: 75, product_theme: 'Scale', image_url: null, has_description: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'task-004', project_id: 'proj-001', column_id: 'col-002', sprint_id: 'sprint-001', assignee_id: 'user-003', reporter_id: 'user-001', task_key: 'INF-202', title: 'User Profile Page', description: 'Create comprehensive user profile page with activity history, settings, and team information.', type: 'story', priority: 'MEDIUM', points: 5, estimate: '2d', time_spent: null, start_date: '2025-01-12', due_date: '2025-01-19', completed_at: null, impact_score: 68, product_theme: 'Delight Users', image_url: null, has_description: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'task-005', project_id: 'proj-001', column_id: 'col-001', sprint_id: null, assignee_id: 'user-001', reporter_id: 'user-001', task_key: 'INF-301', title: 'AI-Powered Search Assistant', description: 'Integrate Claude AI for intelligent search across tasks, documents, and project data.', type: 'feature', priority: 'HIGH', points: 21, estimate: '2w', time_spent: null, start_date: null, due_date: null, completed_at: null, impact_score: 95, product_theme: 'Innovation', image_url: null, has_description: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'task-006', project_id: 'proj-001', column_id: 'col-001', sprint_id: null, assignee_id: 'user-002', reporter_id: 'user-001', task_key: 'INF-302', title: 'Mobile App Offline Mode', description: 'Enable offline functionality with smart sync for mobile applications.', type: 'story', priority: 'MEDIUM', points: 13, estimate: '1w', time_spent: null, start_date: null, due_date: null, completed_at: null, impact_score: 78, product_theme: 'Scale', image_url: null, has_description: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'task-007', project_id: 'proj-001', column_id: 'col-005', sprint_id: null, assignee_id: 'user-004', reporter_id: 'user-004', task_key: 'INF-99', title: 'Legacy Data Migration', description: 'Migrate data from legacy system to new database schema.', type: 'feature', priority: 'HIGH', points: 8, estimate: '3d', time_spent: '3d 2h', start_date: '2024-12-15', due_date: '2024-12-20', completed_at: null, impact_score: 70, product_theme: 'Scale', image_url: null, has_description: true, created_at: timestamp, updated_at: timestamp },
   ],
 
   subtasks: [
@@ -129,6 +129,31 @@ const database = {
 
   attachments: [],
   activity_log: [],
+
+  // Teams
+  teams: [
+    { id: 'team-001', name: 'Platform Team', description: 'Core platform development team responsible for infrastructure and shared services', avatar_url: null, organization_id: null, created_at: timestamp, updated_at: timestamp },
+    { id: 'team-002', name: 'Frontend Team', description: 'User interface and experience team', avatar_url: null, organization_id: null, created_at: timestamp, updated_at: timestamp },
+    { id: 'team-003', name: 'Data Team', description: 'Analytics and data pipeline team', avatar_url: null, organization_id: null, created_at: timestamp, updated_at: timestamp },
+  ],
+
+  // Team Members - link users to teams
+  team_members: [
+    { id: 'tm-001', team_id: 'team-001', user_id: 'user-001', role: 'lead', joined_at: timestamp },
+    { id: 'tm-002', team_id: 'team-001', user_id: 'user-004', role: 'member', joined_at: timestamp },
+    { id: 'tm-003', team_id: 'team-002', user_id: 'user-002', role: 'lead', joined_at: timestamp },
+    { id: 'tm-004', team_id: 'team-002', user_id: 'user-003', role: 'member', joined_at: timestamp },
+    { id: 'tm-005', team_id: 'team-003', user_id: 'user-004', role: 'lead', joined_at: timestamp },
+    { id: 'tm-006', team_id: 'team-003', user_id: 'user-005', role: 'member', joined_at: timestamp },
+  ],
+
+  // Team Projects - link teams to projects
+  team_projects: [
+    { id: 'tp-001', team_id: 'team-001', project_id: 'proj-001', assigned_at: timestamp },
+    { id: 'tp-002', team_id: 'team-002', project_id: 'proj-001', assigned_at: timestamp },
+    { id: 'tp-003', team_id: 'team-003', project_id: 'proj-002', assigned_at: timestamp },
+  ],
+
   user_preferences: [
     { id: 'pref-001', user_id: 'user-001', theme: 'light', default_project_id: 'proj-001', notification_email: true, notification_push: true, created_at: timestamp, updated_at: timestamp },
     { id: 'pref-002', user_id: 'user-002', theme: 'dark', default_project_id: 'proj-001', notification_email: true, notification_push: true, created_at: timestamp, updated_at: timestamp },
