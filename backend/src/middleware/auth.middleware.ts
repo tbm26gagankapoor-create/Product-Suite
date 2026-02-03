@@ -7,7 +7,7 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
-  role: string;
+  designation: string;
   isAdmin: boolean;
 }
 
@@ -19,7 +19,7 @@ export interface AuthRequest extends Request {
  * Middleware to extract and verify JWT token
  * Attaches user info to request object
  */
-export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
+export async function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
 
   if (!authHeader?.startsWith('Bearer ')) {
@@ -33,15 +33,15 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
     const decoded = jwt.verify(token, config.jwt.secret) as { userId: string; email: string };
 
     // Get full user info from database
-    const user = database.findById<any>('users', decoded.userId);
+    const user = await database.findById<any>('users', decoded.userId);
 
     if (user) {
       req.user = {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: user.role || 'Member',
-        isAdmin: user.role === 'Admin',
+        designation: user.designation || 'Member',
+        isAdmin: user.designation === 'Admin',
       };
     }
   } catch (error) {
@@ -56,7 +56,7 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
  * Middleware that requires authentication
  * Returns 401 if no valid token
  */
-export function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
+export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
 
   if (!authHeader?.startsWith('Bearer ')) {
@@ -68,7 +68,7 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   try {
     const decoded = jwt.verify(token, config.jwt.secret) as { userId: string; email: string };
 
-    const user = database.findById<any>('users', decoded.userId);
+    const user = await database.findById<any>('users', decoded.userId);
 
     if (!user) {
       return res.status(401).json({ success: false, error: 'User not found' });
@@ -78,8 +78,8 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
       id: user.id,
       email: user.email,
       name: user.name,
-      role: user.role || 'Member',
-      isAdmin: user.role === 'Admin',
+      designation: user.designation || 'Member',
+      isAdmin: user.designation === 'Admin',
     };
 
     next();

@@ -28,7 +28,8 @@ import {
   CheckSquare,
   Calendar,
   Target,
-  ArrowRight
+  ArrowRight,
+  AlertTriangle
 } from 'lucide-react';
 import { useProjectData } from '../context/ProjectDataContext';
 import { Sprint, Project, User } from '../types';
@@ -115,6 +116,55 @@ const SprintsView: React.FC<SprintsViewProps> = ({ onProjectSelect }) => {
           completedCount: completedTasks.length,
           inProgressCount: inProgressTasks,
           blockedCount: blockedTasks
+      };
+  };
+
+  // Calculate sprint risk level based on progress vs time elapsed
+  const getSprintRisk = (sprint: Sprint, stats: ReturnType<typeof getSprintStats>) => {
+      if (sprint.status === 'completed' || sprint.status === 'planned') {
+          return { isAtRisk: false, riskLevel: 'none' as const, reason: '' };
+      }
+
+      const today = new Date();
+      const startDate = new Date(sprint.startDate);
+      const endDate = new Date(sprint.endDate);
+
+      // Calculate time elapsed percentage
+      const totalDuration = endDate.getTime() - startDate.getTime();
+      const elapsed = today.getTime() - startDate.getTime();
+      const timeElapsedPercent = Math.min(100, Math.max(0, (elapsed / totalDuration) * 100));
+
+      // Calculate expected vs actual progress
+      const expectedProgress = timeElapsedPercent;
+      const actualProgress = stats.progress;
+      const progressGap = expectedProgress - actualProgress;
+
+      // Determine risk factors
+      const hasBlockedTasks = stats.blockedCount > 0;
+      const isBehindSchedule = progressGap > 20; // More than 20% behind expected
+      const isSeverelyBehind = progressGap > 40; // More than 40% behind
+      const isNearEndWithLowProgress = timeElapsedPercent > 75 && actualProgress < 50;
+
+      // Calculate risk level
+      let riskLevel: 'none' | 'warning' | 'critical' = 'none';
+      let reason = '';
+
+      if (isSeverelyBehind || isNearEndWithLowProgress) {
+          riskLevel = 'critical';
+          reason = isNearEndWithLowProgress
+              ? `${Math.round(actualProgress)}% done with ${Math.round(100 - timeElapsedPercent)}% time left`
+              : `${Math.round(progressGap)}% behind schedule`;
+      } else if (isBehindSchedule || hasBlockedTasks) {
+          riskLevel = 'warning';
+          reason = hasBlockedTasks
+              ? `${stats.blockedCount} blocked task${stats.blockedCount > 1 ? 's' : ''}`
+              : `${Math.round(progressGap)}% behind schedule`;
+      }
+
+      return {
+          isAtRisk: riskLevel !== 'none',
+          riskLevel,
+          reason
       };
   };
 
@@ -273,9 +323,36 @@ const SprintsView: React.FC<SprintsViewProps> = ({ onProjectSelect }) => {
 
         {/* Scrollable Content Section */}
         <div className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-8 pt-6">
-            
+
+            {/* Empty State - Show when no sprints match the filter */}
+            {filteredSprints.length === 0 && (
+                <div className="flex items-center justify-center h-full min-h-[400px] animate-in fade-in duration-300">
+                    <div className="text-center max-w-md">
+                        <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
+                            <Rocket size={40} className="text-white" />
+                        </div>
+                        <h3 className="text-xl font-bold text-[#172B4D] dark:text-white mb-2">
+                            {filter === 'All' ? 'No sprints yet' : `No ${filter.toLowerCase()} sprints`}
+                        </h3>
+                        <p className="text-[#5E6C84] dark:text-gray-400 mb-6">
+                            {filter === 'All'
+                                ? 'Get started by creating your first sprint to organize and track your work.'
+                                : `You don't have any ${filter.toLowerCase()} sprints. Create a new sprint or change the filter to see more.`
+                            }
+                        </p>
+                        <button
+                            onClick={() => setIsSprintModalOpen(true)}
+                            className="inline-flex items-center gap-2 bg-[#0052CC] hover:bg-[#0065FF] text-white px-6 py-3 rounded-lg font-bold transition-all shadow-md hover:shadow-lg text-sm"
+                        >
+                            <Plus size={18} strokeWidth={3} />
+                            <span>Start Your First Sprint</span>
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* --- GRID VIEW --- */}
-            {viewMode === 'grid' && (
+            {viewMode === 'grid' && filteredSprints.length > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in duration-300">
                     {filteredSprints.map(sprint => {
                         const project = getProject(sprint.projectId);
@@ -406,7 +483,7 @@ const SprintsView: React.FC<SprintsViewProps> = ({ onProjectSelect }) => {
             )}
 
             {/* --- LIST VIEW --- */}
-            {viewMode === 'list' && (
+            {viewMode === 'list' && filteredSprints.length > 0 && (
                 <div className="bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#1F2128] rounded-xl overflow-hidden shadow-sm animate-in fade-in duration-300">
                     <div className="grid grid-cols-[minmax(200px,1.5fr)_90px_minmax(120px,1fr)_140px_70px_90px_120px_80px_44px] gap-3 px-6 py-3 bg-gray-50/80 dark:bg-[#1F2128]/50 border-b border-gray-200 dark:border-[#1F2128] text-[11px] font-bold text-gray-400 uppercase tracking-wider">
                         <div>Sprint</div>
@@ -540,7 +617,7 @@ const SprintsView: React.FC<SprintsViewProps> = ({ onProjectSelect }) => {
             )}
 
             {/* --- TIMELINE VIEW --- */}
-            {viewMode === 'timeline' && timelineData && (
+            {viewMode === 'timeline' && filteredSprints.length > 0 && timelineData && (
                 <div className="bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#1F2128] rounded-xl overflow-hidden shadow-sm animate-in fade-in duration-300 flex flex-col min-h-[500px]">
                     {/* Timeline Header - Time Scale */}
                     <div className="flex border-b border-gray-200 dark:border-[#1F2128] sticky top-0 z-20 bg-white dark:bg-[#15171E]">
@@ -707,6 +784,7 @@ const SprintsView: React.FC<SprintsViewProps> = ({ onProjectSelect }) => {
                                                     const width = (getDuration(s.startDate, s.endDate) / timelineData.totalDays) * 100;
                                                     const stats = getSprintStats(s.id);
                                                     const styles = getSprintStyles(s.status);
+                                                    const risk = getSprintRisk(s, stats);
 
                                                     // Calculate days remaining/overdue
                                                     const today = new Date();
@@ -756,6 +834,21 @@ const SprintsView: React.FC<SprintsViewProps> = ({ onProjectSelect }) => {
                                                                                     +{stats.assignees.length - 3}
                                                                                 </div>
                                                                             )}
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Risk Warning Indicator */}
+                                                                    {risk.isAtRisk && (
+                                                                        <div
+                                                                            className={`flex items-center gap-1 px-1.5 py-0.5 rounded ${
+                                                                                risk.riskLevel === 'critical'
+                                                                                    ? 'bg-red-500/40 text-white'
+                                                                                    : 'bg-amber-500/40 text-white'
+                                                                            }`}
+                                                                            title={risk.reason}
+                                                                        >
+                                                                            <AlertTriangle size={10} className={risk.riskLevel === 'critical' ? 'text-red-200' : 'text-amber-200'} />
+                                                                            <span className="text-[9px] font-medium">{risk.riskLevel === 'critical' ? 'At Risk' : 'Warning'}</span>
                                                                         </div>
                                                                     )}
 
@@ -816,6 +909,14 @@ const SprintsView: React.FC<SprintsViewProps> = ({ onProjectSelect }) => {
                             <div className="flex items-center gap-1.5 ml-2 pl-2 border-l border-gray-200 dark:border-[#2D2F36]">
                                 <div className="w-0.5 h-3 bg-blue-500 rounded-full"></div>
                                 <span>Today</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 ml-2 pl-2 border-l border-gray-200 dark:border-[#2D2F36]">
+                                <AlertTriangle size={10} className="text-amber-500" />
+                                <span>Warning</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <AlertTriangle size={10} className="text-red-500" />
+                                <span>At Risk</span>
                             </div>
                         </div>
                         <div className="text-[10px] text-[#5E6C84] dark:text-gray-400 font-medium">

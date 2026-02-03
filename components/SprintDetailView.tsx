@@ -29,7 +29,7 @@ interface SprintDetailViewProps {
 }
 
 const SprintDetailView: React.FC<SprintDetailViewProps> = ({ sprintId, onBack }) => {
-  const { sprints, tasks, updateTask, updateSprint, users, projects, refreshData } = useProjectData();
+  const { sprints, tasks, updateTask, updateSprint, organizationUsers: users, projects, refreshData } = useProjectData();
   const [activeTab, setActiveTab] = useState<'board' | 'list' | 'timeline'>('board');
 
   // Edit Sprint Modal state

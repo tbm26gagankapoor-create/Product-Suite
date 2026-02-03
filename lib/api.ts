@@ -5,7 +5,8 @@
 
 import { Project, Task, Sprint, User, Team, Comment } from '../types';
 
-const API_BASE = '/api/v1';
+// Use environment variable or default to local backend
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
 
 // --- Auth Headers ---
 function getAuthHeaders(): HeadersInit {
@@ -32,16 +33,19 @@ async function handleResponse<T>(response: Response): Promise<T> {
 const mapUserFromDB = (data: any): User => ({
   id: data.id,
   name: data.name || 'User',
-  role: data.role || 'Member',
+  designation: data.designation || 'Member',
   avatarUrl: data.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.name || 'User')}`,
-  isAdmin: data.role === 'Admin',
+  isAdmin: data.designation === 'Admin',
   email: data.email,
   organizationId: data.organization_id,
   location: data.location,
   bio: data.bio,
   website: data.website,
   jobTitle: data.job_title,
-  socialLinks: data.social_links
+  socialLinks: data.social_links,
+  status: data.status || 'active',
+  createdAt: data.created_at,
+  lastActiveAt: data.last_active_at,
 });
 
 const mapTeamFromDB = (data: any): Team => ({
@@ -248,12 +252,15 @@ export const api = {
   async updateUser(id: string, updates: Partial<User>): Promise<User> {
     const dbUpdates: any = {};
     if (updates.name) dbUpdates.name = updates.name;
-    if (updates.role) dbUpdates.role = updates.role;
+    if (updates.designation) dbUpdates.designation = updates.designation;
     if (updates.avatarUrl) dbUpdates.avatar_url = updates.avatarUrl;
     if (updates.location) dbUpdates.location = updates.location;
     if (updates.bio) dbUpdates.bio = updates.bio;
     if (updates.website) dbUpdates.website = updates.website;
     if (updates.jobTitle) dbUpdates.job_title = updates.jobTitle;
+    if (updates.organizationId) dbUpdates.organization_id = updates.organizationId;
+    if (updates.status) dbUpdates.status = updates.status;
+    if (updates.isAdmin !== undefined) dbUpdates.designation = updates.isAdmin ? 'Admin' : updates.designation || 'Member';
 
     const response = await fetch(`${API_BASE}/users/${id}`, {
       method: 'PATCH',
@@ -266,13 +273,25 @@ export const api = {
 
   // Teams
   async getTeams(): Promise<Team[]> {
-    // Teams not fully implemented in local backend yet
-    return [];
+    const response = await fetch(`${API_BASE}/teams`, { headers: getAuthHeaders() });
+    const data = await response.json();
+    if (!data.success) return [];
+    return (data.data || []).map(mapTeamFromDB);
   },
 
   async createTeam(team: Team): Promise<Team> {
-    console.log('Team creation not implemented in local backend');
-    return team;
+    const response = await fetch(`${API_BASE}/teams`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        name: team.name,
+        description: team.description,
+        organization_id: team.organizationId,
+        member_ids: team.members,
+      }),
+    });
+    const result = await handleResponse<any>(response);
+    return mapTeamFromDB(result);
   },
 
   // Projects
@@ -473,6 +492,66 @@ export const api = {
 
   async removeProjectMember(projectId: string, userId: string): Promise<void> {
     await fetch(`${API_BASE}/projects/${projectId}/members/${userId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+  },
+
+  // Invites
+  async sendInvite(email: string, role: 'admin' | 'member', organizationId: string): Promise<{
+    invite: {
+      id: string;
+      email: string;
+      role: string;
+      status: string;
+      expiresAt: string;
+      inviteLink: string;
+    };
+    emailSent: boolean;
+    emailError?: string;
+  }> {
+    const response = await fetch(`${API_BASE}/invites`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ email, role, organizationId }),
+    });
+    return handleResponse<any>(response);
+  },
+
+  async getInvite(inviteId: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/invites/${inviteId}`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<any>(response);
+  },
+
+  async acceptInvite(inviteId: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/invites/${inviteId}/accept`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<any>(response);
+  },
+
+  async getOrganizationInvites(organizationId: string): Promise<any[]> {
+    const response = await fetch(`${API_BASE}/invites/organization/${organizationId}`, {
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json();
+    if (!data.success) return [];
+    return data.data || [];
+  },
+
+  async resendInvite(inviteId: string): Promise<any> {
+    const response = await fetch(`${API_BASE}/invites/${inviteId}/resend`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<any>(response);
+  },
+
+  async revokeInvite(inviteId: string): Promise<void> {
+    await fetch(`${API_BASE}/invites/${inviteId}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });

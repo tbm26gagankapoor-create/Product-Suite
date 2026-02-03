@@ -7,6 +7,13 @@ const router = Router();
 // Apply auth middleware
 router.use(authMiddleware);
 
+// Get recent activity (base route with query params)
+router.get('/', async (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 100;
+  const activities = await activityService.getRecent(limit);
+  res.json({ success: true, data: activities });
+});
+
 // Get activity for a specific task
 router.get('/task/:taskId', (req, res) => {
   const activities = activityService.getByTask(req.params.taskId);

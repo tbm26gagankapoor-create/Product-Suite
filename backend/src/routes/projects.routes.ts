@@ -8,7 +8,7 @@ const router = Router();
 router.use(authMiddleware);
 
 // Get all projects (filtered by user access)
-router.get('/', (req: AuthRequest, res: Response) => {
+router.get('/', async (req: AuthRequest, res: Response) => {
   const user = req.user;
 
   // If no user (not logged in), return empty list
@@ -16,21 +16,24 @@ router.get('/', (req: AuthRequest, res: Response) => {
     return res.json({ success: true, data: [] });
   }
 
-  const projects = projectsService.getAllForUser(user.id, user.isAdmin);
+  const projects = await projectsService.getAllForUser(user.id, user.isAdmin);
   res.json({ success: true, data: projects });
 });
 
 // Get project by ID (with access check)
-router.get('/:id', (req: AuthRequest, res: Response) => {
+router.get('/:id', async (req: AuthRequest, res: Response) => {
   const user = req.user;
   const projectId = req.params.id;
 
   // Check access
-  if (user && !projectsService.userHasAccess(projectId, user.id, user.isAdmin)) {
-    return res.status(403).json({ success: false, error: 'Access denied' });
+  if (user) {
+    const hasAccess = await projectsService.userHasAccess(projectId, user.id, user.isAdmin);
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
   }
 
-  const project = projectsService.getById(projectId);
+  const project = await projectsService.getById(projectId);
   if (!project) {
     return res.status(404).json({ success: false, error: 'Project not found' });
   }
@@ -38,26 +41,29 @@ router.get('/:id', (req: AuthRequest, res: Response) => {
 });
 
 // Get project by code (with access check)
-router.get('/code/:code', (req: AuthRequest, res: Response) => {
+router.get('/code/:code', async (req: AuthRequest, res: Response) => {
   const user = req.user;
-  const project = projectsService.getByCode(req.params.code);
+  const project = await projectsService.getByCode(req.params.code);
 
   if (!project) {
     return res.status(404).json({ success: false, error: 'Project not found' });
   }
 
   // Check access
-  if (user && !projectsService.userHasAccess(project.id, user.id, user.isAdmin)) {
-    return res.status(403).json({ success: false, error: 'Access denied' });
+  if (user) {
+    const hasAccess = await projectsService.userHasAccess(project.id, user.id, user.isAdmin);
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
   }
 
   res.json({ success: true, data: project });
 });
 
 // Create project
-router.post('/', (req: AuthRequest, res: Response) => {
+router.post('/', async (req: AuthRequest, res: Response) => {
   const user = req.user;
-  const { name, description, code, owner_id } = req.body;
+  const { name, description, code, owner_id, image_url, icon, icon_color } = req.body;
 
   if (!name || !code) {
     return res.status(400).json({
@@ -69,12 +75,12 @@ router.post('/', (req: AuthRequest, res: Response) => {
   try {
     // Set owner to current user if not specified
     const actualOwnerId = owner_id || user?.id;
-    const project = projectsService.create({ name, description, code, owner_id: actualOwnerId });
+    const project = await projectsService.create({ name, description, code, owner_id: actualOwnerId, image_url, icon, icon_color });
 
     // Automatically add the creator as a project member
     if (user && actualOwnerId === user.id) {
       try {
-        projectsService.addMember(project.id, user.id, 'owner');
+        await projectsService.addMember(project.id, user.id, 'owner');
       } catch (e) {
         // Ignore if already a member
       }
@@ -90,16 +96,19 @@ router.post('/', (req: AuthRequest, res: Response) => {
 });
 
 // Update project (with access check)
-router.patch('/:id', (req: AuthRequest, res: Response) => {
+router.patch('/:id', async (req: AuthRequest, res: Response) => {
   const user = req.user;
   const projectId = req.params.id;
 
   // Check access
-  if (user && !projectsService.userHasAccess(projectId, user.id, user.isAdmin)) {
-    return res.status(403).json({ success: false, error: 'Access denied' });
+  if (user) {
+    const hasAccess = await projectsService.userHasAccess(projectId, user.id, user.isAdmin);
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
   }
 
-  const project = projectsService.update(projectId, req.body);
+  const project = await projectsService.update(projectId, req.body);
   if (!project) {
     return res.status(404).json({ success: false, error: 'Project not found' });
   }
@@ -107,7 +116,7 @@ router.patch('/:id', (req: AuthRequest, res: Response) => {
 });
 
 // Delete project (with access check - only owner or admin)
-router.delete('/:id', (req: AuthRequest, res: Response) => {
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
   const user = req.user;
   const projectId = req.params.id;
 
@@ -116,7 +125,7 @@ router.delete('/:id', (req: AuthRequest, res: Response) => {
   }
 
   // Only allow owner or admin to delete
-  const project = projectsService.getById(projectId);
+  const project = await projectsService.getById(projectId);
   if (!project) {
     return res.status(404).json({ success: false, error: 'Project not found' });
   }
@@ -125,7 +134,7 @@ router.delete('/:id', (req: AuthRequest, res: Response) => {
     return res.status(403).json({ success: false, error: 'Only project owner or admin can delete' });
   }
 
-  const deleted = projectsService.delete(projectId);
+  const deleted = await projectsService.delete(projectId);
   if (!deleted) {
     return res.status(404).json({ success: false, error: 'Project not found' });
   }
@@ -133,21 +142,24 @@ router.delete('/:id', (req: AuthRequest, res: Response) => {
 });
 
 // Get project members (with access check)
-router.get('/:id/members', (req: AuthRequest, res: Response) => {
+router.get('/:id/members', async (req: AuthRequest, res: Response) => {
   const user = req.user;
   const projectId = req.params.id;
 
   // Check access
-  if (user && !projectsService.userHasAccess(projectId, user.id, user.isAdmin)) {
-    return res.status(403).json({ success: false, error: 'Access denied' });
+  if (user) {
+    const hasAccess = await projectsService.userHasAccess(projectId, user.id, user.isAdmin);
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
   }
 
-  const members = projectsService.getMembers(projectId);
+  const members = await projectsService.getMembers(projectId);
   res.json({ success: true, data: members });
 });
 
 // Add project member (only owner or admin)
-router.post('/:id/members', (req: AuthRequest, res: Response) => {
+router.post('/:id/members', async (req: AuthRequest, res: Response) => {
   const user = req.user;
   const projectId = req.params.id;
 
@@ -155,7 +167,7 @@ router.post('/:id/members', (req: AuthRequest, res: Response) => {
     return res.status(401).json({ success: false, error: 'Authentication required' });
   }
 
-  const project = projectsService.getById(projectId);
+  const project = await projectsService.getById(projectId);
   if (!project) {
     return res.status(404).json({ success: false, error: 'Project not found' });
   }
@@ -171,7 +183,7 @@ router.post('/:id/members', (req: AuthRequest, res: Response) => {
   }
 
   try {
-    const member = projectsService.addMember(projectId, user_id, role);
+    const member = await projectsService.addMember(projectId, user_id, role);
     res.status(201).json({ success: true, data: member });
   } catch (error: any) {
     if (error.message?.includes('UNIQUE constraint')) {
@@ -182,7 +194,7 @@ router.post('/:id/members', (req: AuthRequest, res: Response) => {
 });
 
 // Remove project member (only owner or admin)
-router.delete('/:id/members/:userId', (req: AuthRequest, res: Response) => {
+router.delete('/:id/members/:userId', async (req: AuthRequest, res: Response) => {
   const user = req.user;
   const projectId = req.params.id;
 
@@ -190,7 +202,7 @@ router.delete('/:id/members/:userId', (req: AuthRequest, res: Response) => {
     return res.status(401).json({ success: false, error: 'Authentication required' });
   }
 
-  const project = projectsService.getById(projectId);
+  const project = await projectsService.getById(projectId);
   if (!project) {
     return res.status(404).json({ success: false, error: 'Project not found' });
   }
@@ -200,7 +212,7 @@ router.delete('/:id/members/:userId', (req: AuthRequest, res: Response) => {
     return res.status(403).json({ success: false, error: 'Only project owner or admin can remove members' });
   }
 
-  const removed = projectsService.removeMember(projectId, req.params.userId);
+  const removed = await projectsService.removeMember(projectId, req.params.userId);
   if (!removed) {
     return res.status(404).json({ success: false, error: 'Member not found' });
   }

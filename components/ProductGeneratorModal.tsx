@@ -29,7 +29,16 @@ import {
   ChevronRight,
   Target,
   Briefcase,
-  Settings
+  Settings,
+  MessageSquare,
+  Send,
+  Bot,
+  PenLine,
+  HelpCircle,
+  CheckCircle2,
+  PanelRightClose,
+  PanelRightOpen,
+  AlertTriangle
 } from 'lucide-react';
 import { DOC_NAV_ITEMS } from '../constants';
 import { Task, User as UserType } from '../types';
@@ -84,6 +93,17 @@ interface GeneratedEpic {
     tasks: GeneratedTask[];
 }
 
+// Chat message types for Claude-style assistant
+interface DocChatMessage {
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;
+    type: 'question' | 'edit' | 'response';
+    timestamp: Date;
+    editApplied?: boolean;
+    editPreview?: string;
+}
+
 // Step Configuration
 const STEPS = [
   { id: 'input', label: 'Define', icon: Target },
@@ -93,7 +113,7 @@ const STEPS = [
 ];
 
 const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, onClose, onCreate }) => {
-  const { users, currentUser } = useProjectData();
+  const { organizationUsers: users, currentUser } = useProjectData();
   const { error: showError, warning, success, info } = useToast();
   const [step, setStep] = useState<'input' | 'processing' | 'review' | 'generating_docs' | 'prd_view' | 'planning' | 'creating_project'>('input');
 
@@ -135,6 +155,13 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
   const [currentGeneratingDoc, setCurrentGeneratingDoc] = useState<string | null>(null);
   const [docGenerationProgress, setDocGenerationProgress] = useState<Record<string, 'pending' | 'generating' | 'completed' | 'error'>>({});
 
+  // Document Chat Assistant State (Claude Code style)
+  const [docChatMessages, setDocChatMessages] = useState<DocChatMessage[]>([]);
+  const [docChatInput, setDocChatInput] = useState('');
+  const [isDocChatLoading, setIsDocChatLoading] = useState(false);
+  const [isChatPanelOpen, setIsChatPanelOpen] = useState(true);
+  const docChatEndRef = useRef<HTMLDivElement>(null);
+
   // Planning State
   const [generatedEpics, setGeneratedEpics] = useState<GeneratedEpic[]>([]);
   const [selectedTaskForDetail, setSelectedTaskForDetail] = useState<Task | null>(null);
@@ -152,6 +179,9 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set());
 
+  // Exit Confirmation State
+  const [showExitConfirmation, setShowExitConfirmation] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const productImageInputRef = useRef<HTMLInputElement>(null);
@@ -165,6 +195,87 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
       'planning': 3, 'creating_project': 3
     };
     return stepMap[step] ?? 0;
+  };
+
+  // Check if there's work in progress that would be lost
+  const hasUnsavedWork = () => {
+    // Check if we're past the initial input step
+    if (step !== 'input') return true;
+    // Check if any form data has been entered
+    if (productName || description || tags || uploadedFile || productImage) return true;
+    // Check if any docs have been generated
+    if (Object.keys(generatedDocs).some(k => generatedDocs[k])) return true;
+    // Check if any epics have been generated
+    if (generatedEpics.length > 0) return true;
+    return false;
+  };
+
+  // Reset all state to initial values
+  const resetAllState = () => {
+    setStep('input');
+    setInputMode('scratch');
+    setProductName('');
+    setDescription('');
+    setTags('');
+    setStartDate(new Date().toISOString().split('T')[0]);
+    setTargetDate(new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+    setOwnerId('');
+    setSelectedTeam([]);
+    setUploadedFile(null);
+    setFileText('');
+    setProductImage(null);
+    setIsExtracting(false);
+    setRefinedVision('');
+    setSuggestions([]);
+    setMessages([]);
+    setChatInput('');
+    setIsAiLoading(false);
+    setProgress(0);
+    setCreationProgress(0);
+    setTimeLeft(0);
+    setLoadingStatus('');
+    setActiveDocSection('prd');
+    setGeneratedDocs({});
+    setParsedSections([]);
+    setCurrentGeneratingDoc(null);
+    setDocGenerationProgress({});
+    setDocChatMessages([]);
+    setDocChatInput('');
+    setIsDocChatLoading(false);
+    setIsChatPanelOpen(true);
+    setGeneratedEpics([]);
+    setSelectedTaskForDetail(null);
+    setActiveEpicId(null);
+    setAiPromptEpicId(null);
+    setAiTaskPrompt('');
+    setIsGeneratingTasks(false);
+    setIsRegenerating(false);
+    setTransitionDirection('forward');
+    setIsTransitioning(false);
+    setCompletedSteps(new Set());
+    setShowExitConfirmation(false);
+  };
+
+  // Handle close with confirmation if needed
+  const handleCloseAttempt = () => {
+    if (hasUnsavedWork()) {
+      setShowExitConfirmation(true);
+    } else {
+      resetAllState();
+      onClose();
+    }
+  };
+
+  // Confirm exit and close
+  const handleConfirmExit = () => {
+    resetAllState();
+    setShowExitConfirmation(false);
+    onClose();
+  };
+
+  // Cancel exit
+  const handleCancelExit = () => {
+    setShowExitConfirmation(false);
   };
 
   // Handle step changes with transitions
@@ -924,8 +1035,44 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
           }
 
           console.log('Total rawEpics found:', rawEpics.length);
+
+          // If no epics were generated, retry once with a simpler prompt
           if (rawEpics.length === 0) {
-              console.warn('No epics were parsed from the AI response. Raw response:', response.text?.substring(0, 1000));
+              console.warn('No epics were parsed from the AI response. Retrying with simpler prompt...');
+              setLoadingStatus('Retrying plan generation...');
+
+              const retryPrompt = `Based on this product vision, create a project plan with epics and tasks.
+
+Product: ${productName}
+Vision: ${refinedVision.substring(0, 2000)}
+
+Return JSON format:
+{"epics":[{"title":"Epic Name","description":"Description","tasks":[{"title":"Task","description":"Details","type":"task","points":2,"role":"Developer"}]}]}
+
+Generate 3-5 epics with 3-5 tasks each. Output ONLY valid JSON, no explanation.`;
+
+              const retryResponse = await generateWithRetry({
+                  model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
+                  contents: [{ role: 'user', parts: [{ text: retryPrompt }] }],
+                  config: { responseMimeType: "application/json" }
+              });
+
+              try {
+                  const retryText = cleanJson(retryResponse.text || '{}');
+                  const retryParsed = JSON.parse(retryText);
+                  if (retryParsed.epics && Array.isArray(retryParsed.epics)) {
+                      rawEpics = retryParsed.epics;
+                  } else if (Array.isArray(retryParsed)) {
+                      rawEpics = retryParsed;
+                  }
+              } catch (retryError) {
+                  console.error('Retry parsing also failed:', retryError);
+              }
+
+              // If still no epics, throw error
+              if (rawEpics.length === 0) {
+                  throw new Error('Failed to generate project plan. Please try again.');
+              }
           }
 
           setLoadingStatus(`Building ${rawEpics.length} epics and assigning tasks...`);
@@ -1303,6 +1450,129 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
       }
   };
 
+  // Scroll to bottom of doc chat when messages change
+  useEffect(() => {
+      docChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [docChatMessages]);
+
+  // Enhanced Document Chat Handler - Claude Code style
+  const handleDocChatSubmit = async () => {
+      if (!docChatInput.trim() || isDocChatLoading) return;
+
+      const userMessage = docChatInput.trim();
+      setDocChatInput('');
+
+      // Add user message
+      const userMsgId = `msg-${Date.now()}`;
+      const isEditRequest = /\b(change|update|modify|edit|add|remove|delete|replace|rewrite|make|fix|improve)\b/i.test(userMessage);
+
+      setDocChatMessages(prev => [...prev, {
+          id: userMsgId,
+          role: 'user',
+          content: userMessage,
+          type: isEditRequest ? 'edit' : 'question',
+          timestamp: new Date()
+      }]);
+
+      setIsDocChatLoading(true);
+
+      try {
+          const currentContent = generatedDocs[activeDocSection] || '';
+          const sectionName = DOC_NAV_ITEMS.find(d => d.id === activeDocSection)?.label || 'Document';
+
+          // Get FULL context from ALL generated docs for comprehensive answers
+          const allDocsContext = Object.entries(generatedDocs)
+              .filter(([_, content]) => content)
+              .map(([id, content]) => {
+                  const docName = DOC_NAV_ITEMS.find(d => d.id === id)?.label || id;
+                  // Strip HTML tags for context - include full content
+                  const textContent = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                  return `=== ${docName.toUpperCase()} ===\n${textContent}`;
+              })
+              .join('\n\n---\n\n');
+
+          if (isEditRequest) {
+              // Edit mode - modify the current document
+              const prompt = `You are an expert document editor. You are editing the "${sectionName}" section of a Product Requirements Document.
+
+Current Content (HTML):
+${currentContent}
+
+User Request: "${userMessage}"
+
+Instructions:
+1. Make the requested changes to the document
+2. Return the FULL updated HTML content (not just the changed parts)
+3. Preserve the existing HTML structure and styling
+4. Do not wrap in markdown code blocks
+5. Only return the HTML, nothing else`;
+
+              const res = await generateWithRetry({
+                  model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
+                  contents: [{ role: 'user', parts: [{ text: prompt }] }]
+              });
+
+              if (res.text) {
+                  const updatedContent = cleanHtml(res.text);
+                  setGeneratedDocs(prev => ({ ...prev, [activeDocSection]: updatedContent }));
+                  if (docContentRef.current) {
+                      docContentRef.current.innerHTML = updatedContent;
+                  }
+
+                  setDocChatMessages(prev => [...prev, {
+                      id: `msg-${Date.now()}`,
+                      role: 'assistant',
+                      content: `I've updated the ${sectionName}. The changes have been applied based on your request: "${userMessage}"`,
+                      type: 'edit',
+                      timestamp: new Date(),
+                      editApplied: true
+                  }]);
+              }
+          } else {
+              // Question mode - answer based on ALL document content
+              const prompt = `You are a precise product documentation assistant. Search ALL sections below to answer.
+
+FULL PRODUCT DOCUMENTATION:
+${allDocsContext}
+
+Question: "${userMessage}"
+
+STRICT RULES:
+- Search ALL document sections above to find the answer
+- Answer in 2-3 sentences MAX unless more detail is explicitly requested
+- Use bullet points for lists (max 4-5 items)
+- No introductory phrases - start directly with the answer
+- Cite which section(s) the info came from in parentheses at the end
+- If not found anywhere, say "Not covered in documentation"
+- Be specific with names, numbers, and facts`;
+
+              const res = await generateWithRetry({
+                  model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
+                  contents: [{ role: 'user', parts: [{ text: prompt }] }]
+              });
+
+              setDocChatMessages(prev => [...prev, {
+                  id: `msg-${Date.now()}`,
+                  role: 'assistant',
+                  content: res.text || "I couldn't find relevant information in the documentation.",
+                  type: 'response',
+                  timestamp: new Date()
+              }]);
+          }
+      } catch (error) {
+          console.error('Doc chat error:', error);
+          setDocChatMessages(prev => [...prev, {
+              id: `msg-${Date.now()}`,
+              role: 'assistant',
+              content: "Sorry, I encountered an error processing your request. Please try again.",
+              type: 'response',
+              timestamp: new Date()
+          }]);
+      } finally {
+          setIsDocChatLoading(false);
+      }
+  };
+
   if (!isOpen) return null;
 
   const currentStepIndex = getCurrentStepIndex();
@@ -1406,7 +1676,7 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-        <div className={`bg-white dark:bg-[#12141A] w-full rounded-2xl shadow-2xl border border-gray-200 dark:border-[#1F2128] overflow-hidden flex flex-col transition-all duration-500 ${step === 'review' || step === 'prd_view' || step === 'planning' || step === 'creating_project' ? 'max-w-[1400px] h-[90vh]' : 'max-w-xl'}`}>
+        <div className={`bg-white dark:bg-[#12141A] w-full rounded-2xl shadow-2xl border border-gray-200 dark:border-[#1F2128] overflow-hidden flex flex-col transition-all duration-500 ${step === 'review' || step === 'prd_view' || step === 'planning' || step === 'creating_project' ? 'max-w-6xl h-[85vh]' : 'max-w-xl'}`}>
 
             {/* Header */}
             {step !== 'creating_project' && (
@@ -1422,7 +1692,7 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
                         </p>
                     </div>
                 </div>
-                <button onClick={onClose} className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-[#1F2128] flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#2D2F36] transition-colors">
+                <button onClick={handleCloseAttempt} className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-[#1F2128] flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#2D2F36] transition-colors">
                     <X size={16} />
                 </button>
             </div>
@@ -1903,18 +2173,17 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
 
                 {/* Review, PRD View, Planning Steps */}
                 {(step === 'review' || step === 'prd_view' || step === 'planning') && (
-                     <div className="flex h-full animate-in fade-in duration-300">
+                     <div className="flex-1 flex flex-col min-h-0 overflow-hidden animate-in fade-in duration-300">
                         {/* Main Content Area */}
-                        <div className="flex-1 flex flex-col min-w-0">
-                            <div className="flex-1 overflow-y-auto custom-scrollbar">
+                        <div className="flex-1 flex min-h-0 overflow-hidden">
 
                                 {/* Review Step */}
                                 {step === 'review' && (
-                                    <div className={`flex h-full ${
+                                    <div className={`flex w-full h-full overflow-hidden ${
                                       isTransitioning ? 'opacity-0' : transitionDirection === 'forward' ? 'animate-slideInFromRight' : 'animate-slideInFromLeft'
                                     }`}>
                                         {/* Vision Editor - Left */}
-                                        <div className="flex-1 p-6 border-r border-gray-100 dark:border-[#1F2128] flex flex-col">
+                                        <div className="flex-1 p-6 border-r border-gray-100 dark:border-[#1F2128] flex flex-col min-w-0 overflow-hidden">
                                             {/* Step Summary from Input */}
                                             <StepSummary stepName="Define" onEdit={() => handleStepChange('input', 'backward')}>
                                               <div className="flex items-center gap-4">
@@ -1935,7 +2204,7 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
                                               </div>
                                             </StepSummary>
 
-                                            <div className="flex items-center justify-between mb-4">
+                                            <div className="flex items-center justify-between mb-4 flex-shrink-0">
                                                 <div className="flex items-center gap-2">
                                                     <Lightbulb size={16} className="text-amber-500" />
                                                     <h3 className="text-sm font-bold text-[#172B4D] dark:text-white">Product Vision</h3>
@@ -1945,7 +2214,7 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
                                                 </span>
                                             </div>
                                             <textarea
-                                                className="w-full h-[calc(100%-80px)] bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#1F2128] rounded-xl p-4 text-sm text-[#172B4D] dark:text-gray-200 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                                className="flex-1 w-full bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#1F2128] rounded-xl p-4 text-sm text-[#172B4D] dark:text-gray-200 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 overflow-y-auto"
                                                 value={refinedVision}
                                                 onChange={(e) => setRefinedVision(e.target.value)}
                                                 placeholder="Your product vision will appear here..."
@@ -1953,8 +2222,8 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
                                         </div>
 
                                         {/* Suggestions - Right */}
-                                        <div className="w-80 flex flex-col bg-gray-50/50 dark:bg-[#0B0C0E]/50">
-                                            <div className="p-4 border-b border-gray-100 dark:border-[#1F2128] flex items-center justify-between">
+                                        <div className="w-64 flex-shrink-0 flex flex-col bg-gray-50/50 dark:bg-[#0B0C0E]/50">
+                                            <div className="p-4 border-b border-gray-100 dark:border-[#1F2128] flex items-center justify-between flex-shrink-0">
                                                 <div className="flex items-center gap-2">
                                                     <Zap size={14} className="text-amber-500" />
                                                     <h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider">Suggestions</h3>
@@ -1964,7 +2233,7 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
                                                 </span>
                                             </div>
 
-                                            <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+                                            <div className="flex-1 overflow-y-auto p-3 space-y-2">
                                                 {suggestions.length > 0 ? suggestions.map(s => (
                                                     <button
                                                         key={s.id}
@@ -1997,7 +2266,7 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
                                                 )}
                                             </div>
 
-                                            <div className="p-3 border-t border-gray-100 dark:border-[#1F2128]">
+                                            <div className="p-3 border-t border-gray-100 dark:border-[#1F2128] flex-shrink-0">
                                                 <button
                                                     onClick={handleMoreSuggestions}
                                                     disabled={isAiLoading}
@@ -2124,6 +2393,164 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
                                                     <span className="text-sm text-gray-400">Waiting in queue...</span>
                                                 </div>
                                              )}
+                                        </div>
+
+                                        {/* Right Sidebar - AI Chat Assistant (Claude Code style) */}
+                                        <div className={`${isChatPanelOpen ? 'w-96' : 'w-12'} bg-white dark:bg-[#12141A] border-l border-gray-100 dark:border-[#1F2128] flex flex-col flex-shrink-0 transition-all duration-300`}>
+                                            {/* Chat Header */}
+                                            <div className="p-3 border-b border-gray-100 dark:border-[#1F2128] flex items-center justify-between">
+                                                {isChatPanelOpen ? (
+                                                    <>
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                                                                <Bot size={14} className="text-white" />
+                                                            </div>
+                                                            <div>
+                                                                <h3 className="text-xs font-bold text-[#172B4D] dark:text-white">Doc Assistant</h3>
+                                                                <p className="text-[10px] text-gray-400">Ask questions or request edits</p>
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => setIsChatPanelOpen(false)}
+                                                            className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1F2128] rounded-lg transition-colors"
+                                                        >
+                                                            <PanelRightClose size={16} />
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => setIsChatPanelOpen(true)}
+                                                        className="w-full flex flex-col items-center gap-1 py-2 text-gray-400 hover:text-blue-500 transition-colors"
+                                                    >
+                                                        <PanelRightOpen size={18} />
+                                                        <span className="text-[9px] font-bold uppercase tracking-wider">Chat</span>
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {isChatPanelOpen && (
+                                                <>
+                                                    {/* Chat Messages */}
+                                                    <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
+                                                        {docChatMessages.length === 0 ? (
+                                                            <div className="flex flex-col items-center justify-center h-full text-center px-4">
+                                                                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/20 dark:to-indigo-900/20 flex items-center justify-center mb-4">
+                                                                    <MessageSquare size={24} className="text-blue-500" />
+                                                                </div>
+                                                                <h4 className="text-sm font-semibold text-[#172B4D] dark:text-white mb-2">Document Assistant</h4>
+                                                                <p className="text-xs text-gray-400 mb-4">Ask questions about your documentation or request changes</p>
+                                                                <div className="space-y-2 w-full">
+                                                                    <button
+                                                                        onClick={() => setDocChatInput("What are the key features described in this document?")}
+                                                                        className="w-full text-left px-3 py-2 text-xs bg-gray-50 dark:bg-[#1F2128] hover:bg-gray-100 dark:hover:bg-[#2D2F36] rounded-lg text-gray-600 dark:text-gray-400 transition-colors flex items-center gap-2"
+                                                                    >
+                                                                        <HelpCircle size={12} className="text-blue-500 flex-shrink-0" />
+                                                                        <span>What are the key features?</span>
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => setDocChatInput("Add a section about security considerations")}
+                                                                        className="w-full text-left px-3 py-2 text-xs bg-gray-50 dark:bg-[#1F2128] hover:bg-gray-100 dark:hover:bg-[#2D2F36] rounded-lg text-gray-600 dark:text-gray-400 transition-colors flex items-center gap-2"
+                                                                    >
+                                                                        <PenLine size={12} className="text-purple-500 flex-shrink-0" />
+                                                                        <span>Add a security section</span>
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => setDocChatInput("Make the language more technical and detailed")}
+                                                                        className="w-full text-left px-3 py-2 text-xs bg-gray-50 dark:bg-[#1F2128] hover:bg-gray-100 dark:hover:bg-[#2D2F36] rounded-lg text-gray-600 dark:text-gray-400 transition-colors flex items-center gap-2"
+                                                                    >
+                                                                        <PenLine size={12} className="text-purple-500 flex-shrink-0" />
+                                                                        <span>Make it more technical</span>
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                {docChatMessages.map((msg) => (
+                                                                    <div
+                                                                        key={msg.id}
+                                                                        className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                                                                    >
+                                                                        <div className={`max-w-[85%] ${msg.role === 'user' ? 'order-2' : 'order-1'}`}>
+                                                                            {msg.role === 'assistant' && (
+                                                                                <div className="flex items-center gap-1.5 mb-1">
+                                                                                    <div className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                                                                                        <Bot size={10} className="text-white" />
+                                                                                    </div>
+                                                                                    <span className="text-[10px] font-medium text-gray-400">Assistant</span>
+                                                                                    {msg.type === 'edit' && msg.editApplied && (
+                                                                                        <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded font-medium">
+                                                                                            <CheckCircle2 size={9} /> Applied
+                                                                                        </span>
+                                                                                    )}
+                                                                                </div>
+                                                                            )}
+                                                                            <div
+                                                                                className={`px-3 py-2 rounded-xl text-xs leading-relaxed ${
+                                                                                    msg.role === 'user'
+                                                                                        ? 'bg-blue-600 text-white rounded-br-md'
+                                                                                        : 'bg-gray-100 dark:bg-[#1F2128] text-[#172B4D] dark:text-gray-200 rounded-bl-md'
+                                                                                }`}
+                                                                            >
+                                                                                {msg.content}
+                                                                            </div>
+                                                                            <div className={`text-[9px] text-gray-400 mt-1 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                                                                                {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                                {isDocChatLoading && (
+                                                                    <div className="flex items-center gap-2 px-3 py-2">
+                                                                        <div className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                                                                            <Bot size={10} className="text-white" />
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1">
+                                                                            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                                                            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                                                            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                                <div ref={docChatEndRef} />
+                                                            </>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Chat Input */}
+                                                    <div className="p-3 border-t border-gray-100 dark:border-[#1F2128]">
+                                                        <div className="flex items-end gap-2 bg-gray-50 dark:bg-[#0B0C0E] rounded-xl p-2 border border-gray-200 dark:border-[#1F2128] focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
+                                                            <textarea
+                                                                value={docChatInput}
+                                                                onChange={(e) => setDocChatInput(e.target.value)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                                                        e.preventDefault();
+                                                                        handleDocChatSubmit();
+                                                                    }
+                                                                }}
+                                                                placeholder="Ask a question or request changes..."
+                                                                rows={1}
+                                                                className="flex-1 bg-transparent text-xs text-[#172B4D] dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none resize-none max-h-24"
+                                                                style={{ minHeight: '24px' }}
+                                                            />
+                                                            <button
+                                                                onClick={handleDocChatSubmit}
+                                                                disabled={isDocChatLoading || !docChatInput.trim()}
+                                                                className="w-8 h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                                                            >
+                                                                {isDocChatLoading ? (
+                                                                    <Loader2 size={14} className="animate-spin" />
+                                                                ) : (
+                                                                    <Send size={14} />
+                                                                )}
+                                                            </button>
+                                                        </div>
+                                                        <p className="text-[9px] text-gray-400 mt-2 text-center">
+                                                            <span className="text-blue-500">Questions</span> search all docs &bull; <span className="text-purple-500">Edit requests</span> modify current doc
+                                                        </p>
+                                                    </div>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -2349,10 +2776,12 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
                                         </button>
                                     </div>
                                 )}
-                            </div>
 
-                            {/* Floating AI Chat - Fixed at bottom */}
-                            {(step === 'review' || step === 'prd_view' || step === 'planning') && (
+                        </div>
+                        {/* Close Main Content Area */}
+
+                            {/* Floating AI Chat - Fixed at bottom (only for review and planning, prd_view has sidebar chat) */}
+                            {(step === 'review' || step === 'planning') && (
                             <div className="border-t border-gray-100 dark:border-[#1F2128] bg-white dark:bg-[#12141A] p-4">
                                 <div className="max-w-3xl mx-auto">
                                     {/* Chat History */}
@@ -2383,7 +2812,6 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
                                             onKeyDown={(e) => e.key === 'Enter' && handleChatSubmit()}
                                             placeholder={
                                                 step === 'review' ? "Refine vision (e.g., 'Make it more enterprise focused')..." :
-                                                step === 'prd_view' ? `Edit ${DOC_NAV_ITEMS.find(d => d.id === activeDocSection)?.label || 'document'}...` :
                                                 "Modify plan (e.g., 'Add QA tasks to each epic')..."
                                             }
                                             className="flex-1 bg-transparent text-sm text-[#172B4D] dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none"
@@ -2399,7 +2827,6 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
                                 </div>
                             </div>
                             )}
-                        </div>
                      </div>
                 )}
             </div>
@@ -2441,7 +2868,7 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
                                 <Check size={14} /> Create Project
                             </button>
                         )}
-                    </div>``
+                    </div>
                 </div>
             )}
         </div>
@@ -2454,6 +2881,84 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
                 onClose={() => setSelectedTaskForDetail(null)}
                 onUpdate={handleTaskUpdateFromModal}
             />
+        )}
+
+        {/* Exit Confirmation Dialog */}
+        {showExitConfirmation && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center">
+                {/* Backdrop */}
+                <div
+                    className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                    onClick={handleCancelExit}
+                />
+
+                {/* Dialog */}
+                <div className="relative bg-white dark:bg-[#1A1D26] rounded-2xl shadow-2xl border border-gray-200 dark:border-[#2D2F36] w-full max-w-md mx-4 overflow-hidden animate-in zoom-in-95 fade-in duration-200">
+                    {/* Header */}
+                    <div className="p-6 pb-4">
+                        <div className="flex items-start gap-4">
+                            <div className="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+                                <AlertTriangle size={24} className="text-amber-600 dark:text-amber-400" />
+                            </div>
+                            <div className="flex-1">
+                                <h3 className="text-lg font-bold text-[#172B4D] dark:text-white mb-1">
+                                    Discard Progress?
+                                </h3>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">
+                                    You have unsaved work in the Product Architect. All generated documents, vision, and plans will be lost.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Progress Summary */}
+                    <div className="px-6 pb-4">
+                        <div className="bg-gray-50 dark:bg-[#0B0C0E] rounded-xl p-4 space-y-2">
+                            {productName && (
+                                <div className="flex items-center gap-2 text-xs">
+                                    <Check size={12} className="text-green-500" />
+                                    <span className="text-gray-600 dark:text-gray-400">Product: <span className="font-medium text-[#172B4D] dark:text-white">{productName}</span></span>
+                                </div>
+                            )}
+                            {refinedVision && (
+                                <div className="flex items-center gap-2 text-xs">
+                                    <Check size={12} className="text-green-500" />
+                                    <span className="text-gray-600 dark:text-gray-400">Vision generated</span>
+                                </div>
+                            )}
+                            {Object.keys(generatedDocs).filter(k => generatedDocs[k]).length > 0 && (
+                                <div className="flex items-center gap-2 text-xs">
+                                    <Check size={12} className="text-green-500" />
+                                    <span className="text-gray-600 dark:text-gray-400">{Object.keys(generatedDocs).filter(k => generatedDocs[k]).length} documents generated</span>
+                                </div>
+                            )}
+                            {generatedEpics.length > 0 && (
+                                <div className="flex items-center gap-2 text-xs">
+                                    <Check size={12} className="text-green-500" />
+                                    <span className="text-gray-600 dark:text-gray-400">{generatedEpics.length} epics with {generatedEpics.reduce((a, e) => a + e.tasks.length, 0)} tasks</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="px-6 pb-6 flex gap-3">
+                        <button
+                            onClick={handleCancelExit}
+                            className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-[#1F2128] hover:bg-gray-200 dark:hover:bg-[#2D2F36] rounded-xl transition-colors"
+                        >
+                            Continue Editing
+                        </button>
+                        <button
+                            onClick={handleConfirmExit}
+                            className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors flex items-center justify-center gap-2"
+                        >
+                            <Trash2 size={14} />
+                            Discard & Exit
+                        </button>
+                    </div>
+                </div>
+            </div>
         )}
     </div>
   );

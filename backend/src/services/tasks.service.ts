@@ -1,316 +1,292 @@
-import { supabaseAdmin } from '../lib/supabase.js';
-import { NotFoundError, BadRequestError } from '../utils/errors.js';
-import { authorizationService } from './authorization.service.js';
-import type { Task, TaskCreate, TaskUpdate, PaginationParams } from '../types/index.js';
+import database, { generateUUID, now } from '../lib/database.js';
 
-export interface TaskFilters {
-  projectId?: string;
-  sprintId?: string | null;
-  columnId?: string;
-  assigneeId?: string | null;
-  reporterId?: string;
-  search?: string;
+export interface Task {
+  id: string;
+  task_key: string;
+  project_id: string;
+  column_id: string;
+  sprint_id: string | null;
+  parent_epic_id: string | null;
+  title: string;
+  description: string | null;
+  type: string;
+  priority: string;
+  status: string | null;
+  points: number | null;
+  assignee_id: string | null;
+  reporter_id: string | null;
+  due_date: string | null;
+  start_date: string | null;
+  actual_start_date: string | null;
+  completed_date: string | null;
+  time_spent: string | null;
+  estimate: string | null;
+  impact_score: number | null;
+  product_theme: string | null;
+  acceptance_criteria: string[] | null;
+  customer_value: string | null;
+  technical_debt: boolean | null;
+  environment: string[] | null;
+  labels: string[] | null;
+  resolution: string | null;
+  external_links: string[] | null;
+  blocked_by: string[] | null;
+  blocks: string[] | null;
+  image_url: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
-class TasksService {
-  async getAll(
-    filters?: TaskFilters,
-    pagination?: PaginationParams
-  ): Promise<{ data: Task[]; total: number }> {
-    let query = supabaseAdmin.from('tasks').select('*', { count: 'exact' });
+export interface Subtask {
+  id: string;
+  task_id: string;
+  title: string;
+  type: string;
+  status: string;
+  is_completed: boolean;
+  assignee_id: string | null;
+  sprint_id: string | null;
+  due_date: string | null;
+  created_at: string;
+}
 
-    if (filters?.projectId) {
-      query = query.eq('project_id', filters.projectId);
-    }
-    if (filters?.sprintId !== undefined) {
-      query = filters.sprintId === null
-        ? query.is('sprint_id', null)
-        : query.eq('sprint_id', filters.sprintId);
-    }
-    if (filters?.columnId) {
-      query = query.eq('column_id', filters.columnId);
-    }
-    if (filters?.assigneeId !== undefined) {
-      query = filters.assigneeId === null
-        ? query.is('assignee_id', null)
-        : query.eq('assignee_id', filters.assigneeId);
-    }
-    if (filters?.reporterId) {
-      query = query.eq('reporter_id', filters.reporterId);
-    }
-    if (filters?.search) {
-      query = query.or(
-        `title.ilike.%${filters.search}%,description.ilike.%${filters.search}%,task_key.ilike.%${filters.search}%`
-      );
-    }
+export interface CreateTaskInput {
+  project_id: string;
+  title: string;
+  description?: string;
+  type?: string;
+  priority?: string;
+  points?: number;
+  assignee_id?: string;
+  reporter_id?: string;
+  sprint_id?: string;
+  column_id?: string;
+  due_date?: string;
+  start_date?: string;
+}
 
-    if (pagination) {
-      const from = (pagination.page - 1) * pagination.limit;
-      const to = from + pagination.limit - 1;
-      query = query.range(from, to);
-    }
+export interface TaskWithDetails extends Task {
+  column_title?: string;
+  assignee_name?: string;
+  assignee_avatar?: string;
+  tags?: any[];
+  comments_count?: number;
+  subtasks_count?: number;
+  has_description?: boolean;
+}
 
-    query = query.order('created_at', { ascending: false });
+// Helper to generate task key
+async function generateTaskKey(projectId: string): Promise<string> {
+  const project = await database.findById<any>('projects', projectId);
+  const projectCode = project?.code || 'TSK';
 
-    const { data, error, count } = await query;
+  // Get all tasks for this project to determine next number
+  const tasks = await database.findMany<Task>('tasks', { project_id: projectId });
+  const maxNum = tasks.reduce((max, task) => {
+    const match = task.task_key?.match(/-(\d+)$/);
+    const num = match ? parseInt(match[1], 10) : 0;
+    return Math.max(max, num);
+  }, 0);
 
-    if (error) {
-      throw new BadRequestError(error.message);
-    }
+  return `${projectCode}-${maxNum + 1}`;
+}
 
-    return { data: data || [], total: count || 0 };
-  }
+export const tasksService = {
+  async getAll(filters?: { project_id?: string; sprint_id?: string; assignee_id?: string }): Promise<TaskWithDetails[]> {
+    let tasks: Task[];
 
-  async getById(taskId: string): Promise<Task> {
-    const { data, error } = await supabaseAdmin
-      .from('tasks')
-      .select(`
-        *,
-        assignee:users!assignee_id(*),
-        reporter:users!reporter_id(*),
-        project:projects(*),
-        sprint:sprints(*),
-        comments:comments(*, user:users(*)),
-        attachments:task_attachments(*)
-      `)
-      .eq('id', taskId)
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') {
-        throw new NotFoundError('Task');
-      }
-      throw new BadRequestError(error.message);
+    if (filters?.project_id) {
+      tasks = await database.findMany<Task>('tasks', { project_id: filters.project_id });
+    } else {
+      tasks = await database.getAll<Task>('tasks');
     }
 
-    return data as Task;
-  }
-
-  async create(
-    data: TaskCreate,
-    reporterId: string,
-    workspaceId: string
-  ): Promise<Task> {
-    // Generate task key
-    const { data: project } = await supabaseAdmin
-      .from('projects')
-      .select('key, task_count')
-      .eq('id', data.project_id)
-      .single();
-
-    const taskKey = project
-      ? `${project.key}-${(project.task_count || 0) + 1}`
-      : `TASK-${Date.now()}`;
-
-    const { data: task, error } = await supabaseAdmin
-      .from('tasks')
-      .insert({
-        ...data,
-        task_key: taskKey,
-        reporter_id: reporterId,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      throw new BadRequestError(error.message);
+    // Apply additional filters
+    if (filters?.sprint_id) {
+      tasks = tasks.filter(t => t.sprint_id === filters.sprint_id);
+    }
+    if (filters?.assignee_id) {
+      tasks = tasks.filter(t => t.assignee_id === filters.assignee_id);
     }
 
-    // Update task count
-    if (project) {
-      await supabaseAdmin
-        .from('projects')
-        .update({ task_count: (project.task_count || 0) + 1 })
-        .eq('id', data.project_id);
-    }
+    // Enrich tasks with details
+    return Promise.all(tasks.map(task => this.enrichTask(task)));
+  },
 
-    // Create authorization tuples
-    await authorizationService.onTaskCreated(
-      task.id,
-      workspaceId,
-      reporterId,
-      data.assignee_id
-    );
-
-    // Log activity
-    await this.logActivity(task.id, reporterId, 'created');
-
-    return task as Task;
-  }
-
-  async update(taskId: string, data: TaskUpdate, userId: string): Promise<Task> {
-    const { data: task, error } = await supabaseAdmin
-      .from('tasks')
-      .update(data)
-      .eq('id', taskId)
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') {
-        throw new NotFoundError('Task');
-      }
-      throw new BadRequestError(error.message);
-    }
-
-    await this.logActivity(taskId, userId, 'updated');
-
-    return task as Task;
-  }
-
-  async updateStage(taskId: string, columnId: string, userId: string): Promise<Task> {
-    const { data: task, error } = await supabaseAdmin
-      .from('tasks')
-      .update({ column_id: columnId })
-      .eq('id', taskId)
-      .select()
-      .single();
-
-    if (error) {
-      throw new BadRequestError(error.message);
-    }
-
-    await this.logActivity(taskId, userId, 'stage_changed', {
-      field: 'column_id',
-      newValue: columnId,
-    });
-
-    return task as Task;
-  }
-
-  async updateAssignee(
-    taskId: string,
-    newAssigneeId: string | null,
-    userId: string
-  ): Promise<Task> {
-    // Get current assignee
-    const { data: currentTask } = await supabaseAdmin
-      .from('tasks')
-      .select('assignee_id')
-      .eq('id', taskId)
-      .single();
-
-    const oldAssigneeId = currentTask?.assignee_id || null;
-
-    // Update task
-    const { data: task, error } = await supabaseAdmin
-      .from('tasks')
-      .update({ assignee_id: newAssigneeId })
-      .eq('id', taskId)
-      .select()
-      .single();
-
-    if (error) {
-      throw new BadRequestError(error.message);
-    }
-
-    // Update authorization tuples
-    await authorizationService.onTaskAssigneeChanged(
-      taskId,
-      oldAssigneeId,
-      newAssigneeId
-    );
-
-    await this.logActivity(taskId, userId, 'assignee_changed', {
-      field: 'assignee_id',
-      oldValue: oldAssigneeId,
-      newValue: newAssigneeId,
-    });
-
-    return task as Task;
-  }
-
-  async delete(taskId: string, workspaceId: string): Promise<void> {
-    // Get task details first
-    const { data: task } = await supabaseAdmin
-      .from('tasks')
-      .select('reporter_id, assignee_id')
-      .eq('id', taskId)
-      .single();
-
+  async getById(id: string): Promise<TaskWithDetails | null> {
+    // Try by ID first, then by task_key
+    let task = await database.findById<Task>('tasks', id);
     if (!task) {
-      throw new NotFoundError('Task');
+      task = await database.findOne<Task>('tasks', { task_key: id });
     }
+    if (!task) return null;
+    return this.enrichTask(task);
+  },
 
-    // Delete task
-    const { error } = await supabaseAdmin
-      .from('tasks')
-      .delete()
-      .eq('id', taskId);
+  async enrichTask(task: Task): Promise<TaskWithDetails> {
+    // Get column title
+    const column = task.column_id ? await database.findById<any>('columns_status', task.column_id) : null;
 
-    if (error) {
-      throw new BadRequestError(error.message);
-    }
+    // Get assignee info
+    const assignee = task.assignee_id ? await database.findById<any>('users', task.assignee_id) : null;
 
-    // Clean up authorization tuples
-    await authorizationService.onTaskDeleted(
-      taskId,
-      workspaceId,
-      task.reporter_id,
-      task.assignee_id
-    );
-  }
+    // Get tags
+    const taskTags = await database.findMany<any>('task_tags', { task_id: task.id });
+    const tags = await Promise.all(taskTags.map(async tt => {
+      const tag = await database.findById<any>('tags', tt.tag_id);
+      return tag;
+    }));
 
-  // Comments
-  async addComment(
-    taskId: string,
-    userId: string,
-    content: string
-  ): Promise<{ id: string; content: string }> {
-    const { data: comment, error } = await supabaseAdmin
-      .from('comments')
-      .insert({
-        task_id: taskId,
-        user_id: userId,
-        content,
-      })
-      .select()
-      .single();
+    // Get counts
+    const comments = await database.findMany<any>('comments', { task_id: task.id });
+    const subtasks = await database.findMany<any>('subtasks', { task_id: task.id });
 
-    if (error) {
-      throw new BadRequestError(error.message);
-    }
+    return {
+      ...task,
+      column_title: column?.title || null,
+      assignee_name: assignee?.name || null,
+      assignee_avatar: assignee?.avatar_url || null,
+      tags: tags.filter(Boolean),
+      comments_count: comments.length,
+      subtasks_count: subtasks.length,
+      has_description: !!task.description && task.description.length > 0,
+    };
+  },
 
-    await this.logActivity(taskId, userId, 'commented');
+  async create(input: CreateTaskInput): Promise<TaskWithDetails> {
+    const taskKey = await generateTaskKey(input.project_id);
 
-    return comment;
-  }
-
-  async getComments(taskId: string): Promise<any[]> {
-    const { data, error } = await supabaseAdmin
-      .from('comments')
-      .select('*, user:users(*)')
-      .eq('task_id', taskId)
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      throw new BadRequestError(error.message);
-    }
-
-    return data || [];
-  }
-
-  // Activity logging
-  private async logActivity(
-    taskId: string,
-    userId: string,
-    action: string,
-    changes?: { field: string; oldValue?: any; newValue?: any }
-  ): Promise<void> {
-    try {
-      await supabaseAdmin.from('activity_logs').insert({
-        entity_type: 'task',
-        entity_id: taskId,
-        action,
-        user_id: userId,
-        field_changed: changes?.field,
-        old_value: changes?.oldValue ? String(changes.oldValue) : null,
-        new_value: changes?.newValue ? String(changes.newValue) : null,
+    // Get default column if not provided
+    let columnId = input.column_id;
+    if (!columnId) {
+      const defaultColumn = await database.findOne<any>('columns_status', {
+        project_id: input.project_id,
+        is_default: true
       });
-    } catch (error) {
-      console.error('Failed to log activity:', error);
-    }
-  }
-}
+      columnId = defaultColumn?.id;
 
-export const tasksService = new TasksService();
+      // If no default, get first column
+      if (!columnId) {
+        const columns = await database.findMany<any>('columns_status', { project_id: input.project_id });
+        columnId = columns[0]?.id;
+      }
+    }
+
+    const task: Task = {
+      id: generateUUID(),
+      task_key: taskKey,
+      project_id: input.project_id,
+      column_id: columnId || '',
+      sprint_id: input.sprint_id || null,
+      parent_epic_id: null,
+      title: input.title,
+      description: input.description || null,
+      type: input.type || 'task',
+      priority: input.priority || 'MEDIUM',
+      status: null,
+      points: input.points || null,
+      assignee_id: input.assignee_id || null,
+      reporter_id: input.reporter_id || null,
+      due_date: input.due_date || null,
+      start_date: input.start_date || null,
+      actual_start_date: null,
+      completed_date: null,
+      time_spent: null,
+      estimate: null,
+      impact_score: null,
+      product_theme: null,
+      acceptance_criteria: null,
+      customer_value: null,
+      technical_debt: null,
+      environment: null,
+      labels: null,
+      resolution: null,
+      external_links: null,
+      blocked_by: null,
+      blocks: null,
+      image_url: null,
+      created_at: now(),
+      updated_at: now(),
+    };
+
+    await database.insert('tasks', task);
+    return this.enrichTask(task);
+  },
+
+  async update(id: string, updates: Partial<CreateTaskInput>): Promise<TaskWithDetails | null> {
+    const existing = await database.findById<Task>('tasks', id);
+    if (!existing) {
+      // Try by task_key
+      const byKey = await database.findOne<Task>('tasks', { task_key: id });
+      if (!byKey) return null;
+      id = byKey.id;
+    }
+
+    const updated = await database.update<Task>('tasks', id, {
+      ...updates,
+      updated_at: now(),
+    });
+
+    if (!updated) return null;
+    return this.enrichTask(updated);
+  },
+
+  async delete(id: string): Promise<boolean> {
+    // Try by ID first
+    let task = await database.findById<Task>('tasks', id);
+    if (!task) {
+      task = await database.findOne<Task>('tasks', { task_key: id });
+      if (task) id = task.id;
+    }
+    if (!task) return false;
+
+    // Delete related data
+    await database.deleteMany('subtasks', { task_id: id });
+    await database.deleteMany('task_tags', { task_id: id });
+    await database.deleteMany('comments', { task_id: id });
+    await database.deleteMany('attachments', { task_id: id });
+
+    return database.delete('tasks', id);
+  },
+
+  // Move task to different column
+  async moveToColumn(id: string, columnId: string): Promise<TaskWithDetails | null> {
+    return this.update(id, { column_id: columnId } as any);
+  },
+
+  // Assign task to sprint
+  async assignToSprint(id: string, sprintId: string | null): Promise<TaskWithDetails | null> {
+    return this.update(id, { sprint_id: sprintId } as any);
+  },
+
+  // Subtask management
+  async getSubtasks(taskId: string): Promise<Subtask[]> {
+    return database.findMany<Subtask>('subtasks', { task_id: taskId });
+  },
+
+  async createSubtask(taskId: string, input: { title: string; assignee_id?: string }): Promise<Subtask> {
+    const subtask: Subtask = {
+      id: generateUUID(),
+      task_id: taskId,
+      title: input.title,
+      type: 'task',
+      status: 'pending',
+      is_completed: false,
+      assignee_id: input.assignee_id || null,
+      sprint_id: null,
+      due_date: null,
+      created_at: now(),
+    };
+
+    await database.insert('subtasks', subtask);
+    return subtask;
+  },
+
+  async updateSubtask(subtaskId: string, updates: Partial<Subtask>): Promise<Subtask | null> {
+    return database.update<Subtask>('subtasks', subtaskId, updates);
+  },
+
+  async deleteSubtask(subtaskId: string): Promise<boolean> {
+    return database.delete('subtasks', subtaskId);
+  },
+};

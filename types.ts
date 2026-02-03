@@ -1,28 +1,46 @@
 
+export type UserStatus = 'active' | 'inactive' | 'pending';
+
 export interface User {
   id: string;
   name: string;
   avatarUrl: string;
-  role?: string;
+  designation?: string;
   isAdmin?: boolean;
   email?: string;
-  organizationId?: string;
+  organizationId?: string; // Current active organization
   // Extended Profile Fields from Schema
   location?: string;
   bio?: string;
   website?: string;
   jobTitle?: string;
   socialLinks?: Record<string, string>;
+  // Status & Metadata
+  status?: UserStatus;
+  createdAt?: string;
+  lastActiveAt?: string;
 }
 
-export type OrganizationRole = 'admin' | 'member';
+export type OrganizationRole = 'owner' | 'admin' | 'member' | 'viewer';
 
 export interface Organization {
   id: string;
   name: string;
   slug: string;
+  domain?: string; // Email domain for auto-join (e.g., 'acme.com')
+  logoUrl?: string;
   ownerId?: string;
+  memberCount?: number;
+  projectCount?: number;
+  settings?: OrganizationSettings;
   createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface OrganizationSettings {
+  allowDomainJoin: boolean; // Allow users with matching email domain to join
+  requireApproval: boolean; // Require admin approval for domain joins
+  defaultRole: OrganizationRole; // Default role for new members
 }
 
 export interface OrganizationMember {
@@ -31,20 +49,57 @@ export interface OrganizationMember {
   userId: string;
   role: OrganizationRole;
   user?: User;
+  organization?: Organization;
   joinedAt?: string;
+  invitedBy?: string;
 }
 
 export interface OrganizationInvite {
   id: string;
   organizationId: string;
+  organization?: Organization;
   email: string;
   role: OrganizationRole;
   invitedBy?: string;
   inviter?: User;
-  status: 'pending' | 'accepted' | 'expired';
+  status: 'pending' | 'accepted' | 'expired' | 'declined';
   createdAt: string;
   expiresAt: string;
 }
+
+// User's membership across multiple organizations
+export interface UserOrganizationMembership {
+  organization: Organization;
+  role: OrganizationRole;
+  joinedAt: string;
+  isActive: boolean; // Is this the currently selected org
+}
+
+// Generic email domains that should not be used for organization matching
+export const GENERIC_EMAIL_DOMAINS = [
+  'gmail.com',
+  'googlemail.com',
+  'yahoo.com',
+  'yahoo.co.uk',
+  'yahoo.co.in',
+  'outlook.com',
+  'hotmail.com',
+  'live.com',
+  'msn.com',
+  'icloud.com',
+  'me.com',
+  'mac.com',
+  'aol.com',
+  'protonmail.com',
+  'proton.me',
+  'mail.com',
+  'zoho.com',
+  'yandex.com',
+  'gmx.com',
+  'gmx.net',
+  'fastmail.com',
+  'tutanota.com',
+];
 
 export type TagColor = 'purple' | 'blue' | 'yellow' | 'green' | 'red' | 'gray';
 
@@ -156,7 +211,9 @@ export interface Project {
   createdAt?: string; // Mapped from DB created_at
   tags?: string[];
   color?: string;
-  imageUrl?: string; // New field for Product Image
+  imageUrl?: string; // Custom image URL for product icon
+  icon?: string; // Icon name from lucide-react (e.g., 'Rocket', 'Target')
+  iconColor?: string; // Gradient class (e.g., 'from-violet-500 to-purple-600')
   prd?: string;
   docs?: Record<string, string>;
   docHistory?: DocVersion[];

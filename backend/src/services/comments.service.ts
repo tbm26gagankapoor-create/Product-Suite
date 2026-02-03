@@ -24,8 +24,8 @@ export interface CreateCommentInput {
   parent_comment_id?: string;
 }
 
-function enrichComment(comment: Comment): CommentWithUser {
-  const user = database.findById<any>('users', comment.user_id);
+async function enrichComment(comment: Comment): Promise<CommentWithUser> {
+  const user = await database.findById<any>('users', comment.user_id);
   return {
     ...comment,
     user_name: user?.name || 'Unknown',
@@ -34,30 +34,37 @@ function enrichComment(comment: Comment): CommentWithUser {
 }
 
 export const commentsService = {
-  getByTask(taskId: string): CommentWithUser[] {
-    const comments = database.findMany<Comment>('comments', c => c.task_id === taskId && !c.parent_comment_id);
+  async getByTask(taskId: string): Promise<CommentWithUser[]> {
+    const allComments = await database.findMany<Comment>('comments', { task_id: taskId });
+    const rootComments = allComments.filter(c => !c.parent_comment_id);
 
-    return comments
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .map(comment => {
-        const replies = database.findMany<Comment>('comments', c => c.parent_comment_id === comment.id)
-          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-          .map(enrichComment);
+    const enrichedComments = await Promise.all(
+      rootComments
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .map(async (comment) => {
+          const replies = allComments
+            .filter(c => c.parent_comment_id === comment.id)
+            .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
-        return {
-          ...enrichComment(comment),
-          replies,
-        };
-      });
+          const enrichedReplies = await Promise.all(replies.map(enrichComment));
+
+          return {
+            ...(await enrichComment(comment)),
+            replies: enrichedReplies,
+          };
+        })
+    );
+
+    return enrichedComments;
   },
 
-  getById(id: string): CommentWithUser | null {
-    const comment = database.findById<Comment>('comments', id);
+  async getById(id: string): Promise<CommentWithUser | null> {
+    const comment = await database.findById<Comment>('comments', id);
     if (!comment) return null;
     return enrichComment(comment);
   },
 
-  create(input: CreateCommentInput): CommentWithUser {
+  async create(input: CreateCommentInput): Promise<CommentWithUser> {
     const comment: Comment = {
       id: generateUUID(),
       task_id: input.task_id,
@@ -69,15 +76,15 @@ export const commentsService = {
       updated_at: now(),
     };
 
-    database.insert('comments', comment);
+    await database.insert('comments', comment);
     return enrichComment(comment);
   },
 
-  update(id: string, content: string): CommentWithUser | null {
-    const existing = database.findById<Comment>('comments', id);
+  async update(id: string, content: string): Promise<CommentWithUser | null> {
+    const existing = await database.findById<Comment>('comments', id);
     if (!existing) return null;
 
-    const updated = database.update<Comment>('comments', id, {
+    const updated = await database.update<Comment>('comments', id, {
       content,
       is_edited: true,
       updated_at: now(),
@@ -87,13 +94,13 @@ export const commentsService = {
     return enrichComment(updated);
   },
 
-  delete(id: string): boolean {
+  async delete(id: string): Promise<boolean> {
     // Also delete replies
-    database.deleteMany('comments', c => c.parent_comment_id === id);
+    await database.deleteMany('comments', { parent_comment_id: id });
     return database.delete('comments', id);
   },
 
-  getCount(taskId: string): number {
-    return database.count('comments', c => c.task_id === taskId);
+  async getCount(taskId: string): Promise<number> {
+    return database.count('comments', { task_id: taskId });
   },
 };

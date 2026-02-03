@@ -9,14 +9,14 @@ const router = Router();
 router.use(authMiddleware);
 
 // Get comments for a task
-router.get('/task/:taskId', (req, res) => {
-  const comments = commentsService.getByTask(req.params.taskId);
+router.get('/task/:taskId', async (req, res) => {
+  const comments = await commentsService.getByTask(req.params.taskId);
   res.json({ success: true, data: comments });
 });
 
 // Get comment by ID
-router.get('/:id', (req, res) => {
-  const comment = commentsService.getById(req.params.id);
+router.get('/:id', async (req, res) => {
+  const comment = await commentsService.getById(req.params.id);
   if (!comment) {
     return res.status(404).json({ success: false, error: 'Comment not found' });
   }
@@ -24,7 +24,7 @@ router.get('/:id', (req, res) => {
 });
 
 // Create comment
-router.post('/', (req: AuthRequest, res) => {
+router.post('/', async (req: AuthRequest, res) => {
   const { task_id, user_id, content, parent_comment_id } = req.body;
 
   // Use user_id from body or from authenticated user
@@ -37,10 +37,10 @@ router.post('/', (req: AuthRequest, res) => {
     });
   }
 
-  const comment = commentsService.create({ task_id, user_id: actualUserId, content, parent_comment_id });
+  const comment = await commentsService.create({ task_id, user_id: actualUserId, content, parent_comment_id });
 
   // Log activity for the comment
-  activityService.log({
+  await activityService.log({
     entity_type: 'task',
     entity_id: task_id,
     action: 'commented',
@@ -52,22 +52,22 @@ router.post('/', (req: AuthRequest, res) => {
 });
 
 // Update comment
-router.patch('/:id', (req: AuthRequest, res) => {
+router.patch('/:id', async (req: AuthRequest, res) => {
   const { content } = req.body;
 
   if (!content) {
     return res.status(400).json({ success: false, error: 'content is required' });
   }
 
-  const existingComment = commentsService.getById(req.params.id);
-  const comment = commentsService.update(req.params.id, content);
+  const existingComment = await commentsService.getById(req.params.id);
+  const comment = await commentsService.update(req.params.id, content);
   if (!comment) {
     return res.status(404).json({ success: false, error: 'Comment not found' });
   }
 
   // Log activity for the comment update
   if (existingComment) {
-    activityService.log({
+    await activityService.log({
       entity_type: 'task',
       entity_id: existingComment.task_id,
       action: 'updated_comment',
@@ -81,16 +81,16 @@ router.patch('/:id', (req: AuthRequest, res) => {
 });
 
 // Delete comment
-router.delete('/:id', (req: AuthRequest, res) => {
-  const existingComment = commentsService.getById(req.params.id);
-  const deleted = commentsService.delete(req.params.id);
+router.delete('/:id', async (req: AuthRequest, res) => {
+  const existingComment = await commentsService.getById(req.params.id);
+  const deleted = await commentsService.delete(req.params.id);
   if (!deleted) {
     return res.status(404).json({ success: false, error: 'Comment not found' });
   }
 
   // Log activity for the comment deletion
   if (existingComment) {
-    activityService.log({
+    await activityService.log({
       entity_type: 'task',
       entity_id: existingComment.task_id,
       action: 'deleted_comment',

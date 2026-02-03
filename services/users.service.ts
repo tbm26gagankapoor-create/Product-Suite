@@ -94,7 +94,7 @@ export class UsersService {
   // Check if user is admin
   async isAdmin(userId: string): Promise<boolean> {
     const user = await this.getById(userId);
-    return user?.is_admin || user?.role === 'Admin';
+    return user?.is_admin || user?.designation === 'Admin';
   }
 
   // Get users by IDs (batch fetch)

@@ -1,413 +1,157 @@
 import { Router, Response } from 'express';
-import { z } from 'zod';
 import { tasksService } from '../services/tasks.service.js';
-import { taskLinksService } from '../services/task-links.service.js';
-import { authorizationService } from '../services/authorization.service.js';
-import { authenticate } from '../middleware/auth.js';
-import {
-  canReadTask,
-  canManageTaskFields,
-  canManageTaskStages,
-  canAssignTask,
-  canDeleteTask,
-  canCommentTask,
-  canWriteWorkspace,
-} from '../middleware/authorize.js';
-import { ValidationError, ForbiddenError } from '../utils/errors.js';
-import { checkPermission, formatUser, formatWorkspace } from '../lib/openfga.js';
-import type { AuthenticatedRequest, ApiResponse } from '../types/index.js';
+import { projectsService } from '../services/projects.service.js';
+import { authMiddleware, AuthRequest } from '../middleware/auth.middleware.js';
 
 const router = Router();
 
-// Validation schemas
-const createTaskSchema = z.object({
-  title: z.string().min(1).max(500),
-  description: z.string().optional(),
-  type: z.enum(['epic', 'story', 'task', 'bug', 'subtask']),
-  priority: z.enum(['lowest', 'low', 'medium', 'high', 'highest']),
-  column_id: z.string().uuid(),
-  project_id: z.string().uuid(),
-  sprint_id: z.string().uuid().optional(),
-  assignee_id: z.string().uuid().optional(),
-  parent_epic_id: z.string().uuid().optional(),
-  story_points: z.number().int().min(0).max(100).optional(),
-  due_date: z.string().datetime().optional(),
-});
+// Apply auth middleware to all routes
+router.use(authMiddleware);
 
-const updateTaskSchema = z.object({
-  title: z.string().min(1).max(500).optional(),
-  description: z.string().optional(),
-  type: z.enum(['epic', 'story', 'task', 'bug', 'subtask']).optional(),
-  priority: z.enum(['lowest', 'low', 'medium', 'high', 'highest']).optional(),
-  sprint_id: z.string().uuid().nullable().optional(),
-  parent_epic_id: z.string().uuid().nullable().optional(),
-  story_points: z.number().int().min(0).max(100).optional(),
-  due_date: z.string().datetime().nullable().optional(),
-});
+// Get all tasks (filtered by user's accessible projects)
+router.get('/', async (req: AuthRequest, res: Response) => {
+  const user = req.user;
+  const { project_id, sprint_id, assignee_id } = req.query;
 
-const updateStageSchema = z.object({
-  column_id: z.string().uuid(),
-});
-
-const updateAssigneeSchema = z.object({
-  assignee_id: z.string().uuid().nullable(),
-});
-
-const commentSchema = z.object({
-  content: z.string().min(1).max(10000),
-});
-
-const createLinkSchema = z.object({
-  blocking_task_id: z.string().uuid(),
-  link_type: z.enum(['blocks', 'relates_to', 'duplicates']).default('blocks'),
-});
-
-/**
- * GET /tasks
- * List tasks with filters
- */
-router.get('/', authenticate, async (req: AuthenticatedRequest, res: Response<ApiResponse>, next) => {
-  try {
-    const { projectId, sprintId, columnId, assigneeId, reporterId, search, page, limit } = req.query;
-
-    // Check workspace access
-    if (projectId) {
-      const canRead = await checkPermission(
-        formatUser(req.userId!),
-        'can_read',
-        formatWorkspace(projectId as string)
-      );
-      if (!canRead) {
-        throw new ForbiddenError('No access to this workspace');
-      }
-    }
-
-    const result = await tasksService.getAll(
-      {
-        projectId: projectId as string,
-        sprintId: sprintId === 'null' ? null : (sprintId as string),
-        columnId: columnId as string,
-        assigneeId: assigneeId === 'null' ? null : (assigneeId as string),
-        reporterId: reporterId as string,
-        search: search as string,
-      },
-      {
-        page: parseInt(page as string) || 1,
-        limit: parseInt(limit as string) || 50,
-      }
-    );
-
-    res.json({
-      success: true,
-      data: result.data,
-      meta: {
-        total: result.total,
-        page: parseInt(page as string) || 1,
-        limit: parseInt(limit as string) || 50,
-      },
-    });
-  } catch (error) {
-    next(error);
+  // If no user, return empty list
+  if (!user) {
+    return res.json({ success: true, data: [] });
   }
+
+  // Get user's accessible projects
+  const accessibleProjects = await projectsService.getAllForUser(user.id, user.isAdmin);
+  const accessibleProjectIds = new Set(accessibleProjects.map(p => p.id));
+
+  // Get tasks with filters
+  const allTasks = await tasksService.getAll({
+    project_id: project_id as string,
+    sprint_id: sprint_id as string,
+    assignee_id: assignee_id as string,
+  });
+
+  // Filter tasks to only those from accessible projects
+  const tasks = allTasks.filter(task => accessibleProjectIds.has(task.project_id));
+
+  res.json({ success: true, data: tasks });
 });
 
-/**
- * GET /tasks/:taskId
- * Get single task
- */
-router.get('/:taskId', authenticate, canReadTask, async (req: AuthenticatedRequest, res: Response<ApiResponse>, next) => {
-  try {
-    const task = await tasksService.getById(req.params.taskId);
-
-    res.json({
-      success: true,
-      data: task,
-    });
-  } catch (error) {
-    next(error);
+// Get task by ID or task_key
+router.get('/:id', async (req, res) => {
+  const task = await tasksService.getById(req.params.id);
+  if (!task) {
+    return res.status(404).json({ success: false, error: 'Task not found' });
   }
+  res.json({ success: true, data: task });
 });
 
-/**
- * GET /tasks/:taskId/permissions
- * Get task permissions for current user
- */
-router.get('/:taskId/permissions', authenticate, async (req: AuthenticatedRequest, res: Response<ApiResponse>, next) => {
-  try {
-    const permissions = await authorizationService.getTaskPermissions(
-      req.userId!,
-      req.params.taskId
-    );
+// Create task
+router.post('/', async (req, res) => {
+  const { project_id, title, description, type, priority, points, assignee_id, reporter_id, sprint_id, column_id, due_date, start_date } = req.body;
 
-    res.json({
-      success: true,
-      data: permissions,
+  if (!project_id || !title) {
+    return res.status(400).json({
+      success: false,
+      error: 'project_id and title are required',
     });
-  } catch (error) {
-    next(error);
   }
+
+  const task = await tasksService.create({
+    project_id,
+    title,
+    description,
+    type,
+    priority,
+    points,
+    assignee_id,
+    reporter_id,
+    sprint_id,
+    column_id,
+    due_date,
+    start_date,
+  });
+
+  res.status(201).json({ success: true, data: task });
 });
 
-/**
- * POST /tasks
- * Create new task
- */
-router.post('/', authenticate, async (req: AuthenticatedRequest, res: Response<ApiResponse>, next) => {
-  try {
-    const parsed = createTaskSchema.safeParse(req.body);
-    if (!parsed.success) {
-      throw new ValidationError('Invalid input', parsed.error.flatten());
-    }
-
-    // Check workspace write permission
-    const canWrite = await checkPermission(
-      formatUser(req.userId!),
-      'can_write',
-      formatWorkspace(parsed.data.project_id)
-    );
-
-    if (!canWrite) {
-      throw new ForbiddenError('No permission to create tasks in this workspace');
-    }
-
-    const task = await tasksService.create(
-      parsed.data,
-      req.userId!,
-      parsed.data.project_id // Using project_id as workspace_id
-    );
-
-    res.status(201).json({
-      success: true,
-      data: task,
-    });
-  } catch (error) {
-    next(error);
+// Update task
+router.patch('/:id', async (req, res) => {
+  const task = await tasksService.update(req.params.id, req.body);
+  if (!task) {
+    return res.status(404).json({ success: false, error: 'Task not found' });
   }
+  res.json({ success: true, data: task });
 });
 
-/**
- * PATCH /tasks/:taskId
- * Update task fields (requires can_manage_fields)
- */
-router.patch('/:taskId', authenticate, canManageTaskFields, async (req: AuthenticatedRequest, res: Response<ApiResponse>, next) => {
-  try {
-    const parsed = updateTaskSchema.safeParse(req.body);
-    if (!parsed.success) {
-      throw new ValidationError('Invalid input', parsed.error.flatten());
-    }
-
-    const task = await tasksService.update(req.params.taskId, parsed.data, req.userId!);
-
-    res.json({
-      success: true,
-      data: task,
-    });
-  } catch (error) {
-    next(error);
+// Delete task
+router.delete('/:id', async (req, res) => {
+  const deleted = await tasksService.delete(req.params.id);
+  if (!deleted) {
+    return res.status(404).json({ success: false, error: 'Task not found' });
   }
+  res.json({ success: true, message: 'Task deleted' });
 });
 
-/**
- * PATCH /tasks/:taskId/stage
- * Update task stage (requires can_manage_stages)
- */
-router.patch('/:taskId/stage', authenticate, canManageTaskStages, async (req: AuthenticatedRequest, res: Response<ApiResponse>, next) => {
-  try {
-    const parsed = updateStageSchema.safeParse(req.body);
-    if (!parsed.success) {
-      throw new ValidationError('Invalid input', parsed.error.flatten());
-    }
-
-    const task = await tasksService.updateStage(
-      req.params.taskId,
-      parsed.data.column_id,
-      req.userId!
-    );
-
-    res.json({
-      success: true,
-      data: task,
-    });
-  } catch (error) {
-    next(error);
+// Move task to column
+router.post('/:id/move', async (req, res) => {
+  const { column_id } = req.body;
+  if (!column_id) {
+    return res.status(400).json({ success: false, error: 'column_id is required' });
   }
+
+  const task = await tasksService.moveToColumn(req.params.id, column_id);
+  if (!task) {
+    return res.status(404).json({ success: false, error: 'Task not found' });
+  }
+  res.json({ success: true, data: task });
 });
 
-/**
- * PATCH /tasks/:taskId/assignee
- * Update task assignee (requires can_assign)
- */
-router.patch('/:taskId/assignee', authenticate, canAssignTask, async (req: AuthenticatedRequest, res: Response<ApiResponse>, next) => {
-  try {
-    const parsed = updateAssigneeSchema.safeParse(req.body);
-    if (!parsed.success) {
-      throw new ValidationError('Invalid input', parsed.error.flatten());
-    }
+// Assign task to sprint
+router.post('/:id/sprint', async (req, res) => {
+  const { sprint_id } = req.body;
 
-    const task = await tasksService.updateAssignee(
-      req.params.taskId,
-      parsed.data.assignee_id,
-      req.userId!
-    );
-
-    res.json({
-      success: true,
-      data: task,
-    });
-  } catch (error) {
-    next(error);
+  const task = await tasksService.assignToSprint(req.params.id, sprint_id || null);
+  if (!task) {
+    return res.status(404).json({ success: false, error: 'Task not found' });
   }
+  res.json({ success: true, data: task });
 });
 
-/**
- * DELETE /tasks/:taskId
- * Delete task (requires can_delete)
- */
-router.delete('/:taskId', authenticate, canDeleteTask, async (req: AuthenticatedRequest, res: Response<ApiResponse>, next) => {
-  try {
-    // Get task to find workspace ID
-    const task = await tasksService.getById(req.params.taskId);
+// --- Subtask Management ---
 
-    await tasksService.delete(req.params.taskId, task.project_id);
-
-    res.json({
-      success: true,
-      data: { message: 'Task deleted successfully' },
-    });
-  } catch (error) {
-    next(error);
-  }
+// Get subtasks for a task
+router.get('/:id/subtasks', async (req, res) => {
+  const subtasks = await tasksService.getSubtasks(req.params.id);
+  res.json({ success: true, data: subtasks });
 });
 
-/**
- * GET /tasks/:taskId/comments
- * Get task comments
- */
-router.get('/:taskId/comments', authenticate, canReadTask, async (req: AuthenticatedRequest, res: Response<ApiResponse>, next) => {
-  try {
-    const comments = await tasksService.getComments(req.params.taskId);
+// Create subtask
+router.post('/:id/subtasks', async (req, res) => {
+  const { title, assignee_id } = req.body;
 
-    res.json({
-      success: true,
-      data: comments,
-    });
-  } catch (error) {
-    next(error);
+  if (!title) {
+    return res.status(400).json({ success: false, error: 'title is required' });
   }
+
+  const subtask = await tasksService.createSubtask(req.params.id, { title, assignee_id });
+  res.status(201).json({ success: true, data: subtask });
 });
 
-/**
- * POST /tasks/:taskId/comments
- * Add comment to task (requires can_comment)
- */
-router.post('/:taskId/comments', authenticate, canCommentTask, async (req: AuthenticatedRequest, res: Response<ApiResponse>, next) => {
-  try {
-    const parsed = commentSchema.safeParse(req.body);
-    if (!parsed.success) {
-      throw new ValidationError('Invalid input', parsed.error.flatten());
-    }
-
-    const comment = await tasksService.addComment(
-      req.params.taskId,
-      req.userId!,
-      parsed.data.content
-    );
-
-    res.status(201).json({
-      success: true,
-      data: comment,
-    });
-  } catch (error) {
-    next(error);
+// Update subtask
+router.patch('/:taskId/subtasks/:subtaskId', async (req, res) => {
+  const subtask = await tasksService.updateSubtask(req.params.subtaskId, req.body);
+  if (!subtask) {
+    return res.status(404).json({ success: false, error: 'Subtask not found' });
   }
+  res.json({ success: true, data: subtask });
 });
 
-// ============================================
-// Task Links (Dependencies) Routes
-// ============================================
-
-/**
- * GET /tasks/:taskId/links
- * Get all task links (blocked by and blocks)
- */
-router.get('/:taskId/links', authenticate, canReadTask, async (req: AuthenticatedRequest, res: Response<ApiResponse>, next) => {
-  try {
-    const links = await taskLinksService.getAllLinks(req.params.taskId);
-
-    res.json({
-      success: true,
-      data: links,
-    });
-  } catch (error) {
-    next(error);
+// Delete subtask
+router.delete('/:taskId/subtasks/:subtaskId', async (req, res) => {
+  const deleted = await tasksService.deleteSubtask(req.params.subtaskId);
+  if (!deleted) {
+    return res.status(404).json({ success: false, error: 'Subtask not found' });
   }
-});
-
-/**
- * POST /tasks/:taskId/links
- * Create a task link (add blocking task)
- */
-router.post('/:taskId/links', authenticate, canManageTaskFields, async (req: AuthenticatedRequest, res: Response<ApiResponse>, next) => {
-  try {
-    const parsed = createLinkSchema.safeParse(req.body);
-    if (!parsed.success) {
-      throw new ValidationError('Invalid input', parsed.error.flatten());
-    }
-
-    const link = await taskLinksService.createLink(
-      parsed.data.blocking_task_id,
-      req.params.taskId,
-      parsed.data.link_type,
-      req.userId!
-    );
-
-    res.status(201).json({
-      success: true,
-      data: link,
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * DELETE /tasks/:taskId/links/:linkId
- * Remove a task link
- */
-router.delete('/:taskId/links/:linkId', authenticate, canManageTaskFields, async (req: AuthenticatedRequest, res: Response<ApiResponse>, next) => {
-  try {
-    await taskLinksService.deleteLink(req.params.linkId, req.userId!);
-
-    res.json({
-      success: true,
-      data: { message: 'Link removed successfully' },
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * GET /tasks/:taskId/available-links
- * Get tasks available for linking
- */
-router.get('/:taskId/available-links', authenticate, canReadTask, async (req: AuthenticatedRequest, res: Response<ApiResponse>, next) => {
-  try {
-    // Get the task to find its project
-    const task = await tasksService.getById(req.params.taskId);
-
-    const availableTasks = await taskLinksService.getAvailableTasks(
-      req.params.taskId,
-      task.project_id
-    );
-
-    res.json({
-      success: true,
-      data: availableTasks,
-    });
-  } catch (error) {
-    next(error);
-  }
+  res.json({ success: true, message: 'Subtask deleted' });
 });
 
 export default router;

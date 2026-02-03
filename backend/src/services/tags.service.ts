@@ -15,20 +15,25 @@ export interface CreateTagInput {
 }
 
 export const tagsService = {
-  getAll(projectId?: string): Tag[] {
-    let tags = database.getAll<Tag>('tags');
+  async getAll(projectId?: string): Promise<Tag[]> {
+    let tags: Tag[];
     if (projectId) {
-      tags = tags.filter(t => t.project_id === projectId);
+      tags = await database.findMany<Tag>('tags', { project_id: projectId });
+    } else {
+      tags = await database.getAll<Tag>('tags');
     }
     return tags.sort((a, b) => a.label.localeCompare(b.label));
   },
 
-  getById(id: string): Tag | null {
-    return database.findById<Tag>('tags', id) || null;
+  async getById(id: string): Promise<Tag | null> {
+    return database.findById<Tag>('tags', id);
   },
 
-  create(input: CreateTagInput): Tag {
-    const existing = database.findOne<Tag>('tags', t => t.project_id === input.project_id && t.label === input.label);
+  async create(input: CreateTagInput): Promise<Tag> {
+    const existing = await database.findOne<Tag>('tags', {
+      project_id: input.project_id,
+      label: input.label
+    });
     if (existing) {
       throw new Error('UNIQUE constraint failed: tag already exists');
     }
@@ -41,19 +46,19 @@ export const tagsService = {
       created_at: now(),
     };
 
-    database.insert('tags', tag);
+    await database.insert('tags', tag);
     return tag;
   },
 
-  update(id: string, input: Partial<CreateTagInput>): Tag | null {
-    const existing = database.findById<Tag>('tags', id);
+  async update(id: string, input: Partial<CreateTagInput>): Promise<Tag | null> {
+    const existing = await database.findById<Tag>('tags', id);
     if (!existing) return null;
 
-    return database.update<Tag>('tags', id, input) || null;
+    return database.update<Tag>('tags', id, input);
   },
 
-  delete(id: string): boolean {
-    database.deleteMany('task_tags', tt => tt.tag_id === id);
+  async delete(id: string): Promise<boolean> {
+    await database.deleteMany('task_tags', { tag_id: id });
     return database.delete('tags', id);
   },
 };

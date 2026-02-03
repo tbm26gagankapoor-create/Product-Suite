@@ -30,7 +30,7 @@ interface KanbanBoardProps {
 type GroupBy = 'none' | 'priority' | 'assignee' | 'epic';
 
 const KanbanBoard: React.FC<KanbanBoardProps> = ({ sprintId, tasks, onTaskUpdate, title = "Product roadmap", projectId }) => {
-  const { tasks: allTasks, users, deleteTask } = useProjectData(); // Needed to lookup Epics and Users
+  const { tasks: allTasks, organizationUsers: users, deleteTask } = useProjectData(); // Needed to lookup Epics and Users
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   
   // View State
@@ -333,8 +333,8 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ sprintId, tasks, onTaskUpdate
                                     className={`flex flex-col gap-3 min-h-[100px] ${groupBy !== 'none' ? 'border-b border-dashed border-gray-300 dark:border-gray-700 pb-4 mb-2' : ''}`}
                                   >
                                       {/* Swimlane Header if needed */}
-                                      {groupBy !== 'none' && column.id === COLUMNS[0].id && (
-                                          <div className="sticky left-0 text-xs font-bold text-[#172B4D] dark:text-white py-1 z-10 pl-1">
+                                      {groupBy !== 'none' && (
+                                          <div className="text-xs font-bold text-[#172B4D] dark:text-white py-1.5 px-2 bg-gray-200/50 dark:bg-white/5 rounded-lg mb-2">
                                               {group.title}
                                           </div>
                                       )}

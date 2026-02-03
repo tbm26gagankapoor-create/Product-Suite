@@ -1,20 +1,6 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { models } from '../models/index.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Database file path
-const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, '../../data/database.json');
-
-// Ensure data directory exists
-const dataDir = path.dirname(DB_PATH);
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
-
-// Database structure
+// Database structure types
 export interface DatabaseSchema {
   users: any[];
   projects: any[];
@@ -29,41 +15,15 @@ export interface DatabaseSchema {
   attachments: any[];
   activity_log: any[];
   user_preferences: any[];
+  teams: any[];
+  team_members: any[];
+  team_projects: any[];
+  oauth_states: any[];
+  organizations: any[];
+  organization_members: any[];
+  organization_join_requests: any[];
+  organization_invites: any[];
 }
-
-// Default empty database
-const defaultDb: DatabaseSchema = {
-  users: [],
-  projects: [],
-  project_members: [],
-  columns_status: [],
-  sprints: [],
-  tags: [],
-  tasks: [],
-  subtasks: [],
-  task_tags: [],
-  comments: [],
-  attachments: [],
-  activity_log: [],
-  user_preferences: [],
-};
-
-// Load database from file
-function loadDb(): DatabaseSchema {
-  if (fs.existsSync(DB_PATH)) {
-    const data = fs.readFileSync(DB_PATH, 'utf-8');
-    return JSON.parse(data);
-  }
-  return { ...defaultDb };
-}
-
-// Save database to file
-function saveDb(data: DatabaseSchema): void {
-  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
-}
-
-// Database singleton
-let db: DatabaseSchema = loadDb();
 
 // Helper function to generate UUID
 export function generateUUID(): string {
@@ -75,92 +35,126 @@ export function now(): string {
   return new Date().toISOString();
 }
 
-// Database operations
+// Database operations - MongoDB implementation
 export const database = {
   // Get all records from a collection
-  getAll<T>(collection: keyof DatabaseSchema): T[] {
-    return db[collection] as T[];
+  async getAll<T>(collection: keyof DatabaseSchema): Promise<T[]> {
+    const model = models[collection];
+    if (!model) throw new Error(`Unknown collection: ${collection}`);
+    const docs = await model.find().lean();
+    return docs.map((doc: any) => {
+      const { _id, __v, ...rest } = doc;
+      return rest as T;
+    });
   },
 
-  // Find one record by predicate
-  findOne<T>(collection: keyof DatabaseSchema, predicate: (item: T) => boolean): T | undefined {
-    return (db[collection] as T[]).find(predicate);
+  // Find one record by predicate (MongoDB query object)
+  async findOne<T>(collection: keyof DatabaseSchema, query: Record<string, any>): Promise<T | null> {
+    const model = models[collection];
+    if (!model) throw new Error(`Unknown collection: ${collection}`);
+    const doc = await model.findOne(query).lean();
+    if (!doc) return null;
+    const { _id, __v, ...rest } = doc as any;
+    return rest as T;
   },
 
-  // Find all records matching predicate
-  findMany<T>(collection: keyof DatabaseSchema, predicate: (item: T) => boolean): T[] {
-    return (db[collection] as T[]).filter(predicate);
+  // Find all records matching query
+  async findMany<T>(collection: keyof DatabaseSchema, query: Record<string, any>): Promise<T[]> {
+    const model = models[collection];
+    if (!model) throw new Error(`Unknown collection: ${collection}`);
+    const docs = await model.find(query).lean();
+    return docs.map((doc: any) => {
+      const { _id, __v, ...rest } = doc;
+      return rest as T;
+    });
   },
 
-  // Find by ID
-  findById<T extends { id: string }>(collection: keyof DatabaseSchema, id: string): T | undefined {
-    return (db[collection] as T[]).find(item => item.id === id);
+  // Find by ID (using custom 'id' field, not MongoDB _id)
+  async findById<T extends { id: string }>(collection: keyof DatabaseSchema, id: string): Promise<T | null> {
+    const model = models[collection];
+    if (!model) throw new Error(`Unknown collection: ${collection}`);
+    const doc = await model.findOne({ id }).lean();
+    if (!doc) return null;
+    const { _id, __v, ...rest } = doc as any;
+    return rest as T;
   },
 
   // Insert a new record
-  insert<T>(collection: keyof DatabaseSchema, record: T): T {
-    (db[collection] as T[]).push(record);
-    saveDb(db);
-    return record;
+  async insert<T>(collection: keyof DatabaseSchema, record: T): Promise<T> {
+    const model = models[collection];
+    if (!model) throw new Error(`Unknown collection: ${collection}`);
+    const doc = await model.create(record as Record<string, any>);
+    const obj = doc.toObject();
+    const { _id, __v, ...rest } = obj;
+    return rest as T;
+  },
+
+  // Insert many records
+  async insertMany<T>(collection: keyof DatabaseSchema, records: T[]): Promise<T[]> {
+    const model = models[collection];
+    if (!model) throw new Error(`Unknown collection: ${collection}`);
+    const docs = await model.insertMany(records);
+    return docs.map((doc: any) => {
+      const obj = doc.toObject ? doc.toObject() : doc;
+      const { _id, __v, ...rest } = obj;
+      return rest as T;
+    });
   },
 
   // Update a record
-  update<T extends { id: string }>(
+  async update<T extends { id: string }>(
     collection: keyof DatabaseSchema,
     id: string,
-    updates: Partial<T>
-  ): T | undefined {
-    const items = db[collection] as T[];
-    const index = items.findIndex(item => item.id === id);
-    if (index === -1) return undefined;
-
-    items[index] = { ...items[index], ...updates };
-    saveDb(db);
-    return items[index];
+    updates: Record<string, any>
+  ): Promise<T | null> {
+    const model = models[collection];
+    if (!model) throw new Error(`Unknown collection: ${collection}`);
+    const doc = await model.findOneAndUpdate(
+      { id },
+      { $set: updates },
+      { new: true }
+    ).lean();
+    if (!doc) return null;
+    const { _id, __v, ...rest } = doc as any;
+    return rest as T;
   },
 
   // Delete a record
-  delete(collection: keyof DatabaseSchema, id: string): boolean {
-    const items = db[collection] as any[];
-    const index = items.findIndex(item => item.id === id);
-    if (index === -1) return false;
-
-    items.splice(index, 1);
-    saveDb(db);
-    return true;
+  async delete(collection: keyof DatabaseSchema, id: string): Promise<boolean> {
+    const model = models[collection];
+    if (!model) throw new Error(`Unknown collection: ${collection}`);
+    const result = await model.deleteOne({ id });
+    return result.deletedCount > 0;
   },
 
-  // Delete many records matching predicate
-  deleteMany(collection: keyof DatabaseSchema, predicate: (item: any) => boolean): number {
-    const items = db[collection] as any[];
-    const originalLength = items.length;
-    db[collection] = items.filter(item => !predicate(item));
-    saveDb(db);
-    return originalLength - db[collection].length;
+  // Delete many records matching query
+  async deleteMany(collection: keyof DatabaseSchema, query: Record<string, any>): Promise<number> {
+    const model = models[collection];
+    if (!model) throw new Error(`Unknown collection: ${collection}`);
+    const result = await model.deleteMany(query);
+    return result.deletedCount;
   },
 
   // Count records
-  count(collection: keyof DatabaseSchema, predicate?: (item: any) => boolean): number {
-    if (predicate) {
-      return (db[collection] as any[]).filter(predicate).length;
-    }
-    return db[collection].length;
+  async count(collection: keyof DatabaseSchema, query?: Record<string, any>): Promise<number> {
+    const model = models[collection];
+    if (!model) throw new Error(`Unknown collection: ${collection}`);
+    return model.countDocuments(query || {});
   },
 
-  // Reset database
-  reset(): void {
-    db = { ...defaultDb };
-    saveDb(db);
+  // Check if a record exists
+  async exists(collection: keyof DatabaseSchema, query: Record<string, any>): Promise<boolean> {
+    const model = models[collection];
+    if (!model) throw new Error(`Unknown collection: ${collection}`);
+    const count = await model.countDocuments(query);
+    return count > 0;
   },
 
-  // Save current state
-  save(): void {
-    saveDb(db);
-  },
-
-  // Reload from file
-  reload(): void {
-    db = loadDb();
+  // Aggregate query (for advanced operations)
+  async aggregate<T>(collection: keyof DatabaseSchema, pipeline: any[]): Promise<T[]> {
+    const model = models[collection];
+    if (!model) throw new Error(`Unknown collection: ${collection}`);
+    return model.aggregate(pipeline);
   },
 };
 

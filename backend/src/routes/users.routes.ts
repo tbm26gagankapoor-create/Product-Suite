@@ -1,17 +1,44 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { usersService } from '../services/users.service.js';
+import { authMiddleware, AuthRequest } from '../middleware/auth.middleware.js';
+import database from '../lib/database.js';
 
 const router = Router();
 
-// Get all users
-router.get('/', (req, res) => {
-  const users = usersService.getAll();
+// Apply auth middleware to all routes
+router.use(authMiddleware);
+
+// Get all users (filtered by user's organizations)
+router.get('/', async (req: AuthRequest, res: Response) => {
+  const user = req.user;
+
+  // If no user, return empty list
+  if (!user) {
+    return res.json({ success: true, data: [] });
+  }
+
+  // Get user's organization memberships
+  const userMemberships = await database.findMany<any>('organization_members', { user_id: user.id });
+  const userOrgIds = userMemberships.map((m: any) => m.organization_id);
+
+  // Get all members from user's organizations
+  const orgMembers = await Promise.all(
+    userOrgIds.map((orgId: string) => database.findMany<any>('organization_members', { organization_id: orgId }))
+  );
+  const allMemberUserIds = new Set(orgMembers.flat().map((m: any) => m.user_id));
+
+  // Get all users
+  const allUsers = await usersService.getAll();
+
+  // Filter to only users in same organizations
+  const users = allUsers.filter(u => allMemberUserIds.has(u.id));
+
   res.json({ success: true, data: users });
 });
 
 // Get user by ID
-router.get('/:id', (req, res) => {
-  const user = usersService.getById(req.params.id);
+router.get('/:id', async (req, res) => {
+  const user = await usersService.getById(req.params.id);
   if (!user) {
     return res.status(404).json({ success: false, error: 'User not found' });
   }
@@ -19,7 +46,7 @@ router.get('/:id', (req, res) => {
 });
 
 // Create user
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { name, email, password, avatar_url, role } = req.body;
 
   if (!name || !email || !password) {
@@ -30,7 +57,7 @@ router.post('/', (req, res) => {
   }
 
   try {
-    const user = usersService.create({ name, email, password, avatar_url, role });
+    const user = await usersService.create({ name, email, password, avatar_url, role });
     res.status(201).json({ success: true, data: user });
   } catch (error: any) {
     if (error.message?.includes('UNIQUE constraint')) {
@@ -41,8 +68,8 @@ router.post('/', (req, res) => {
 });
 
 // Update user
-router.patch('/:id', (req, res) => {
-  const user = usersService.update(req.params.id, req.body);
+router.patch('/:id', async (req, res) => {
+  const user = await usersService.update(req.params.id, req.body);
   if (!user) {
     return res.status(404).json({ success: false, error: 'User not found' });
   }
@@ -50,8 +77,8 @@ router.patch('/:id', (req, res) => {
 });
 
 // Delete user
-router.delete('/:id', (req, res) => {
-  const deleted = usersService.delete(req.params.id);
+router.delete('/:id', async (req, res) => {
+  const deleted = await usersService.delete(req.params.id);
   if (!deleted) {
     return res.status(404).json({ success: false, error: 'User not found' });
   }

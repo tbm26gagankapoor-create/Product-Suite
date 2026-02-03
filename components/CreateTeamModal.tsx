@@ -14,7 +14,8 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ isOpen, onClose, onSu
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
-  const { users } = useProjectData();
+  // Use organization-scoped users - only show users from current organization
+  const { organizationUsers, currentOrganization } = useProjectData();
 
   if (!isOpen) return null;
 
@@ -25,8 +26,9 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ isOpen, onClose, onSu
       name,
       description,
       members: selectedMembers,
-      projectIds: [], 
-      avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`
+      projectIds: [],
+      avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
+      organizationId: currentOrganization?.id, // Associate team with current organization
     };
     onSubmit(newTeam);
     onClose();
@@ -80,7 +82,7 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ isOpen, onClose, onSu
           <div className="space-y-1.5">
             <label className="text-xs font-bold uppercase text-gray-500 tracking-wider">Add Members</label>
             <div className="max-h-40 overflow-y-auto custom-scrollbar border border-gray-200 dark:border-[#1F2128] rounded-xl bg-gray-50 dark:bg-[#0B0C0E]">
-                {users.map(user => (
+                {organizationUsers.map(user => (
                     <div 
                         key={user.id} 
                         onClick={() => toggleMember(user.id)}
@@ -104,7 +106,18 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ isOpen, onClose, onSu
             >
               Cancel
             </button>
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               disabled={!name}
-              className="px-6 py-2 bg-[#172B4D] dark:bg-white text
+              className="px-6 py-2 bg-[#172B4D] dark:bg-white text-white dark:text-[#172B4D] font-bold text-sm rounded-xl hover:bg-[#172B4D]/90 dark:hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Create Team
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default CreateTeamModal;

@@ -1,29 +1,146 @@
-
 import React, { useState, useEffect } from 'react';
 import {
   User, Bell, Shield, Palette, Database, Wifi, WifiOff, RefreshCw,
   Building2, Crown, Users, ChevronDown, Plus, Loader2, Mail, Calendar,
   Sun, Moon, Monitor, Lock, Key, Globe, Layers, BarChart3, UserPlus,
-  Pencil, X, Check
+  Pencil, X, Check, Camera, Save, AlertTriangle, ChevronRight, Smartphone,
+  MoreHorizontal, ExternalLink, Copy, Trash2, Settings, ArrowRight
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useProjectData } from '../context/ProjectDataContext';
 import { organizationsService } from '../services/organizations.service';
-import { OrganizationRole } from '../types';
+import { OrganizationRole, Organization } from '../types';
 import InviteUserModal from './InviteUserModal';
 import { useToast } from '../context/ToastContext';
+import { invitesService, OrganizationInvite } from '../services/invites.service';
+
+// --- Reusable UI Components ---
+
+const SectionCard: React.FC<{
+  children: React.ReactNode;
+  className?: string;
+}> = ({ children, className = '' }) => (
+  <div className={`bg-white dark:bg-[#15171E] rounded-2xl border border-gray-200 dark:border-[#1F2128] shadow-sm overflow-hidden ${className}`}>
+    {children}
+  </div>
+);
+
+const SectionHeader: React.FC<{
+  icon: React.ElementType;
+  title: string;
+  description?: string;
+  action?: React.ReactNode;
+  gradient?: string;
+}> = ({ icon: Icon, title, description, action, gradient = 'from-blue-500 to-indigo-600' }) => (
+  <div className="flex items-start justify-between p-6 border-b border-gray-100 dark:border-[#1F2128]">
+    <div className="flex items-start gap-4">
+      <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center flex-shrink-0 shadow-lg`}>
+        <Icon size={20} className="text-white" />
+      </div>
+      <div>
+        <h2 className="text-lg font-bold text-[#172B4D] dark:text-white">{title}</h2>
+        {description && (
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{description}</p>
+        )}
+      </div>
+    </div>
+    {action}
+  </div>
+);
+
+const SettingRow: React.FC<{
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+  noBorder?: boolean;
+}> = ({ title, description, children, noBorder = false }) => (
+  <div className={`flex items-center justify-between px-6 py-4 ${!noBorder ? 'border-b border-gray-100 dark:border-[#1F2128]' : ''}`}>
+    <div className="flex-1 mr-4">
+      <h3 className="text-sm font-semibold text-[#172B4D] dark:text-white">{title}</h3>
+      {description && (
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{description}</p>
+      )}
+    </div>
+    {children}
+  </div>
+);
+
+const Toggle: React.FC<{
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+}> = ({ checked, onChange, disabled = false }) => (
+  <button
+    onClick={() => !disabled && onChange(!checked)}
+    disabled={disabled}
+    className={`relative w-11 h-6 rounded-full transition-all ${
+      checked ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
+    } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+  >
+    <div
+      className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
+        checked ? 'left-6' : 'left-1'
+      }`}
+    />
+  </button>
+);
+
+const RoleBadge: React.FC<{ role: OrganizationRole }> = ({ role }) => {
+  const colors: Record<OrganizationRole, string> = {
+    owner: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800',
+    admin: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800',
+    member: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700',
+    viewer: 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-500 border-gray-200 dark:border-gray-700',
+  };
+  return (
+    <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded border ${colors[role]}`}>
+      {role}
+    </span>
+  );
+};
+
+const StatCard: React.FC<{
+  icon: React.ElementType;
+  value: number | string;
+  label: string;
+  color: string;
+}> = ({ icon: Icon, value, label, color }) => (
+  <div className="bg-gray-50 dark:bg-[#1F2128] rounded-xl p-4 border border-gray-100 dark:border-[#2D2F36]">
+    <div className="flex items-center gap-3">
+      <div className={`w-10 h-10 rounded-xl ${color} flex items-center justify-center`}>
+        <Icon size={18} className="text-white" />
+      </div>
+      <div>
+        <div className="text-2xl font-bold text-[#172B4D] dark:text-white">{value}</div>
+        <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{label}</div>
+      </div>
+    </div>
+  </div>
+);
+
+// --- Main Component ---
+
+type SettingsTab = 'profile' | 'organization' | 'members' | 'appearance' | 'notifications' | 'security';
 
 const SettingsView: React.FC = () => {
   const { theme, setTheme } = useTheme();
   const {
     connectionStatus, connectionError, refreshData, projects, tasks, sprints, teams,
-    currentUser, currentOrganization, organizationMembers, isOrgAdmin, refreshOrganization
+    currentUser, currentOrganization, organizationMembers, isOrgAdmin, refreshOrganization, users,
+    updateCurrentUser
   } = useProjectData();
   const { error: showError, success } = useToast();
-  const [activeTab, setActiveTab] = useState('profile');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
   const [creatingOrg, setCreatingOrg] = useState(false);
   const [orgName, setOrgName] = useState('');
+
+  // Profile edit state
+  const [profileName, setProfileName] = useState(currentUser?.name || '');
+  const [profileJobTitle, setProfileJobTitle] = useState(currentUser?.jobTitle || '');
+  const [profileLocation, setProfileLocation] = useState(currentUser?.location || '');
+  const [profileBio, setProfileBio] = useState(currentUser?.bio || '');
+  const [savingProfile, setSavingProfile] = useState(false);
 
   // Organization edit state
   const [isEditingOrg, setIsEditingOrg] = useState(false);
@@ -35,6 +152,43 @@ const SettingsView: React.FC = () => {
   // Invite modal state
   const [showInviteModal, setShowInviteModal] = useState(false);
 
+  // Notification settings
+  const [notifications, setNotifications] = useState({
+    email: true,
+    push: true,
+    taskAssigned: true,
+    mentions: true,
+    sprintUpdates: true,
+    projectUpdates: false,
+  });
+
+  // Pending invites state
+  const [pendingInvites, setPendingInvites] = useState<OrganizationInvite[]>([]);
+  const [loadingInvites, setLoadingInvites] = useState(false);
+  const [resendingInvite, setResendingInvite] = useState<string | null>(null);
+  const [revokingInvite, setRevokingInvite] = useState<string | null>(null);
+
+  // Load pending invites when organization changes
+  useEffect(() => {
+    const loadPendingInvites = async () => {
+      if (!currentOrganization?.id) {
+        setPendingInvites([]);
+        return;
+      }
+      setLoadingInvites(true);
+      try {
+        const invites = await invitesService.getPendingByOrganization(currentOrganization.id);
+        setPendingInvites(invites.filter((inv: OrganizationInvite) => inv.status === 'pending'));
+      } catch (e) {
+        console.error('Error loading invites:', e);
+        setPendingInvites([]);
+      } finally {
+        setLoadingInvites(false);
+      }
+    };
+    loadPendingInvites();
+  }, [currentOrganization?.id]);
+
   // Initialize edit form when organization changes or edit mode starts
   useEffect(() => {
     if (currentOrganization && isEditingOrg) {
@@ -44,13 +198,42 @@ const SettingsView: React.FC = () => {
     }
   }, [currentOrganization, isEditingOrg]);
 
+  // Initialize profile form when currentUser changes
+  useEffect(() => {
+    if (currentUser) {
+      setProfileName(currentUser.name || '');
+      setProfileJobTitle(currentUser.jobTitle || '');
+      setProfileLocation(currentUser.location || '');
+      setProfileBio(currentUser.bio || '');
+    }
+  }, [currentUser]);
+
+  // Handle profile save
+  const handleSaveProfile = async () => {
+    if (!currentUser || savingProfile) return;
+    setSavingProfile(true);
+    try {
+      await updateCurrentUser({
+        name: profileName,
+        jobTitle: profileJobTitle,
+        location: profileLocation,
+        bio: profileBio,
+      });
+      success('Profile updated successfully');
+    } catch (error: any) {
+      showError(error.message || 'Failed to update profile');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
   const tabs = [
-    { id: 'profile', label: 'My Profile', icon: User },
-    { id: 'organization', label: 'Organization', icon: Building2 },
-    { id: 'appearance', label: 'Appearance', icon: Palette },
-    { id: 'database', label: 'Database', icon: Database },
-    { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'security', label: 'Security', icon: Shield },
+    { id: 'profile' as const, label: 'Profile', icon: User },
+    { id: 'organization' as const, label: 'Organization', icon: Building2 },
+    { id: 'members' as const, label: 'Members', icon: Users },
+    { id: 'appearance' as const, label: 'Appearance', icon: Palette },
+    { id: 'notifications' as const, label: 'Notifications', icon: Bell },
+    { id: 'security' as const, label: 'Security', icon: Shield },
   ];
 
   const handleRoleChange = async (userId: string, newRole: OrganizationRole) => {
@@ -59,8 +242,10 @@ const SettingsView: React.FC = () => {
     try {
       await organizationsService.updateMemberRole(currentOrganization.id, userId, newRole);
       await refreshOrganization();
+      success('Role Updated', 'Member role has been updated successfully');
     } catch (e) {
       console.error('Error updating role:', e);
+      showError('Error', 'Failed to update member role');
     } finally {
       setUpdatingRole(null);
     }
@@ -73,6 +258,7 @@ const SettingsView: React.FC = () => {
     try {
       await organizationsService.setupForExistingUser(currentUser.id, name);
       await refreshData();
+      success('Organization Created', `${name} has been created successfully`);
     } catch (e: any) {
       console.error('Error creating organization:', e);
       showError('Organization Error', e.message || 'Failed to create organization');
@@ -80,19 +266,6 @@ const SettingsView: React.FC = () => {
       setCreatingOrg(false);
       setOrgName('');
     }
-  };
-
-  const handleStartEditOrg = () => {
-    if (!currentOrganization) return;
-    setEditOrgName(currentOrganization.name);
-    setEditOrgSlug(currentOrganization.slug);
-    setOrgEditError(null);
-    setIsEditingOrg(true);
-  };
-
-  const handleCancelEditOrg = () => {
-    setIsEditingOrg(false);
-    setOrgEditError(null);
   };
 
   const handleSaveOrganization = async () => {
@@ -106,12 +279,7 @@ const SettingsView: React.FC = () => {
       return;
     }
 
-    if (!trimmedSlug) {
-      setOrgEditError('Organization slug is required');
-      return;
-    }
-
-    if (trimmedSlug.length < 3) {
+    if (!trimmedSlug || trimmedSlug.length < 3) {
       setOrgEditError('Slug must be at least 3 characters');
       return;
     }
@@ -120,11 +288,10 @@ const SettingsView: React.FC = () => {
     setOrgEditError(null);
 
     try {
-      // Check if slug is already taken (if changed)
       if (trimmedSlug !== currentOrganization.slug) {
         const existing = await organizationsService.getBySlug(trimmedSlug);
         if (existing) {
-          setOrgEditError('This slug is already taken. Please choose another.');
+          setOrgEditError('This slug is already taken');
           setSavingOrg(false);
           return;
         }
@@ -137,568 +304,980 @@ const SettingsView: React.FC = () => {
 
       await refreshOrganization();
       setIsEditingOrg(false);
+      success('Organization Updated', 'Settings have been saved');
     } catch (e: any) {
-      console.error('Error updating organization:', e);
       setOrgEditError(e.message || 'Failed to update organization');
     } finally {
       setSavingOrg(false);
     }
   };
 
-  // Infinia Design System - Stat Card Component
-  const StatCard = ({ icon: Icon, value, label, color }: { icon: any, value: number | string, label: string, color: string }) => (
-    <div className="flex items-center gap-3 p-4 bg-[#1A1A1A] rounded-xl border border-[#2E2E2E] hover:border-[#3E3E3E] transition-all">
-      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${color}`}>
-        <Icon size={18} className="text-white" />
-      </div>
-      <div>
-        <div className="text-2xl font-bold text-white">{value}</div>
-        <div className="text-xs font-medium text-[#9CA3AF] uppercase tracking-wide">{label}</div>
-      </div>
-    </div>
-  );
+  const handleResendInvite = async (inviteId: string) => {
+    setResendingInvite(inviteId);
+    try {
+      await invitesService.resend(inviteId);
+      success('Invite Resent', 'The invitation has been resent successfully');
+    } catch (e) {
+      console.error('Error resending invite:', e);
+      showError('Error', 'Failed to resend invitation');
+    } finally {
+      setResendingInvite(null);
+    }
+  };
 
-  // Infinia Design System - Section Header Component
-  const SectionHeader = ({ icon: Icon, title, description }: { icon: any, title: string, description?: string }) => (
-    <div className="flex items-start gap-3 mb-6">
-      <div className="w-9 h-9 rounded-lg bg-[#3B82F6] flex items-center justify-center flex-shrink-0">
-        <Icon size={18} className="text-white" />
-      </div>
-      <div>
-        <h2 className="text-base font-bold text-white">{title}</h2>
-        {description && <p className="text-sm text-[#9CA3AF] mt-0.5">{description}</p>}
-      </div>
-    </div>
-  );
+  const handleRevokeInvite = async (inviteId: string) => {
+    setRevokingInvite(inviteId);
+    try {
+      await invitesService.revoke(inviteId);
+      setPendingInvites(prev => prev.filter(inv => inv.id !== inviteId));
+      success('Invite Revoked', 'The invitation has been revoked');
+    } catch (e) {
+      console.error('Error revoking invite:', e);
+      showError('Error', 'Failed to revoke invitation');
+    } finally {
+      setRevokingInvite(null);
+    }
+  };
 
-  // Infinia Design System - Card Container Component
-  const Card = ({ children, className = '' }: { children: React.ReactNode, className?: string }) => (
-    <div className={`bg-[#1A1A1A] rounded-xl border border-[#2E2E2E] ${className}`}>
-      {children}
-    </div>
-  );
+  // Use org members directly - roles come from the database
+  const orgMembers = organizationMembers;
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#0D0D0D] custom-scrollbar">
-      <div className="max-w-5xl mx-auto p-6">
-        {/* Page Header */}
-        <div className="mb-6">
-          <h1 className="text-xl font-bold text-white mb-1">Settings</h1>
-          <p className="text-[#9CA3AF] text-sm">Manage your account and workspace preferences</p>
-        </div>
-
-        <div className="flex flex-col lg:flex-row gap-5">
-          {/* Sidebar Navigation */}
-          <div className="lg:w-52 flex-shrink-0">
-            <Card className="p-2 sticky top-6">
-              <nav className="space-y-0.5">
-                {tabs.map(tab => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                      activeTab === tab.id
-                        ? 'bg-[#3B82F6]/10 text-[#3B82F6] border border-[#3B82F6]/20'
-                        : 'text-[#9CA3AF] hover:bg-[#252525] hover:text-white border border-transparent'
-                    }`}
-                  >
-                    <tab.icon size={16} strokeWidth={activeTab === tab.id ? 2.5 : 2} />
-                    {tab.label}
-                  </button>
-                ))}
-              </nav>
-            </Card>
+    <div className="flex-1 overflow-hidden bg-[#F8F9FC] dark:bg-[#0B0C0E] flex">
+      {/* Sidebar */}
+      <div className="w-72 flex-shrink-0 border-r border-gray-200 dark:border-[#1F2128] bg-white dark:bg-[#15171E] flex flex-col">
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto custom-scrollbar p-3">
+          <div className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+            Settings
           </div>
+          <div className="space-y-1">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                  activeTab === tab.id
+                    ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-[#1F2128]'
+                }`}
+              >
+                <tab.icon size={18} />
+                {tab.label}
+                {activeTab === tab.id && (
+                  <ChevronRight size={16} className="ml-auto" />
+                )}
+              </button>
+            ))}
+          </div>
+        </nav>
+      </div>
 
-          {/* Main Content */}
-          <div className="flex-1 min-w-0 space-y-5">
+      {/* Main Content */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+        <div className="max-w-3xl mx-auto">
 
-            {/* === PROFILE TAB === */}
-            {activeTab === 'profile' && currentUser && (
-              <Card className="overflow-hidden">
-                {/* Profile Header - Glassmorphism */}
-                <div className="bg-gradient-to-r from-[#3B82F6] to-[#8B5CF6] p-5">
-                  <div className="flex items-center gap-4">
-                    <img
-                      src={currentUser.avatarUrl}
-                      alt={currentUser.name}
-                      className="w-16 h-16 rounded-xl object-cover ring-2 ring-white/20"
+          {/* === PROFILE TAB === */}
+          {activeTab === 'profile' && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div>
+                <h1 className="text-2xl font-bold text-[#172B4D] dark:text-white">Profile Settings</h1>
+                <p className="text-gray-500 dark:text-gray-400 mt-1">
+                  Manage your personal information and preferences
+                </p>
+              </div>
+
+              {/* Profile Photo Card */}
+              <SectionCard>
+                <div className="p-6">
+                  <div className="flex items-center gap-6">
+                    <div className="relative">
+                      <img
+                        src={currentUser?.avatarUrl || 'https://api.dicebear.com/7.x/avataaars/svg?seed=User'}
+                        alt={currentUser?.name || 'User'}
+                        className="w-24 h-24 rounded-2xl object-cover ring-4 ring-gray-100 dark:ring-[#1F2128]"
+                      />
+                      <button className="absolute -bottom-2 -right-2 w-8 h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-xl flex items-center justify-center shadow-lg transition-colors">
+                        <Camera size={16} />
+                      </button>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-bold text-[#172B4D] dark:text-white">
+                        {currentUser?.name || 'User'}
+                      </h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                        {currentUser?.designation || 'Team Member'}
+                      </p>
+                      <div className="flex gap-2">
+                        <button className="px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors">
+                          Change Photo
+                        </button>
+                        <button className="px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </SectionCard>
+
+              {/* Personal Information */}
+              <SectionCard>
+                <SectionHeader
+                  icon={User}
+                  title="Personal Information"
+                  description="Update your personal details"
+                />
+                <div className="p-6 space-y-5">
+                  <div className="grid grid-cols-2 gap-5">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold uppercase text-gray-500 tracking-wider">
+                        Full Name
+                      </label>
+                      <input
+                        type="text"
+                        value={profileName}
+                        onChange={(e) => setProfileName(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-xl text-sm text-[#172B4D] dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold uppercase text-gray-500 tracking-wider">
+                        Email Address
+                      </label>
+                      <input
+                        type="email"
+                        value={currentUser?.email || ''}
+                        disabled
+                        className="w-full px-4 py-2.5 bg-gray-100 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-xl text-sm text-gray-500 dark:text-gray-400 cursor-not-allowed"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold uppercase text-gray-500 tracking-wider">
+                        Job Title
+                      </label>
+                      <input
+                        type="text"
+                        value={profileJobTitle}
+                        onChange={(e) => setProfileJobTitle(e.target.value)}
+                        placeholder="e.g. Software Engineer"
+                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-xl text-sm text-[#172B4D] dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold uppercase text-gray-500 tracking-wider">
+                        Location
+                      </label>
+                      <input
+                        type="text"
+                        value={profileLocation}
+                        onChange={(e) => setProfileLocation(e.target.value)}
+                        placeholder="San Francisco, CA"
+                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-xl text-sm text-[#172B4D] dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase text-gray-500 tracking-wider">
+                      Bio
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={profileBio}
+                      onChange={(e) => setProfileBio(e.target.value)}
+                      placeholder="Tell us a bit about yourself..."
+                      className="w-full px-4 py-2.5 bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-xl text-sm text-[#172B4D] dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
                     />
-                    <div className="text-white flex-1">
-                      <h2 className="text-lg font-bold">{currentUser.name}</h2>
-                      <p className="text-white/70 text-sm">{currentUser.role || 'Team Member'}</p>
-                      {currentOrganization && (
-                        <div className="flex items-center gap-1.5 mt-1.5 text-white/60 text-xs">
-                          <Building2 size={12} />
-                          {currentOrganization.name}
-                        </div>
-                      )}
-                    </div>
-                    {isOrgAdmin && (
-                      <span className="px-2.5 py-1 bg-white/15 backdrop-blur-sm text-white text-xs font-semibold rounded-full flex items-center gap-1.5 border border-white/10">
-                        <Crown size={11} />
-                        Admin
-                      </span>
-                    )}
+                  </div>
+                  <div className="flex justify-end pt-2">
+                    <button
+                      onClick={handleSaveProfile}
+                      disabled={savingProfile}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-[#172B4D] dark:bg-white text-white dark:text-[#172B4D] font-semibold text-sm rounded-xl hover:opacity-90 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Save size={16} />
+                      {savingProfile ? 'Saving...' : 'Save Changes'}
+                    </button>
                   </div>
                 </div>
+              </SectionCard>
+            </div>
+          )}
 
-                {/* Profile Form */}
-                <div className="p-5">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-[#9CA3AF] uppercase tracking-wide">Full Name</label>
-                      <div className="flex items-center gap-3 bg-[#0D0D0D] border border-[#2E2E2E] rounded-lg px-3 py-2.5">
-                        <User size={14} className="text-[#6B7280]" />
-                        <span className="text-sm text-white">{currentUser.name}</span>
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-[#9CA3AF] uppercase tracking-wide">Email Address</label>
-                      <div className="flex items-center gap-3 bg-[#0D0D0D] border border-[#2E2E2E] rounded-lg px-3 py-2.5">
-                        <Mail size={14} className="text-[#6B7280]" />
-                        <span className="text-sm text-white">{currentUser.email || 'Not set'}</span>
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-[#9CA3AF] uppercase tracking-wide">Role</label>
-                      <div className="flex items-center gap-3 bg-[#0D0D0D] border border-[#2E2E2E] rounded-lg px-3 py-2.5">
-                        <Layers size={14} className="text-[#6B7280]" />
-                        <span className="text-sm text-white">{currentUser.role || 'Member'}</span>
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-[#9CA3AF] uppercase tracking-wide">Organization</label>
-                      <div className="flex items-center gap-3 bg-[#0D0D0D] border border-[#2E2E2E] rounded-lg px-3 py-2.5">
-                        <Building2 size={14} className="text-[#6B7280]" />
-                        <span className="text-sm text-white">{currentOrganization?.name || 'None'}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            )}
+          {/* === ORGANIZATION TAB === */}
+          {activeTab === 'organization' && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div>
+                <h1 className="text-2xl font-bold text-[#172B4D] dark:text-white">Organization Settings</h1>
+                <p className="text-gray-500 dark:text-gray-400 mt-1">
+                  Manage your organization's profile and settings
+                </p>
+              </div>
 
-            {/* === ORGANIZATION TAB === */}
-            {activeTab === 'organization' && (
-              <>
-                {currentOrganization ? (
-                  <>
-                    {/* Org Header Card - Infinia Design */}
-                    <Card className="overflow-hidden">
-                      {/* Header Section */}
-                      <div className="bg-gradient-to-r from-[#8B5CF6] to-[#6366F1] p-5">
-                        <div className="flex items-center gap-4">
-                          <div className="w-14 h-14 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center border border-white/10">
-                            <Building2 size={28} className="text-white" />
-                          </div>
-                          <div className="text-white flex-1">
-                            <h2 className="text-lg font-bold">{currentOrganization.name}</h2>
-                            <p className="text-white/60 text-sm flex items-center gap-1.5 mt-0.5 font-mono">
-                              <Globe size={12} />
-                              {currentOrganization.slug}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {isOrgAdmin && !isEditingOrg && (
-                              <button
-                                onClick={handleStartEditOrg}
-                                className="p-2 bg-black/20 hover:bg-black/30 text-white rounded-lg transition-colors border border-white/10"
-                                title="Edit organization"
-                              >
-                                <Pencil size={16} />
-                              </button>
-                            )}
-                            {isOrgAdmin && (
-                              <span className="px-2.5 py-1 bg-white/15 backdrop-blur-sm text-white text-xs font-semibold rounded-full flex items-center gap-1.5 border border-white/10">
-                                <Crown size={11} />
-                                Admin
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Edit Form Section - Shown when editing */}
-                      {isEditingOrg && (
-                        <div className="p-4 bg-[#0D0D0D] border-b border-[#2E2E2E]">
-                          <div className="flex items-center gap-2 mb-4">
-                            <Pencil size={14} className="text-[#3B82F6]" />
-                            <span className="text-sm font-semibold text-white">Edit Organization Details</span>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                              <label className="text-xs font-semibold text-[#9CA3AF] uppercase tracking-wide">Organization Name</label>
+              {currentOrganization ? (
+                <>
+                  {/* Organization Profile Card */}
+                  <SectionCard>
+                    <SectionHeader
+                      icon={Building2}
+                      title="Organization Profile"
+                      description="Public information about your organization"
+                      gradient="from-purple-500 to-violet-600"
+                      action={
+                        isOrgAdmin && !isEditingOrg && (
+                          <button
+                            onClick={() => {
+                              setEditOrgName(currentOrganization.name);
+                              setEditOrgSlug(currentOrganization.slug);
+                              setIsEditingOrg(true);
+                            }}
+                            className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-[#1F2128] rounded-lg hover:bg-gray-200 dark:hover:bg-[#2D2F36] transition-colors"
+                          >
+                            <Pencil size={14} />
+                            Edit
+                          </button>
+                        )
+                      }
+                    />
+                    <div className="p-6">
+                      {isEditingOrg ? (
+                        <div className="space-y-5">
+                          <div className="grid grid-cols-2 gap-5">
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold uppercase text-gray-500 tracking-wider">
+                                Organization Name
+                              </label>
                               <input
                                 type="text"
                                 value={editOrgName}
                                 onChange={(e) => setEditOrgName(e.target.value)}
-                                className="w-full px-3 py-2.5 bg-[#1A1A1A] border border-[#2E2E2E] rounded-lg text-white placeholder-[#6B7280] focus:outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6]/30 text-sm"
-                                placeholder="Enter organization name"
+                                className="w-full px-4 py-2.5 bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-xl text-sm text-[#172B4D] dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                               />
                             </div>
-                            <div className="space-y-1.5">
-                              <label className="text-xs font-semibold text-[#9CA3AF] uppercase tracking-wide">Slug (URL identifier)</label>
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold uppercase text-gray-500 tracking-wider">
+                                URL Slug
+                              </label>
                               <div className="relative">
-                                <Globe size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B7280]" />
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+                                  app/
+                                </span>
                                 <input
                                   type="text"
                                   value={editOrgSlug}
                                   onChange={(e) => setEditOrgSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
-                                  className="w-full pl-9 pr-3 py-2.5 bg-[#1A1A1A] border border-[#2E2E2E] rounded-lg text-white placeholder-[#6B7280] focus:outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6]/30 text-sm font-mono"
-                                  placeholder="organization-slug"
+                                  className="w-full pl-12 pr-4 py-2.5 bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-xl text-sm text-[#172B4D] dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                                 />
                               </div>
                             </div>
                           </div>
 
                           {orgEditError && (
-                            <div className="mt-3 p-3 bg-[#EF4444]/10 border border-[#EF4444]/30 rounded-lg text-[#EF4444] text-xs font-medium flex items-center gap-2">
-                              <X size={14} />
+                            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+                              <AlertTriangle size={16} />
                               {orgEditError}
                             </div>
                           )}
 
-                          <div className="flex items-center justify-end gap-2 mt-4">
+                          <div className="flex justify-end gap-2 pt-2">
                             <button
-                              onClick={handleCancelEditOrg}
+                              onClick={() => setIsEditingOrg(false)}
                               disabled={savingOrg}
-                              className="px-4 py-2 text-[#9CA3AF] hover:text-white hover:bg-[#252525] rounded-lg transition-colors text-sm font-medium disabled:opacity-50"
+                              className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#1F2128] rounded-lg transition-colors"
                             >
                               Cancel
                             </button>
                             <button
                               onClick={handleSaveOrganization}
                               disabled={savingOrg}
-                              className="px-4 py-2 bg-[#3B82F6] hover:bg-[#2563EB] text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
+                              className="flex items-center gap-2 px-5 py-2 bg-[#172B4D] dark:bg-white text-white dark:text-[#172B4D] font-semibold text-sm rounded-xl hover:opacity-90 transition-all disabled:opacity-50"
                             >
                               {savingOrg ? (
-                                <>
-                                  <Loader2 size={14} className="animate-spin" />
-                                  Saving...
-                                </>
+                                <Loader2 size={16} className="animate-spin" />
                               ) : (
-                                <>
-                                  <Check size={14} />
-                                  Save Changes
-                                </>
+                                <Save size={16} />
                               )}
+                              Save Changes
                             </button>
                           </div>
                         </div>
-                      )}
-
-                      {/* Stats Grid - High Density */}
-                      <div className="p-4">
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                          <StatCard icon={Users} value={organizationMembers.length} label="Members" color="bg-[#3B82F6]" />
-                          <StatCard icon={Crown} value={organizationMembers.filter(m => m.role === 'admin').length} label="Admins" color="bg-[#8B5CF6]" />
-                          <StatCard icon={Layers} value={projects.length} label="Projects" color="bg-[#10B981]" />
-                          <StatCard icon={BarChart3} value={tasks.length} label="Tasks" color="bg-[#F59E0B]" />
-                        </div>
-                      </div>
-                    </Card>
-
-                    {/* Members Card - Infinia Design */}
-                    <Card>
-                      <div className="p-4 border-b border-[#2E2E2E] flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-[#3B82F6]/20 flex items-center justify-center">
-                            <Users size={16} className="text-[#3B82F6]" />
+                      ) : (
+                        <div className="space-y-5">
+                          <div className="flex items-center gap-6 pb-5 border-b border-gray-100 dark:border-[#1F2128]">
+                            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg">
+                              {currentOrganization.name?.substring(0, 2).toUpperCase() || 'ORG'}
+                            </div>
+                            <div className="flex-1">
+                              <h3 className="text-xl font-bold text-[#172B4D] dark:text-white">
+                                {currentOrganization.name}
+                              </h3>
+                              <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1.5 mt-1">
+                                <Globe size={14} />
+                                infinia.app/{currentOrganization.slug}
+                              </p>
+                              <div className="flex items-center gap-4 mt-3">
+                                <span className="text-sm text-gray-500 dark:text-gray-400">
+                                  <span className="font-semibold text-[#172B4D] dark:text-white">{organizationMembers.length}</span> members
+                                </span>
+                                <span className="text-sm text-gray-500 dark:text-gray-400">
+                                  <span className="font-semibold text-[#172B4D] dark:text-white">{projects.length}</span> projects
+                                </span>
+                              </div>
+                            </div>
                           </div>
-                          <div>
-                            <h3 className="font-semibold text-white text-sm">Team Members</h3>
-                            <p className="text-xs text-[#9CA3AF]">
-                              {organizationMembers.length} member{organizationMembers.length !== 1 ? 's' : ''} in your organization
+
+                          {/* Stats */}
+                          <div className="grid grid-cols-4 gap-4">
+                            <StatCard icon={Users} value={organizationMembers.length} label="Members" color="bg-blue-500" />
+                            <StatCard icon={Crown} value={organizationMembers.filter(m => m.role === 'admin' || m.role === 'owner').length} label="Admins" color="bg-purple-500" />
+                            <StatCard icon={Layers} value={projects.length} label="Projects" color="bg-green-500" />
+                            <StatCard icon={BarChart3} value={tasks.length} label="Tasks" color="bg-amber-500" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </SectionCard>
+
+                  {/* Domain Settings */}
+                  <SectionCard>
+                    <SectionHeader
+                      icon={Globe}
+                      title="Domain Settings"
+                      description="Control how users can join your organization"
+                      gradient="from-green-500 to-emerald-600"
+                    />
+                    <div>
+                      <SettingRow
+                        title="Verified Domain"
+                        description="Users with this email domain can request to join"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="px-3 py-1.5 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-sm font-medium rounded-lg border border-green-200 dark:border-green-800">
+                            {currentUser?.email?.split('@')[1] || 'example.com'}
+                          </span>
+                          {isOrgAdmin && (
+                            <button className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+                              <Pencil size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </SettingRow>
+                      <SettingRow
+                        title="Allow Domain Auto-Join"
+                        description="Let users with verified domain join without approval"
+                      >
+                        <Toggle checked={false} onChange={() => {}} disabled={!isOrgAdmin} />
+                      </SettingRow>
+                      <SettingRow
+                        title="Require Admin Approval"
+                        description="New members need admin approval to join"
+                        noBorder
+                      >
+                        <Toggle checked={true} onChange={() => {}} disabled={!isOrgAdmin} />
+                      </SettingRow>
+                    </div>
+                  </SectionCard>
+
+                  {/* Danger Zone */}
+                  {isOrgAdmin && (
+                    <SectionCard className="border-red-200 dark:border-red-900/50">
+                      <div className="p-6">
+                        <div className="flex items-start gap-4">
+                          <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
+                            <AlertTriangle size={20} className="text-red-600 dark:text-red-400" />
+                          </div>
+                          <div className="flex-1">
+                            <h3 className="font-bold text-red-600 dark:text-red-400">Danger Zone</h3>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                              Irreversible actions that affect your organization
                             </p>
                           </div>
                         </div>
-                        {isOrgAdmin && (
-                          <button
-                            onClick={() => setShowInviteModal(true)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#3B82F6] hover:bg-[#2563EB] text-white text-xs font-semibold rounded-lg transition-colors"
-                          >
-                            <UserPlus size={14} />
-                            Invite
+                        <div className="mt-4 flex gap-3">
+                          <button className="px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                            Transfer Ownership
                           </button>
-                        )}
-                      </div>
-
-                      {/* Members List - High Density */}
-                      <div className="divide-y divide-[#2E2E2E]">
-                        {organizationMembers.map((member) => (
-                          <div key={member.id} className="flex items-center gap-3 p-3 hover:bg-[#252525] transition-colors">
-                            <img
-                              src={member.user?.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(member.user?.name || 'U')}&background=3B82F6&color=fff`}
-                              alt={member.user?.name}
-                              className="w-9 h-9 rounded-lg object-cover"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium text-white text-sm truncate">
-                                  {member.user?.name || 'Unknown'}
-                                </span>
-                                {member.userId === currentUser?.id && (
-                                  <span className="px-1.5 py-0.5 bg-[#3B82F6]/20 text-[#3B82F6] text-[10px] font-semibold rounded">You</span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2 mt-0.5">
-                                <span className="text-xs text-[#9CA3AF] truncate">{member.user?.email || '-'}</span>
-                                <span className="text-[#4B5563]">·</span>
-                                <span className="text-xs text-[#6B7280]">{member.user?.role || 'Member'}</span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {isOrgAdmin && member.userId !== currentUser?.id ? (
-                                <div className="relative">
-                                  <select
-                                    value={member.role}
-                                    onChange={(e) => handleRoleChange(member.userId, e.target.value as OrganizationRole)}
-                                    disabled={updatingRole === member.userId}
-                                    className={`appearance-none pl-2.5 pr-7 py-1 rounded-lg text-xs font-semibold border cursor-pointer transition-all focus:outline-none focus:ring-1 ${
-                                      member.role === 'admin'
-                                        ? 'bg-[#8B5CF6]/10 text-[#A78BFA] border-[#8B5CF6]/30 focus:ring-[#8B5CF6]/50'
-                                        : 'bg-[#1A1A1A] text-[#9CA3AF] border-[#2E2E2E] focus:ring-[#3B82F6]/50'
-                                    } ${updatingRole === member.userId ? 'opacity-50' : ''}`}
-                                  >
-                                    <option value="admin">Admin</option>
-                                    <option value="member">Member</option>
-                                  </select>
-                                  <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-[#6B7280]" />
-                                </div>
-                              ) : (
-                                <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${
-                                  member.role === 'admin'
-                                    ? 'bg-[#8B5CF6]/10 text-[#A78BFA] border border-[#8B5CF6]/20'
-                                    : 'bg-[#1A1A1A] text-[#9CA3AF] border border-[#2E2E2E]'
-                                }`}>
-                                  {member.role === 'admin' ? 'Admin' : 'Member'}
-                                </span>
-                              )}
-                              <span className="text-xs text-[#6B7280] hidden sm:block whitespace-nowrap">
-                                {member.joinedAt
-                                  ? new Date(member.joinedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                                  : '-'
-                                }
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {organizationMembers.length === 0 && (
-                        <div className="p-10 text-center">
-                          <Users size={36} className="mx-auto text-[#4B5563] mb-3" />
-                          <p className="text-[#9CA3AF] text-sm">No members found</p>
+                          <button className="px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                            Delete Organization
+                          </button>
                         </div>
-                      )}
-                    </Card>
-                  </>
-                ) : (
-                  /* No Organization - Create Form - Infinia Design */
-                  <Card className="p-6">
-                    <div className="max-w-sm mx-auto text-center">
-                      <div className="w-16 h-16 mx-auto mb-5 rounded-xl bg-gradient-to-br from-[#8B5CF6] to-[#6366F1] flex items-center justify-center">
-                        <Building2 size={32} className="text-white" />
                       </div>
-                      <h2 className="text-lg font-bold text-white mb-1.5">Create Your Organization</h2>
-                      <p className="text-[#9CA3AF] text-sm mb-6">
-                        Set up your workspace to start collaborating with your team
-                      </p>
-
-                      <div className="space-y-4 text-left">
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-semibold text-[#9CA3AF] uppercase tracking-wide">Organization Name</label>
-                          <input
-                            type="text"
-                            value={orgName}
-                            onChange={(e) => setOrgName(e.target.value)}
-                            placeholder={`${currentUser?.name || 'My'}'s Organization`}
-                            className="w-full bg-[#0D0D0D] border border-[#2E2E2E] rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#6B7280] focus:outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6]/30 transition-all"
-                          />
-                        </div>
-                        <button
-                          onClick={handleCreateOrganization}
-                          disabled={creatingOrg}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#3B82F6] hover:bg-[#2563EB] text-white font-semibold text-sm rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {creatingOrg ? (
-                            <><Loader2 size={16} className="animate-spin" /> Creating...</>
-                          ) : (
-                            <><Plus size={16} /> Create Organization</>
-                          )}
-                        </button>
-                      </div>
+                    </SectionCard>
+                  )}
+                </>
+              ) : (
+                /* Create Organization Flow */
+                <SectionCard>
+                  <div className="p-8 text-center max-w-md mx-auto">
+                    <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center shadow-lg">
+                      <Building2 size={36} className="text-white" />
                     </div>
-                  </Card>
-                )}
-              </>
-            )}
+                    <h2 className="text-xl font-bold text-[#172B4D] dark:text-white mb-2">
+                      Create Your Organization
+                    </h2>
+                    <p className="text-gray-500 dark:text-gray-400 mb-6">
+                      Set up your workspace to start collaborating with your team
+                    </p>
 
-            {/* === APPEARANCE TAB === */}
-            {activeTab === 'appearance' && (
-              <Card className="p-5">
-                <SectionHeader icon={Palette} title="Appearance" description="Customize how the app looks and feels" />
-
-                <div className="space-y-5">
-                  <div>
-                    <label className="text-sm font-medium text-white mb-3 block">Theme</label>
-                    <div className="grid grid-cols-3 gap-3">
-                      {[
-                        { id: 'light', icon: Sun, label: 'Light' },
-                        { id: 'dark', icon: Moon, label: 'Dark' },
-                        { id: 'system', icon: Monitor, label: 'System' },
-                      ].map(({ id, icon: Icon, label }) => (
-                        <button
-                          key={id}
-                          onClick={() => setTheme(id as 'light' | 'dark' | 'system')}
-                          className={`flex flex-col items-center gap-2 p-4 rounded-lg border transition-all ${
-                            theme === id
-                              ? 'border-[#3B82F6] bg-[#3B82F6]/10'
-                              : 'border-[#2E2E2E] hover:border-[#3E3E3E] bg-[#0D0D0D]'
-                          }`}
-                        >
-                          <Icon size={22} className={theme === id ? 'text-[#3B82F6]' : 'text-[#6B7280]'} />
-                          <span className={`text-sm font-medium ${theme === id ? 'text-[#3B82F6]' : 'text-[#9CA3AF]'}`}>
-                            {label}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            )}
-
-            {/* === DATABASE TAB === */}
-            {activeTab === 'database' && (
-              <>
-                {/* Connection Status - Infinia Design */}
-                <Card className={`overflow-hidden ${
-                  connectionStatus === 'connected'
-                    ? 'border-[#10B981]/30'
-                    : 'border-[#EF4444]/30'
-                }`}>
-                  <div className={`p-4 ${
-                    connectionStatus === 'connected'
-                      ? 'bg-[#10B981]/10'
-                      : 'bg-[#EF4444]/10'
-                  }`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                          connectionStatus === 'connected'
-                            ? 'bg-[#10B981]'
-                            : 'bg-[#EF4444]'
-                        }`}>
-                          {connectionStatus === 'connected' ? <Wifi size={20} className="text-white" /> : <WifiOff size={20} className="text-white" />}
-                        </div>
-                        <div>
-                          <h3 className={`font-bold text-sm ${connectionStatus === 'connected' ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
-                            {connectionStatus === 'connected' ? 'Connected' : 'Disconnected'}
-                          </h3>
-                          <p className={`text-xs ${connectionStatus === 'connected' ? 'text-[#10B981]/70' : 'text-[#EF4444]/70'}`}>
-                            {connectionStatus === 'connected' ? 'Database connection is healthy' : connectionError || 'Unable to connect'}
-                          </p>
-                        </div>
+                    <div className="space-y-4 text-left">
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold uppercase text-gray-500 tracking-wider">
+                          Organization Name
+                        </label>
+                        <input
+                          type="text"
+                          value={orgName}
+                          onChange={(e) => setOrgName(e.target.value)}
+                          placeholder={`${currentUser?.name || 'My'}'s Organization`}
+                          className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-xl text-sm text-[#172B4D] dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                        />
                       </div>
                       <button
-                        onClick={() => refreshData()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1A1A1A] border border-[#2E2E2E] rounded-lg text-xs font-medium text-white hover:bg-[#252525] transition-colors"
+                        onClick={handleCreateOrganization}
+                        disabled={creatingOrg}
+                        className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-[#172B4D] dark:bg-white text-white dark:text-[#172B4D] font-semibold text-sm rounded-xl hover:opacity-90 transition-all shadow-lg disabled:opacity-50"
                       >
-                        <RefreshCw size={14} /> Refresh
+                        {creatingOrg ? (
+                          <Loader2 size={18} className="animate-spin" />
+                        ) : (
+                          <>
+                            <Plus size={18} />
+                            Create Organization
+                          </>
+                        )}
                       </button>
                     </div>
                   </div>
-                </Card>
+                </SectionCard>
+              )}
+            </div>
+          )}
 
-                {/* Data Stats */}
-                <Card className="p-4">
-                  <SectionHeader icon={Database} title="Synced Data" description="Overview of data in your workspace" />
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                    <StatCard icon={Layers} value={projects.length} label="Projects" color="bg-[#3B82F6]" />
-                    <StatCard icon={BarChart3} value={tasks.length} label="Tasks" color="bg-[#8B5CF6]" />
-                    <StatCard icon={Calendar} value={sprints.length} label="Sprints" color="bg-[#F59E0B]" />
-                    <StatCard icon={Users} value={teams.length} label="Teams" color="bg-[#10B981]" />
+          {/* === MEMBERS TAB === */}
+          {activeTab === 'members' && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h1 className="text-2xl font-bold text-[#172B4D] dark:text-white">Team Members</h1>
+                  <p className="text-gray-500 dark:text-gray-400 mt-1">
+                    Manage who has access to this organization
+                  </p>
+                </div>
+                {isOrgAdmin && (
+                  <button
+                    onClick={() => setShowInviteModal(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-[#172B4D] dark:bg-white text-white dark:text-[#172B4D] font-semibold text-sm rounded-xl hover:opacity-90 transition-all shadow-lg"
+                  >
+                    <UserPlus size={16} />
+                    Invite Members
+                  </button>
+                )}
+              </div>
+
+              {/* Stats Grid */}
+              <div className="grid grid-cols-4 gap-4">
+                <StatCard icon={Users} value={orgMembers.length} label="Total" color="bg-blue-500" />
+                <StatCard icon={Crown} value={orgMembers.filter(m => m.role === 'admin' || m.role === 'owner').length} label="Admins" color="bg-purple-500" />
+                <StatCard icon={Users} value={orgMembers.filter(m => m.role === 'member').length} label="Members" color="bg-green-500" />
+                <StatCard icon={Mail} value={pendingInvites.length} label="Pending" color="bg-amber-500" />
+              </div>
+
+              {/* Members Table */}
+              <SectionCard>
+                <div className="overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-100 dark:border-[#1F2128]">
+                        <th className="text-left px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                          Member
+                        </th>
+                        <th className="text-left px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                          Role
+                        </th>
+                        <th className="text-left px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                          Joined
+                        </th>
+                        <th className="text-right px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-[#1F2128]">
+                      {orgMembers.map((member) => (
+                        <tr key={member.id} className="hover:bg-gray-50 dark:hover:bg-[#1F2128]/50 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={member.user?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${member.user?.name || 'User'}`}
+                                alt={member.user?.name}
+                                className="w-10 h-10 rounded-full object-cover ring-2 ring-gray-100 dark:ring-[#1F2128]"
+                              />
+                              <div>
+                                <div className="text-sm font-semibold text-[#172B4D] dark:text-white flex items-center gap-2">
+                                  {member.user?.name || 'Unknown'}
+                                  {member.role === 'owner' && (
+                                    <Crown size={14} className="text-amber-500" />
+                                  )}
+                                  {member.userId === currentUser?.id && (
+                                    <span className="px-1.5 py-0.5 text-[9px] font-bold bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded">
+                                      You
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  {member.user?.email || '-'}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            {isOrgAdmin && member.userId !== currentUser?.id && member.role !== 'owner' ? (
+                              <div className="relative inline-block">
+                                <select
+                                  value={member.role}
+                                  onChange={(e) => handleRoleChange(member.userId, e.target.value as OrganizationRole)}
+                                  disabled={updatingRole === member.userId}
+                                  className="appearance-none pl-2 pr-7 py-1 rounded-lg text-xs font-semibold border cursor-pointer focus:outline-none bg-gray-100 dark:bg-[#1F2128] text-gray-700 dark:text-gray-300 border-gray-200 dark:border-[#2D2F36]"
+                                >
+                                  <option value="admin">Admin</option>
+                                  <option value="member">Member</option>
+                                  <option value="viewer">Viewer</option>
+                                </select>
+                                <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
+                              </div>
+                            ) : (
+                              <RoleBadge role={member.role} />
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                            {member.joinedAt
+                              ? new Date(member.joinedAt).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                })
+                              : '-'}
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            {isOrgAdmin && member.userId !== currentUser?.id && member.role !== 'owner' && (
+                              <button className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1F2128] rounded-lg transition-colors">
+                                <MoreHorizontal size={16} />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {orgMembers.length === 0 && (
+                  <div className="p-12 text-center">
+                    <Users size={36} className="mx-auto text-gray-300 dark:text-gray-600 mb-3" />
+                    <p className="text-gray-500 dark:text-gray-400">No members found</p>
                   </div>
-                </Card>
-              </>
-            )}
+                )}
+              </SectionCard>
 
-            {/* === NOTIFICATIONS TAB === */}
-            {activeTab === 'notifications' && (
-              <Card className="p-5">
-                <SectionHeader icon={Bell} title="Notifications" description="Manage your notification preferences" />
-                <div className="space-y-3">
-                  {[
-                    { label: 'Task assignments', desc: 'Get notified when a task is assigned to you' },
-                    { label: 'Comments', desc: 'Get notified when someone comments on your tasks' },
-                    { label: 'Sprint updates', desc: 'Get notified about sprint status changes' },
-                    { label: 'Project updates', desc: 'Get notified about project milestones' },
-                  ].map((item, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 bg-[#0D0D0D] border border-[#2E2E2E] rounded-lg hover:border-[#3E3E3E] transition-colors">
-                      <div>
-                        <div className="font-medium text-white text-sm">{item.label}</div>
-                        <div className="text-xs text-[#9CA3AF] mt-0.5">{item.desc}</div>
+              {/* Pending Invites */}
+              <SectionCard>
+                <SectionHeader
+                  icon={Mail}
+                  title="Pending Invitations"
+                  description="Invitations that haven't been accepted yet"
+                  gradient="from-amber-500 to-orange-600"
+                />
+                <div className="p-4 space-y-3">
+                  {loadingInvites ? (
+                    <div className="p-8 text-center">
+                      <Loader2 size={24} className="mx-auto text-gray-400 animate-spin mb-2" />
+                      <p className="text-sm text-gray-500 dark:text-gray-400">Loading invitations...</p>
+                    </div>
+                  ) : pendingInvites.length === 0 ? (
+                    <div className="p-8 text-center">
+                      <Mail size={24} className="mx-auto text-gray-300 dark:text-gray-600 mb-2" />
+                      <p className="text-sm text-gray-500 dark:text-gray-400">No pending invitations</p>
+                    </div>
+                  ) : (
+                    pendingInvites.map((invite) => (
+                      <div
+                        key={invite.id}
+                        className="flex items-center justify-between p-4 bg-gray-50 dark:bg-[#1F2128] rounded-xl"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                            <Mail size={18} className="text-gray-400" />
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-[#172B4D] dark:text-white">
+                              {invite.email}
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              Sent {new Date(invite.created_at).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <RoleBadge role={invite.role} />
+                          <button
+                            onClick={() => handleResendInvite(invite.id)}
+                            disabled={resendingInvite === invite.id}
+                            className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
+                          >
+                            {resendingInvite === invite.id ? 'Sending...' : 'Resend'}
+                          </button>
+                          <button
+                            onClick={() => handleRevokeInvite(invite.id)}
+                            disabled={revokingInvite === invite.id}
+                            className="p-1.5 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50"
+                          >
+                            {revokingInvite === invite.id ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <X size={14} />
+                            )}
+                          </button>
+                        </div>
                       </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" defaultChecked className="sr-only peer" />
-                        <div className="w-10 h-5 bg-[#2E2E2E] peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[#3B82F6]/30 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[#6B7280] after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#3B82F6] peer-checked:after:bg-white"></div>
-                      </label>
+                    ))
+                  )}
+                </div>
+              </SectionCard>
+            </div>
+          )}
+
+          {/* === APPEARANCE TAB === */}
+          {activeTab === 'appearance' && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div>
+                <h1 className="text-2xl font-bold text-[#172B4D] dark:text-white">Appearance</h1>
+                <p className="text-gray-500 dark:text-gray-400 mt-1">
+                  Customize how Infinia looks for you
+                </p>
+              </div>
+
+              {/* Theme Selection */}
+              <SectionCard>
+                <SectionHeader
+                  icon={Palette}
+                  title="Theme"
+                  description="Choose your preferred color scheme"
+                  gradient="from-pink-500 to-rose-600"
+                />
+                <div className="p-6">
+                  <div className="grid grid-cols-3 gap-4">
+                    {/* Light Theme */}
+                    <button
+                      onClick={() => setTheme('light')}
+                      className={`p-4 rounded-xl border-2 transition-all ${
+                        theme === 'light'
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-500/20'
+                          : 'border-gray-200 dark:border-[#2D2F36] hover:border-gray-300 dark:hover:border-gray-600'
+                      }`}
+                    >
+                      <div className="w-full aspect-video bg-[#F8F9FC] rounded-lg border border-gray-200 mb-3 flex flex-col overflow-hidden">
+                        <div className="h-3 bg-white border-b border-gray-200" />
+                        <div className="flex-1 p-2">
+                          <div className="h-2 w-1/2 bg-gray-200 rounded mb-1.5" />
+                          <div className="h-2 w-3/4 bg-gray-200 rounded" />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-[#172B4D] dark:text-white">
+                        <Sun size={16} />
+                        Light
+                        {theme === 'light' && <Check size={16} className="text-blue-500" />}
+                      </div>
+                    </button>
+
+                    {/* Dark Theme */}
+                    <button
+                      onClick={() => setTheme('dark')}
+                      className={`p-4 rounded-xl border-2 transition-all ${
+                        theme === 'dark'
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-500/20'
+                          : 'border-gray-200 dark:border-[#2D2F36] hover:border-gray-300 dark:hover:border-gray-600'
+                      }`}
+                    >
+                      <div className="w-full aspect-video bg-[#0B0C0E] rounded-lg border border-[#2D2F36] mb-3 flex flex-col overflow-hidden">
+                        <div className="h-3 bg-[#15171E] border-b border-[#2D2F36]" />
+                        <div className="flex-1 p-2">
+                          <div className="h-2 w-1/2 bg-[#2D2F36] rounded mb-1.5" />
+                          <div className="h-2 w-3/4 bg-[#2D2F36] rounded" />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-[#172B4D] dark:text-white">
+                        <Moon size={16} />
+                        Dark
+                        {theme === 'dark' && <Check size={16} className="text-blue-500" />}
+                      </div>
+                    </button>
+
+                    {/* System Theme */}
+                    <button
+                      onClick={() => setTheme('system')}
+                      className={`p-4 rounded-xl border-2 transition-all ${
+                        theme === 'system'
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 ring-2 ring-blue-500/20'
+                          : 'border-gray-200 dark:border-[#2D2F36] hover:border-gray-300 dark:hover:border-gray-600'
+                      }`}
+                    >
+                      <div className="w-full aspect-video bg-gradient-to-br from-[#F8F9FC] to-[#0B0C0E] rounded-lg border border-gray-200 dark:border-[#2D2F36] mb-3 flex items-center justify-center">
+                        <span className="text-xs font-bold text-gray-500">AUTO</span>
+                      </div>
+                      <div className="flex items-center justify-center gap-2 text-sm font-semibold text-[#172B4D] dark:text-white">
+                        <Monitor size={16} />
+                        System
+                        {theme === 'system' && <Check size={16} className="text-blue-500" />}
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </SectionCard>
+            </div>
+          )}
+
+          {/* === NOTIFICATIONS TAB === */}
+          {activeTab === 'notifications' && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div>
+                <h1 className="text-2xl font-bold text-[#172B4D] dark:text-white">Notifications</h1>
+                <p className="text-gray-500 dark:text-gray-400 mt-1">
+                  Choose what you want to be notified about
+                </p>
+              </div>
+
+              {/* Email Notifications */}
+              <SectionCard>
+                <SectionHeader
+                  icon={Mail}
+                  title="Email Notifications"
+                  description="Control which emails you receive"
+                  gradient="from-blue-500 to-cyan-600"
+                />
+                <div>
+                  <SettingRow
+                    title="Daily Summary"
+                    description="Receive a daily digest of your tasks and updates"
+                  >
+                    <Toggle
+                      checked={notifications.email}
+                      onChange={(v) => setNotifications({ ...notifications, email: v })}
+                    />
+                  </SettingRow>
+                  <SettingRow
+                    title="Task Assignments"
+                    description="When you're assigned to a new task"
+                  >
+                    <Toggle
+                      checked={notifications.taskAssigned}
+                      onChange={(v) => setNotifications({ ...notifications, taskAssigned: v })}
+                    />
+                  </SettingRow>
+                  <SettingRow
+                    title="Comments & Mentions"
+                    description="When someone mentions you in a comment"
+                  >
+                    <Toggle
+                      checked={notifications.mentions}
+                      onChange={(v) => setNotifications({ ...notifications, mentions: v })}
+                    />
+                  </SettingRow>
+                  <SettingRow
+                    title="Sprint Updates"
+                    description="When sprints start, end, or are modified"
+                  >
+                    <Toggle
+                      checked={notifications.sprintUpdates}
+                      onChange={(v) => setNotifications({ ...notifications, sprintUpdates: v })}
+                    />
+                  </SettingRow>
+                  <SettingRow
+                    title="Product Updates"
+                    description="News about new features and improvements"
+                    noBorder
+                  >
+                    <Toggle
+                      checked={notifications.projectUpdates}
+                      onChange={(v) => setNotifications({ ...notifications, projectUpdates: v })}
+                    />
+                  </SettingRow>
+                </div>
+              </SectionCard>
+
+              {/* Push Notifications */}
+              <SectionCard>
+                <SectionHeader
+                  icon={Bell}
+                  title="Push Notifications"
+                  description="Real-time notifications in your browser"
+                  gradient="from-violet-500 to-purple-600"
+                />
+                <div>
+                  <SettingRow
+                    title="Enable Push Notifications"
+                    description="Get real-time updates even when the tab is closed"
+                    noBorder
+                  >
+                    <Toggle
+                      checked={notifications.push}
+                      onChange={(v) => setNotifications({ ...notifications, push: v })}
+                    />
+                  </SettingRow>
+                </div>
+              </SectionCard>
+            </div>
+          )}
+
+          {/* === SECURITY TAB === */}
+          {activeTab === 'security' && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div>
+                <h1 className="text-2xl font-bold text-[#172B4D] dark:text-white">Security</h1>
+                <p className="text-gray-500 dark:text-gray-400 mt-1">
+                  Manage your account security and authentication
+                </p>
+              </div>
+
+              {/* Password */}
+              <SectionCard>
+                <SectionHeader
+                  icon={Key}
+                  title="Password"
+                  description="Manage your account password"
+                  gradient="from-blue-500 to-indigo-600"
+                />
+                <div className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-[#172B4D] dark:text-white">
+                        Password last changed
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        3 months ago
+                      </p>
+                    </div>
+                    <button className="px-4 py-2 text-sm font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors">
+                      Change Password
+                    </button>
+                  </div>
+                </div>
+              </SectionCard>
+
+              {/* Two-Factor Authentication */}
+              <SectionCard>
+                <SectionHeader
+                  icon={Smartphone}
+                  title="Two-Factor Authentication"
+                  description="Add an extra layer of security to your account"
+                  gradient="from-amber-500 to-orange-600"
+                />
+                <div className="p-6">
+                  <div className="flex items-center justify-between p-4 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                        <Shield size={20} className="text-amber-600 dark:text-amber-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                          2FA is not enabled
+                        </p>
+                        <p className="text-xs text-amber-600 dark:text-amber-400">
+                          Protect your account with two-factor authentication
+                        </p>
+                      </div>
+                    </div>
+                    <button className="px-4 py-2 text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors">
+                      Enable 2FA
+                    </button>
+                  </div>
+                </div>
+              </SectionCard>
+
+              {/* Active Sessions */}
+              <SectionCard>
+                <SectionHeader
+                  icon={Lock}
+                  title="Active Sessions"
+                  description="Devices currently logged into your account"
+                  gradient="from-green-500 to-emerald-600"
+                />
+                <div className="p-4 space-y-3">
+                  {[
+                    { device: 'MacBook Pro', location: 'San Francisco, CA', current: true },
+                    { device: 'iPhone 15 Pro', location: 'San Francisco, CA', current: false },
+                  ].map((session, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between p-4 bg-gray-50 dark:bg-[#1F2128] rounded-xl"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                          <Monitor size={18} className="text-gray-500" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-[#172B4D] dark:text-white flex items-center gap-2">
+                            {session.device}
+                            {session.current && (
+                              <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">
+                                Current
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {session.location}
+                          </div>
+                        </div>
+                      </div>
+                      {!session.current && (
+                        <button className="text-xs font-medium text-red-600 dark:text-red-400 hover:underline">
+                          Revoke
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
-              </Card>
-            )}
+              </SectionCard>
 
-            {/* === SECURITY TAB === */}
-            {activeTab === 'security' && (
-              <Card className="p-5">
-                <SectionHeader icon={Shield} title="Security" description="Manage your account security settings" />
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 bg-[#0D0D0D] border border-[#2E2E2E] rounded-lg hover:border-[#3E3E3E] transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-[#3B82F6]/20 flex items-center justify-center">
-                        <Key size={16} className="text-[#3B82F6]" />
-                      </div>
-                      <div>
-                        <div className="font-medium text-white text-sm">Password</div>
-                        <div className="text-xs text-[#9CA3AF] mt-0.5">Last changed 30 days ago</div>
-                      </div>
+              {/* Danger Zone */}
+              <SectionCard className="border-red-200 dark:border-red-900/50">
+                <div className="p-6">
+                  <div className="flex items-start gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
+                      <AlertTriangle size={20} className="text-red-600 dark:text-red-400" />
                     </div>
-                    <button className="px-3 py-1.5 text-xs font-semibold text-[#3B82F6] hover:bg-[#3B82F6]/10 rounded-lg transition-colors border border-[#3B82F6]/30">
-                      Change
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-[#0D0D0D] border border-[#2E2E2E] rounded-lg hover:border-[#3E3E3E] transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-[#10B981]/20 flex items-center justify-center">
-                        <Lock size={16} className="text-[#10B981]" />
-                      </div>
-                      <div>
-                        <div className="font-medium text-white text-sm">Two-factor authentication</div>
-                        <div className="text-xs text-[#9CA3AF] mt-0.5">Add an extra layer of security</div>
-                      </div>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-red-600 dark:text-red-400">Delete Account</h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Permanently delete your account and all associated data. This action cannot be undone.
+                      </p>
+                      <button className="mt-4 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                        Delete My Account
+                      </button>
                     </div>
-                    <button className="px-3 py-1.5 text-xs font-semibold text-white bg-[#10B981] hover:bg-[#059669] rounded-lg transition-colors">
-                      Enable
-                    </button>
                   </div>
                 </div>
-              </Card>
-            )}
-
-          </div>
+              </SectionCard>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Invite User Modal */}
+      {/* Invite Modal */}
       {showInviteModal && (
         <InviteUserModal
           onClose={() => setShowInviteModal(false)}
-          onInviteSent={() => {
+          onInviteSent={async () => {
             setShowInviteModal(false);
             refreshOrganization();
+            // Refresh pending invites
+            if (currentOrganization?.id) {
+              const invites = await invitesService.getPendingByOrganization(currentOrganization.id);
+              setPendingInvites(invites.filter((inv: OrganizationInvite) => inv.status === 'pending'));
+            }
           }}
         />
       )}

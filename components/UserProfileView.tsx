@@ -183,7 +183,7 @@ const UserProfileView: React.FC = () => {
                             <h1 className="text-3xl font-bold text-[#172B4D] dark:text-white mb-2">{currentUser.name}</h1>
                             <div className="flex items-center gap-2 text-lg text-gray-500 dark:text-gray-400 mb-4">
                                 <Briefcase size={18} />
-                                <span>{currentUser.jobTitle || currentUser.role || 'Team Member'}</span>
+                                <span>{currentUser.jobTitle || currentUser.designation || 'Team Member'}</span>
                             </div>
                         </div>
                         <div className="flex gap-3">

@@ -1,7 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
 import { AppError } from '../utils/errors.js';
 import { config } from '../config/index.js';
-import type { ApiResponse } from '../types/index.js';
+
+interface ApiResponse {
+  success: boolean;
+  data?: any;
+  error?: {
+    code: string;
+    message: string;
+    details?: any;
+  };
+}
 
 /**
  * Global error handler middleware

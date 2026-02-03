@@ -9,10 +9,12 @@ import {
   AlertCircle,
   CheckCircle,
   Copy,
-  Check
+  Check,
+  Send,
+  Loader2
 } from 'lucide-react';
 import { useProjectData } from '../context/ProjectDataContext';
-import { invitesService } from '../services/invites.service';
+import { api } from '../lib/api';
 import { OrganizationRole } from '../types';
 
 interface InviteUserModalProps {
@@ -29,11 +31,15 @@ const InviteUserModal: React.FC<InviteUserModalProps> = ({ onClose, onInviteSent
   const [success, setSuccess] = useState(false);
   const [inviteLink, setInviteLink] = useState('');
   const [copied, setCopied] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+  const [emailError, setEmailError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setEmailError('');
     setSuccess(false);
+    setEmailSent(false);
 
     // Validation
     if (!email.includes('@')) {
@@ -49,13 +55,16 @@ const InviteUserModal: React.FC<InviteUserModalProps> = ({ onClose, onInviteSent
     setIsLoading(true);
 
     try {
-      const invite = await invitesService.create(
-        currentOrganization.id,
+      const result = await api.sendInvite(
         email,
-        role,
-        currentUser?.id
+        role as 'admin' | 'member',
+        currentOrganization.id
       );
-      setInviteLink(invitesService.getInviteLink(invite.id));
+      setInviteLink(result.invite.inviteLink);
+      setEmailSent(result.emailSent);
+      if (result.emailError) {
+        setEmailError(result.emailError);
+      }
       setSuccess(true);
     } catch (err: any) {
       setError(err.message || 'Failed to create invitation. Please try again.');
@@ -190,15 +199,26 @@ const InviteUserModal: React.FC<InviteUserModalProps> = ({ onClose, onInviteSent
           {/* Success Message with Invite Link - Infinia Design */}
           {success && (
             <div className="space-y-3">
-              <div className="p-3 bg-[#10B981]/10 border border-[#10B981]/30 rounded-lg text-[#10B981] text-xs font-medium flex items-start gap-2">
-                <CheckCircle size={14} className="flex-shrink-0 mt-0.5" />
-                <span>Invitation created for {email}!</span>
-              </div>
+              {/* Email Status */}
+              {emailSent ? (
+                <div className="p-3 bg-[#10B981]/10 border border-[#10B981]/30 rounded-lg text-[#10B981] text-xs font-medium flex items-start gap-2">
+                  <Send size={14} className="flex-shrink-0 mt-0.5" />
+                  <span>Invitation email sent to {email}!</span>
+                </div>
+              ) : (
+                <div className="p-3 bg-[#F59E0B]/10 border border-[#F59E0B]/30 rounded-lg text-[#F59E0B] text-xs font-medium flex items-start gap-2">
+                  <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+                  <div>
+                    <span>Invitation created but email couldn't be sent.</span>
+                    {emailError && <p className="mt-1 text-[#9CA3AF]">{emailError}</p>}
+                  </div>
+                </div>
+              )}
 
               {/* Invite Link */}
               <div className="space-y-2">
                 <label className="block text-xs font-semibold text-[#9CA3AF] uppercase tracking-wider">
-                  Share this link with the user
+                  {emailSent ? 'Or share this link directly' : 'Share this link with the user'}
                 </label>
                 <div className="flex items-center gap-2">
                   <input

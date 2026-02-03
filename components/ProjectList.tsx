@@ -2,55 +2,25 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Search, Plus, MoreHorizontal, Calendar, ArrowUpRight, ChevronsRight, LayoutGrid,
-  List as ListIcon, Download, Box, Trash2, Edit3, X, AlertTriangle, Loader2,
-  CheckSquare, Hexagon, Clock, Activity, Users, DollarSign, TrendingUp, FileText, Flag,
-  ChevronDown, AlignLeft,
-  // Product theme icons (similar to sprint icons)
-  Rocket, Target, Zap, Layers, Globe, Shield, Cpu, Database,
-  Sparkles, Lightbulb, Package, Briefcase, Compass, Gem, Flame
+  Search, Plus, MoreHorizontal, Calendar, ArrowUpRight, LayoutGrid,
+  List as ListIcon, Download, Trash2, Edit3, X, AlertTriangle, Loader2,
+  CheckSquare, Hexagon, Clock, Activity, Users, DollarSign, TrendingUp, Flag,
+  ChevronDown, AlignLeft, Target, ImageIcon
 } from 'lucide-react';
 import { useProjectData } from '../context/ProjectDataContext';
 import { Project, Task, User } from '../types';
 import { USERS } from '../constants';
 import ProductGeneratorModal from './ProductGeneratorModal';
 import JiraImportModal from './JiraImportModal';
-
-// --- Product Theme Logic (similar to Sprint themes) ---
-const getProductTheme = (id: string) => {
-    const icons = [Rocket, Target, Zap, Layers, Globe, Shield, Cpu, Database, Sparkles, Lightbulb, Package, Briefcase, Compass, Gem, Flame];
-    const gradients = [
-        'from-violet-500 to-purple-600',
-        'from-blue-500 to-cyan-500',
-        'from-emerald-500 to-teal-500',
-        'from-orange-500 to-red-500',
-        'from-pink-500 to-rose-500',
-        'from-indigo-500 to-blue-500',
-        'from-amber-500 to-orange-500',
-        'from-cyan-500 to-blue-500',
-    ];
-
-    // Deterministic hash based on string ID
-    let hash = 0;
-    for (let i = 0; i < id.length; i++) {
-        hash = id.charCodeAt(i) + ((hash << 5) - hash);
-    }
-
-    const iconIndex = Math.abs(hash) % icons.length;
-    const gradientIndex = Math.abs(hash) % gradients.length;
-
-    return {
-        Icon: icons[iconIndex],
-        gradient: gradients[gradientIndex]
-    };
-};
+import ProductIcon, { getProductTheme, ProductIconData } from './ProductIcon';
+import IconPickerModal from './IconPickerModal';
 
 interface ProjectListProps {
   onProjectSelect: (id: string) => void;
 }
 
 const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
-  const { projects, addProject, users, tasks, deleteProject, updateProject, addEpic, addTask, generateNextId } = useProjectData();
+  const { projects, addProject, organizationUsers: users, tasks, deleteProject, updateProject, addEpic, addTask, generateNextId } = useProjectData();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid'); // Default to grid for better visual appeal
@@ -65,6 +35,9 @@ const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
   // Delete Confirmation State
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Icon Picker State
+  const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
 
   const handleCreateProduct = async (productData: any) => {
       const newProjectId = `p-${Date.now()}`;
@@ -234,8 +207,20 @@ const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
           budget: project.budget,
           spentBudget: project.spentBudget,
           customerCount: project.customerCount,
-          targetAudience: project.targetAudience
+          targetAudience: project.targetAudience,
+          imageUrl: project.imageUrl,
+          icon: project.icon,
+          iconColor: project.iconColor,
       });
+  };
+
+  const handleIconSave = (iconData: ProductIconData) => {
+      setEditFormData(prev => ({
+          ...prev,
+          imageUrl: iconData.imageUrl,
+          icon: iconData.icon,
+          iconColor: iconData.iconColor,
+      }));
   };
 
   const saveProjectChanges = () => {
@@ -334,7 +319,35 @@ const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto custom-scrollbar px-8 py-6">
-          {viewMode === 'list' ? (
+
+          {/* Empty State - Show when no products match the filter */}
+          {filteredProjects.length === 0 && (
+              <div className="flex items-center justify-center h-full min-h-[400px] animate-in fade-in duration-300">
+                  <div className="text-center max-w-md">
+                      <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
+                          <Hexagon size={40} className="text-white" />
+                      </div>
+                      <h3 className="text-xl font-bold text-[#172B4D] dark:text-white mb-2">
+                          {activeFilter === 'All' ? 'No products yet' : `No ${activeFilter.toLowerCase()} products`}
+                      </h3>
+                      <p className="text-[#5E6C84] dark:text-gray-400 mb-6">
+                          {activeFilter === 'All'
+                              ? 'Get started by creating your first product to organize your initiatives and track progress.'
+                              : `You don't have any ${activeFilter.toLowerCase()} products. Create a new product or change the filter to see more.`
+                          }
+                      </p>
+                      <button
+                          onClick={() => setIsGeneratorOpen(true)}
+                          className="inline-flex items-center gap-2 bg-[#172B4D] dark:bg-white text-white dark:text-black hover:opacity-90 px-6 py-3 rounded-lg font-bold transition-all shadow-md hover:shadow-lg text-sm"
+                      >
+                          <Plus size={18} strokeWidth={3} />
+                          <span>Create Your First Product</span>
+                      </button>
+                  </div>
+              </div>
+          )}
+
+          {viewMode === 'list' && filteredProjects.length > 0 ? (
               <div className="bg-white dark:bg-[#15171E] border border-gray-200 dark:border-white/5 rounded-2xl overflow-hidden shadow-sm animate-in fade-in duration-300 min-h-[400px]">
                  {/* List Header */}
                  <div className="grid grid-cols-[minmax(280px,2fr)_100px_100px_80px_80px_140px_70px_44px] gap-4 px-6 py-4 bg-gray-50/80 dark:bg-[#1F2128]/50 border-b border-gray-200 dark:border-white/5 text-[11px] font-bold text-gray-400 uppercase tracking-wider">
@@ -361,14 +374,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
                             >
                                 {/* Product Column */}
                                 <div className="flex items-center gap-4">
-                                    {(() => {
-                                        const { Icon, gradient } = getProductTheme(project.id);
-                                        return (
-                                            <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-md flex-shrink-0`}>
-                                                <Icon size={18} strokeWidth={1.5} />
-                                            </div>
-                                        );
-                                    })()}
+                                    <ProductIcon project={project} size="md" className="flex-shrink-0" />
                                     <div className="min-w-0">
                                         <div className="flex items-center gap-2 mb-0.5">
                                             <h3 className="text-sm font-bold text-[#172B4D] dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
@@ -481,23 +487,15 @@ const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
                             </div>
                         );
                     })}
-                    {filteredProjects.length === 0 && (
-                         <div className="p-16 text-center">
-                             <div className="w-16 h-16 bg-gray-100 dark:bg-[#1F2128] rounded-full flex items-center justify-center mx-auto mb-4 text-gray-400">
-                                 <LayoutGrid size={24} />
-                             </div>
-                             <h3 className="text-gray-900 dark:text-white font-bold mb-1">No products found</h3>
-                             <p className="text-gray-500 dark:text-gray-400 text-sm">Try adjusting your filters or search.</p>
-                         </div>
-                    )}
                  </div>
               </div>
-          ) : (
+          ) : filteredProjects.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6 animate-in fade-in duration-300 pb-12">
                 {filteredProjects.map((project) => {
                     const progress = calculateProgress(project.id);
                     const stats = getProjectStats(project.id);
-                    const { Icon, gradient } = getProductTheme(project.id);
+                    const { gradient } = getProductTheme(project.id);
+                    const bgGradient = project.iconColor || gradient;
                     return (
                         <div
                             key={project.id}
@@ -505,13 +503,11 @@ const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
                             className="bg-white dark:bg-[#15171E] rounded-2xl border border-gray-200 dark:border-white/5 p-6 hover:border-blue-500/30 dark:hover:border-blue-500/30 hover:shadow-2xl hover:shadow-blue-500/5 transition-all cursor-pointer group flex flex-col h-full relative overflow-hidden"
                         >
                             {/* Decorative Background Blob - matches product theme */}
-                            <div className={`absolute -right-6 -top-6 w-32 h-32 bg-gradient-to-br ${gradient} opacity-10 rounded-full blur-2xl group-hover:opacity-20 transition-opacity`}></div>
+                            <div className={`absolute -right-6 -top-6 w-32 h-32 bg-gradient-to-br ${bgGradient} opacity-10 rounded-full blur-2xl group-hover:opacity-20 transition-opacity`}></div>
 
                             {/* Card Header */}
                             <div className="flex items-start justify-between mb-5 relative z-10">
-                                <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-lg shadow-gray-200 dark:shadow-none group-hover:scale-110 transition-transform duration-300`}>
-                                    <Icon size={28} strokeWidth={1.5} />
-                                </div>
+                                <ProductIcon project={project} size="lg" className="shadow-lg shadow-gray-200 dark:shadow-none group-hover:scale-110 transition-transform duration-300" />
                                 <div className="flex items-center gap-2">
                                     <div className={`flex items-center justify-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${getStatusColor(project.status)}`}>
                                         {project.status}
@@ -694,7 +690,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
                     <span className="font-bold text-lg">Create New Product</span>
                 </button>
               </div>
-          )}
+          ) : null}
       </div>
 
       {/* Edit Project Modal */}
@@ -704,15 +700,24 @@ const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-gray-200 dark:border-[#1F2128] flex justify-between items-center flex-shrink-0">
                     <div className="flex items-center gap-3">
-                        {(() => {
-                            const theme = getProductTheme(projectToEdit.id);
-                            const Icon = theme.Icon;
-                            return (
-                                <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${theme.gradient} flex items-center justify-center text-white`}>
-                                    <Icon size={16} />
-                                </div>
-                            );
-                        })()}
+                        <button
+                            onClick={() => setIsIconPickerOpen(true)}
+                            className="relative group"
+                            title="Click to change icon"
+                        >
+                            <ProductIcon
+                                project={{
+                                    ...projectToEdit,
+                                    imageUrl: editFormData.imageUrl,
+                                    icon: editFormData.icon,
+                                    iconColor: editFormData.iconColor,
+                                }}
+                                size="sm"
+                            />
+                            <div className="absolute inset-0 bg-black/50 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <ImageIcon size={14} className="text-white" />
+                            </div>
+                        </button>
                         <div>
                             <h3 className="text-lg font-bold text-[#172B4D] dark:text-white">Edit Product</h3>
                             <span className="text-xs text-gray-500 dark:text-gray-400">{projectToEdit.key}</span>
@@ -972,6 +977,20 @@ const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
                     </button>
                 </div>
             </div>
+
+            {/* Icon Picker Modal */}
+            <IconPickerModal
+                isOpen={isIconPickerOpen}
+                onClose={() => setIsIconPickerOpen(false)}
+                onSave={handleIconSave}
+                currentIcon={{
+                    imageUrl: editFormData.imageUrl,
+                    icon: editFormData.icon,
+                    iconColor: editFormData.iconColor,
+                }}
+                projectId={projectToEdit.id}
+                projectName={projectToEdit.name}
+            />
         </div>
       )}
 

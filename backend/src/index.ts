@@ -3,8 +3,11 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import compression from 'compression';
+import rateLimit from 'express-rate-limit';
 
 import { config } from './config/index.js';
+import { connectDB, disconnectDB } from './lib/mongodb.js';
 import routes from './routes/index.js';
 
 const app = express();
@@ -16,6 +19,41 @@ app.use(cors({
   credentials: true,
 }));
 
+// Response compression (gzip) - significant speed improvement for larger responses
+app.use(compression({
+  level: 6, // Balanced compression level
+  threshold: 1024, // Only compress responses > 1KB
+  filter: (req, res) => {
+    // Don't compress responses with no-transform cache-control header
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    return compression.filter(req, res);
+  },
+}));
+
+// Rate limiting - protect against abuse
+const apiLimiter = rateLimit({
+  windowMs: config.rateLimit.windowMs, // Default: 15 minutes
+  max: config.rateLimit.maxRequests, // Default: 100 requests per window
+  standardHeaders: true, // Return rate limit info in headers
+  legacyHeaders: false, // Disable deprecated X-RateLimit headers
+  message: {
+    success: false,
+    error: {
+      message: 'Too many requests, please try again later.',
+      retryAfter: Math.ceil(config.rateLimit.windowMs / 1000),
+    },
+  },
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path.startsWith('/api/v1/health');
+  },
+});
+
+// Apply rate limiting to all API routes
+app.use('/api/', apiLimiter);
+
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -26,6 +64,19 @@ if (config.isDev) {
 } else {
   app.use(morgan('combined'));
 }
+
+// Request timing middleware for performance monitoring
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    // Log slow requests (> 1000ms) as warnings
+    if (duration > 1000) {
+      console.warn(`Slow request: ${req.method} ${req.path} took ${duration}ms`);
+    }
+  });
+  next();
+});
 
 // API routes
 app.use('/api/v1', routes);
@@ -56,15 +107,29 @@ app.use((req, res) => {
   });
 });
 
-// Start server
-const server = app.listen(config.port, () => {
-  console.log(`
+// Start server function
+async function startServer() {
+  // Connect to MongoDB
+  try {
+    await connectDB();
+    console.log('✅ MongoDB connected');
+  } catch (error) {
+    console.error('❌ Failed to connect to MongoDB:', error);
+    console.log('💡 Make sure MongoDB is running or MONGODB_URI is set correctly');
+    process.exit(1);
+  }
+
+  // Start Express server - Listen on 0.0.0.0 for network access
+  const server = app.listen(config.port, '0.0.0.0', () => {
+    console.log(`
 ====================================
   INFINIA PRODUCTS API SERVER
 ====================================
-  URL: http://localhost:${config.port}
-  API: http://localhost:${config.port}/api/v1
-  Health: http://localhost:${config.port}/api/v1/health
+  Local:   http://localhost:${config.port}
+  Network: http://0.0.0.0:${config.port}
+  API:     http://localhost:${config.port}/api/v1
+  Health:  http://localhost:${config.port}/api/v1/health
+  Database: MongoDB
   Environment: ${config.nodeEnv}
 ====================================
 
@@ -134,23 +199,23 @@ Available endpoints:
   PATCH  /api/v1/comments/:id
   DELETE /api/v1/comments/:id
   `);
-});
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully');
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
   });
-});
 
-process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully');
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
+  // Graceful shutdown
+  const gracefulShutdown = async (signal: string) => {
+    console.log(`${signal} received, shutting down gracefully`);
+    server.close(async () => {
+      await disconnectDB();
+      console.log('Server closed');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+}
+
+// Start the server
+startServer();
 
 export default app;

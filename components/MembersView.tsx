@@ -21,7 +21,7 @@ const MembersView: React.FC = () => {
             </div>
             
             <h3 className="text-lg font-bold text-[#172B4D] dark:text-white mb-1">{user.name}</h3>
-            <p className="text-indigo-600 dark:text-indigo-400 text-sm font-medium mb-4">{user.role || 'Team Member'}</p>
+            <p className="text-indigo-600 dark:text-indigo-400 text-sm font-medium mb-4">{user.designation || 'Team Member'}</p>
             
             <div className="space-y-2 mb-6">
                <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">

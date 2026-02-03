@@ -9,6 +9,10 @@ export interface Project {
   progress_percentage: number;
   is_favorite: boolean;
   owner_id: string | null;
+  organization_id?: string | null;
+  image_url: string | null;
+  icon: string | null;
+  icon_color: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -25,17 +29,22 @@ export interface CreateProjectInput {
   description?: string;
   code: string;
   owner_id?: string;
+  organization_id?: string;
+  image_url?: string;
+  icon?: string;
+  icon_color?: string;
 }
 
-function getProjectStats(projectId: string): { total_tasks: number; completed_tasks: number; active_sprints: number; team_size: number } {
-  const tasks = database.findMany<any>('tasks', t => t.project_id === projectId);
-  const columns = database.getAll<any>('columns_status');
+async function getProjectStats(projectId: string): Promise<{ total_tasks: number; completed_tasks: number; active_sprints: number; team_size: number }> {
+  const tasks = await database.findMany<any>('tasks', { project_id: projectId });
+  const columns = await database.getAll<any>('columns_status');
   const doneColumn = columns.find(c => c.project_id === projectId && c.title === 'DONE');
   const completedTasks = doneColumn
     ? tasks.filter(t => t.column_id === doneColumn.id).length
     : 0;
-  const activeSprints = database.count('sprints', s => s.project_id === projectId && s.status === 'active');
-  const teamSize = new Set(database.findMany<any>('project_members', pm => pm.project_id === projectId).map(pm => pm.user_id)).size;
+  const activeSprints = await database.count('sprints', { project_id: projectId, status: 'active' });
+  const projectMembers = await database.findMany<any>('project_members', { project_id: projectId });
+  const teamSize = new Set(projectMembers.map(pm => pm.user_id)).size;
 
   return {
     total_tasks: tasks.length,
@@ -46,74 +55,73 @@ function getProjectStats(projectId: string): { total_tasks: number; completed_ta
 }
 
 export const projectsService = {
-  getAll(): ProjectWithStats[] {
-    return database.getAll<Project>('projects').map(project => ({
-      ...project,
-      ...getProjectStats(project.id),
-    }));
+  async getAll(): Promise<ProjectWithStats[]> {
+    const projects = await database.getAll<Project>('projects');
+    const projectsWithStats = await Promise.all(
+      projects.map(async (project) => ({
+        ...project,
+        ...(await getProjectStats(project.id)),
+      }))
+    );
+    return projectsWithStats;
   },
 
-  /**
-   * Get projects filtered by user access
-   * - Admins see all projects
-   * - Non-admins see only projects where they are owner or member
-   */
-  getAllForUser(userId: string, isAdmin: boolean): ProjectWithStats[] {
+  async getAllForUser(userId: string, isAdmin: boolean): Promise<ProjectWithStats[]> {
     if (isAdmin) {
       return this.getAll();
     }
 
-    const allProjects = database.getAll<Project>('projects');
+    const allProjects = await database.getAll<Project>('projects');
 
     // Get all project IDs where the user is a member
-    const membershipProjectIds = new Set(
-      database.findMany<any>('project_members', pm => pm.user_id === userId)
-        .map(pm => pm.project_id)
-    );
+    const memberships = await database.findMany<any>('project_members', { user_id: userId });
+    const membershipProjectIds = new Set(memberships.map(pm => pm.project_id));
 
     // Filter projects where user is owner or member
     const accessibleProjects = allProjects.filter(project =>
       project.owner_id === userId || membershipProjectIds.has(project.id)
     );
 
-    return accessibleProjects.map(project => ({
-      ...project,
-      ...getProjectStats(project.id),
-    }));
+    const projectsWithStats = await Promise.all(
+      accessibleProjects.map(async (project) => ({
+        ...project,
+        ...(await getProjectStats(project.id)),
+      }))
+    );
+    return projectsWithStats;
   },
 
-  /**
-   * Check if a user has access to a specific project
-   */
-  userHasAccess(projectId: string, userId: string, isAdmin: boolean): boolean {
+  async userHasAccess(projectId: string, userId: string, isAdmin: boolean): Promise<boolean> {
     if (isAdmin) return true;
 
-    const project = database.findById<Project>('projects', projectId);
+    const project = await database.findById<Project>('projects', projectId);
     if (!project) return false;
 
     // User is owner
     if (project.owner_id === userId) return true;
 
     // User is member
-    const membership = database.findOne<any>('project_members',
-      pm => pm.project_id === projectId && pm.user_id === userId
-    );
+    const membership = await database.findOne<any>('project_members', {
+      project_id: projectId,
+      user_id: userId
+    });
 
     return Boolean(membership);
   },
 
-  getById(id: string): ProjectWithStats | null {
-    const project = database.findById<Project>('projects', id);
+  async getById(id: string): Promise<ProjectWithStats | null> {
+    const project = await database.findById<Project>('projects', id);
     if (!project) return null;
-    return { ...project, ...getProjectStats(id) };
+    return { ...project, ...(await getProjectStats(id)) };
   },
 
-  getByCode(code: string): Project | null {
-    return database.findOne<Project>('projects', p => p.code === code) || null;
+  async getByCode(code: string): Promise<Project | null> {
+    return database.findOne<Project>('projects', { code });
   },
 
-  create(input: CreateProjectInput): ProjectWithStats {
-    if (this.getByCode(input.code)) {
+  async create(input: CreateProjectInput): Promise<ProjectWithStats> {
+    const existing = await this.getByCode(input.code);
+    if (existing) {
       throw new Error('UNIQUE constraint failed: code already exists');
     }
 
@@ -126,35 +134,40 @@ export const projectsService = {
       progress_percentage: 0,
       is_favorite: false,
       owner_id: input.owner_id || null,
+      organization_id: input.organization_id || null,
+      image_url: input.image_url || null,
+      icon: input.icon || null,
+      icon_color: input.icon_color || null,
       created_at: now(),
       updated_at: now(),
     };
 
-    database.insert('projects', project);
+    await database.insert('projects', project);
 
     // Create default columns
     const columns = ['IDEA', 'TO DO', 'IN PROGRESS', 'TESTING', 'DONE'];
     const colors = ['gray', 'blue', 'yellow', 'purple', 'green'];
-    columns.forEach((title, index) => {
-      database.insert('columns_status', {
+
+    for (let index = 0; index < columns.length; index++) {
+      await database.insert('columns_status', {
         id: generateUUID(),
         project_id: project.id,
-        title,
+        title: columns[index],
         display_order: index,
         color: colors[index],
         is_default: index === 1,
         created_at: now(),
       });
-    });
+    }
 
-    return this.getById(project.id)!;
+    return (await this.getById(project.id))!;
   },
 
-  update(id: string, input: Partial<CreateProjectInput & { status?: string; progress_percentage?: number; is_favorite?: boolean }>): ProjectWithStats | null {
-    const existing = database.findById<Project>('projects', id);
+  async update(id: string, input: Partial<CreateProjectInput & { status?: string; progress_percentage?: number; is_favorite?: boolean; image_url?: string | null; icon?: string | null; icon_color?: string | null }>): Promise<ProjectWithStats | null> {
+    const existing = await database.findById<Project>('projects', id);
     if (!existing) return null;
 
-    database.update<Project>('projects', id, {
+    await database.update<Project>('projects', id, {
       ...input,
       updated_at: now(),
     });
@@ -162,34 +175,40 @@ export const projectsService = {
     return this.getById(id);
   },
 
-  delete(id: string): boolean {
+  async delete(id: string): Promise<boolean> {
     // Also delete related data
-    database.deleteMany('tasks', t => t.project_id === id);
-    database.deleteMany('sprints', s => s.project_id === id);
-    database.deleteMany('columns_status', c => c.project_id === id);
-    database.deleteMany('tags', t => t.project_id === id);
-    database.deleteMany('project_members', pm => pm.project_id === id);
+    await database.deleteMany('tasks', { project_id: id });
+    await database.deleteMany('sprints', { project_id: id });
+    await database.deleteMany('columns_status', { project_id: id });
+    await database.deleteMany('tags', { project_id: id });
+    await database.deleteMany('project_members', { project_id: id });
     return database.delete('projects', id);
   },
 
-  getMembers(projectId: string) {
-    const members = database.findMany<any>('project_members', pm => pm.project_id === projectId);
-    return members.map(pm => {
-      const user = database.findById<any>('users', pm.user_id);
-      return {
-        id: user?.id,
-        name: user?.name,
-        email: user?.email,
-        avatar_url: user?.avatar_url,
-        user_role: user?.role,
-        project_role: pm.role,
-        joined_at: pm.joined_at,
-      };
-    }).filter(m => m.id);
+  async getMembers(projectId: string) {
+    const members = await database.findMany<any>('project_members', { project_id: projectId });
+    const membersWithUsers = await Promise.all(
+      members.map(async (pm) => {
+        const user = await database.findById<any>('users', pm.user_id);
+        return {
+          id: user?.id,
+          name: user?.name,
+          email: user?.email,
+          avatar_url: user?.avatar_url,
+          user_role: user?.role,
+          project_role: pm.role,
+          joined_at: pm.joined_at,
+        };
+      })
+    );
+    return membersWithUsers.filter(m => m.id);
   },
 
-  addMember(projectId: string, userId: string, role: string = 'member') {
-    const existing = database.findOne<any>('project_members', pm => pm.project_id === projectId && pm.user_id === userId);
+  async addMember(projectId: string, userId: string, role: string = 'member') {
+    const existing = await database.findOne<any>('project_members', {
+      project_id: projectId,
+      user_id: userId
+    });
     if (existing) {
       throw new Error('UNIQUE constraint failed: user is already a member');
     }
@@ -201,12 +220,15 @@ export const projectsService = {
       role,
       joined_at: now(),
     };
-    database.insert('project_members', member);
+    await database.insert('project_members', member);
     return member;
   },
 
-  removeMember(projectId: string, userId: string): boolean {
-    const count = database.deleteMany('project_members', pm => pm.project_id === projectId && pm.user_id === userId);
+  async removeMember(projectId: string, userId: string): Promise<boolean> {
+    const count = await database.deleteMany('project_members', {
+      project_id: projectId,
+      user_id: userId
+    });
     return count > 0;
   },
 };

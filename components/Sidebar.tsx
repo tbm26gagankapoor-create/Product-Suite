@@ -110,7 +110,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onLogout, 
         type: 'user',
         id: u.id,
         title: u.name,
-        subtitle: u.role || 'Member',
+        subtitle: u.designation || 'Member',
         icon: <Users size={14} className="text-orange-500" />,
         data: u
       });
@@ -417,7 +417,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onLogout, 
                 
                 <div className={`flex-1 min-w-0 transition-opacity duration-200 cursor-pointer ${isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'}`}>
                     <div className="text-[13px] font-bold text-gray-900 dark:text-white leading-tight truncate">{currentUser.name}</div>
-                    <div className="text-[11px] text-gray-500 truncate">{currentUser.role || 'Member'}</div>
+                    <div className="text-[11px] text-gray-500 truncate">{currentUser.designation || 'Member'}</div>
                 </div>
                 
                 {!isCollapsed && (
