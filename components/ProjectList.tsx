@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import { useProjectData } from '../context/ProjectDataContext';
 import { Project, Task, User } from '../types';
-import { USERS } from '../constants';
 import ProductGeneratorModal from './ProductGeneratorModal';
 import JiraImportModal from './JiraImportModal';
 import ProductIcon, { getProductTheme, ProductIconData } from './ProductIcon';

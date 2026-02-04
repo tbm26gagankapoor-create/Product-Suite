@@ -15,10 +15,12 @@ import OAuthCallback from './components/OAuthCallback';
 import UserProfileView from './components/UserProfileView';
 import UserManagementView from './components/UserManagementView';
 import OrganizationOnboarding from './components/OrganizationOnboarding';
+import InviteAcceptPage from './components/InviteAcceptPage';
 import { AppLoadingScreen, DataLoadingScreen, ConnectionErrorScreen } from './components/LoadingScreens';
 import { ThemeProvider } from './context/ThemeContext';
 import { ProjectDataProvider, useProjectData } from './context/ProjectDataContext';
 import { ToastProvider, useToast } from './context/ToastContext';
+import { ConfigProvider } from './context/ConfigContext';
 import { api } from './lib/api';
 import { organizationsService } from './services/organizations.service';
 
@@ -36,22 +38,40 @@ const AppContent: React.FC = () => {
   const [onboardingCompleted, setOnboardingCompleted] = useState(false); // Prevent re-showing after completion
   const [matchingOrganizations, setMatchingOrganizations] = useState<any[]>([]);
 
+  // Invite State
+  const [inviteId, setInviteId] = useState<string | null>(null);
+
   // App View State
   const [currentView, setCurrentView] = useState<View>('home');
-  const [activeProjectId, setActiveProjectId] = useState<string>('p1'); // Default to Infinia Platform
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
 
   // Consume Context
   const { projects, refreshData, currentUser, currentOrganization, isLoading, connectionStatus, connectionError } = useProjectData();
   const { success } = useToast();
-  const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
 
-  // Check for special URLs on mount (password reset, OAuth callback)
+  // Set activeProjectId to first project when projects load and no project is selected
+  useEffect(() => {
+    if (!activeProjectId && projects.length > 0) {
+      setActiveProjectId(projects[0].id);
+    }
+  }, [projects, activeProjectId]);
+
+  const activeProject = activeProjectId ? projects.find(p => p.id === activeProjectId) : projects[0];
+
+  // Check for special URLs on mount (password reset, OAuth callback, invite)
   useEffect(() => {
     const pathname = window.location.pathname;
 
     // Check for OAuth callback URL
     if (pathname.includes('/oauth/callback')) {
       setAuthView('oauth-callback');
+      return;
+    }
+
+    // Check for invite URL
+    const inviteMatch = pathname.match(/\/invite\/([a-zA-Z0-9-]+)/);
+    if (inviteMatch) {
+      setInviteId(inviteMatch[1]);
       return;
     }
 
@@ -70,6 +90,13 @@ const AppContent: React.FC = () => {
       if (session) {
         setIsAuthenticated(true);
         refreshData();
+
+        // Check for pending invite after login
+        const pendingInviteId = sessionStorage.getItem('pending_invite_id');
+        if (pendingInviteId) {
+          sessionStorage.removeItem('pending_invite_id');
+          setInviteId(pendingInviteId);
+        }
       }
 
       setIsAuthChecking(false);
@@ -130,6 +157,28 @@ const AppContent: React.FC = () => {
   // Loading Screen while checking auth
   if (isAuthChecking) {
       return <AppLoadingScreen />;
+  }
+
+  // Invite Accept Page
+  if (inviteId) {
+    return (
+      <InviteAcceptPage
+        inviteId={inviteId}
+        isAuthenticated={isAuthenticated}
+        currentUserEmail={currentUser?.email}
+        onLoginRequired={() => {
+          // Store the invite ID so we can return after login
+          sessionStorage.setItem('pending_invite_id', inviteId);
+          setInviteId(null);
+        }}
+        onAcceptSuccess={(organizationId) => {
+          // Clear the invite ID and refresh
+          setInviteId(null);
+          window.history.replaceState({}, document.title, '/');
+          refreshData();
+        }}
+      />
+    );
   }
 
   // Connection Error Screen
@@ -292,9 +341,11 @@ const App: React.FC = () => {
   return (
     <ThemeProvider>
       <ToastProvider>
-        <ProjectDataProvider>
-          <AppContent />
-        </ProjectDataProvider>
+        <ConfigProvider>
+          <ProjectDataProvider>
+            <AppContent />
+          </ProjectDataProvider>
+        </ConfigProvider>
       </ToastProvider>
     </ThemeProvider>
   );

@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { usersService } from '../services/users.service.js';
+import { organizationsService } from '../services/organizations.service.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.middleware.js';
 import database from '../lib/database.js';
 
@@ -90,6 +91,41 @@ router.delete('/:id', async (req, res) => {
     return res.status(404).json({ success: false, error: 'User not found' });
   }
   res.json({ success: true, message: 'User deleted' });
+});
+
+// Switch active organization
+router.post('/switch-organization', async (req: AuthRequest, res: Response) => {
+  const userId = req.user?.id;
+  const { organizationId } = req.body;
+
+  if (!userId) {
+    return res.status(401).json({ success: false, error: 'User not authenticated' });
+  }
+
+  if (!organizationId) {
+    return res.status(400).json({ success: false, error: 'organizationId is required' });
+  }
+
+  // Verify user is a member of this organization
+  const membership = await organizationsService.getMember(organizationId, userId);
+  if (!membership) {
+    return res.status(403).json({ success: false, error: 'You are not a member of this organization' });
+  }
+
+  // Update user's active organization
+  const updatedUser = await usersService.update(userId, { organization_id: organizationId });
+  if (!updatedUser) {
+    return res.status(500).json({ success: false, error: 'Failed to switch organization' });
+  }
+
+  res.json({
+    success: true,
+    data: {
+      user: updatedUser,
+      organizationId,
+      role: membership.role,
+    },
+  });
 });
 
 export default router;

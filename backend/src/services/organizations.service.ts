@@ -206,11 +206,15 @@ export const organizationsService = {
 
     await database.insert('organization_members', member);
 
-    // Update user's organization_id
-    await database.update('users', userId, {
-      organization_id: organizationId,
-      updated_at: now(),
-    });
+    // Only set user's organization_id if they don't have one (first org they join)
+    // For multi-org support, users can switch their active org from the UI
+    const user = await database.findById<any>('users', userId);
+    if (user && !user.organization_id) {
+      await database.update('users', userId, {
+        organization_id: organizationId,
+        updated_at: now(),
+      });
+    }
 
     return member;
   },

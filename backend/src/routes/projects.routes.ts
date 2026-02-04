@@ -23,7 +23,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     return res.json({ success: true, data: projects });
   }
 
-  const projects = await projectsService.getAllForUser(user.id, user.isAdmin);
+  const projects = await projectsService.getAllForUser(user.id, user.isAdmin, user.organizationId);
   res.json({ success: true, data: projects });
 });
 

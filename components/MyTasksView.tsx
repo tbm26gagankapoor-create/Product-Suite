@@ -1,28 +1,29 @@
 
 import React, { useState } from 'react';
-import { 
-  CheckCircle2, 
-  Circle, 
-  Clock, 
-  Calendar, 
-  Filter, 
-  ArrowUpRight, 
-  MoreHorizontal, 
-  Plus, 
-  AlertCircle, 
-  CheckCircle, 
-  Search, 
-  Layout, 
-  Flag, 
-  Briefcase 
+import {
+  CheckCircle2,
+  Circle,
+  Clock,
+  Calendar,
+  Filter,
+  ArrowUpRight,
+  MoreHorizontal,
+  Plus,
+  AlertCircle,
+  CheckCircle,
+  Search,
+  Layout,
+  Flag
 } from 'lucide-react';
-import { COLUMNS } from '../constants';
 import { Task } from '../types';
 import TaskDetailModal from './TaskDetailModal';
 import { useProjectData } from '../context/ProjectDataContext';
+import { useConfig } from '../context/ConfigContext';
+import ProductIcon from './ProductIcon';
 
 const MyTasksView: React.FC = () => {
   const { myTasks: allMyTasks, updateTask, currentUser, projects } = useProjectData();
+  const { statuses, getStatusConfig } = useConfig();
   // Extended filter state to include specific widget filters
   const [filter, setFilter] = useState<'all' | 'incomplete' | 'completed' | 'overdue' | 'today'>('incomplete');
   const [activeTab, setActiveTab] = useState('list');
@@ -98,8 +99,12 @@ const MyTasksView: React.FC = () => {
       }
   };
 
+  const getProject = (projId: string) => {
+      return projects.find(p => p.id === projId);
+  };
+
   const getProjectName = (projId: string) => {
-      const project = projects.find(p => p.id === projId);
+      const project = getProject(projId);
       return project ? project.name : 'Unknown Project';
   };
 
@@ -324,7 +329,7 @@ const MyTasksView: React.FC = () => {
                                                      <span className="text-[9px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-500/10 dark:text-purple-400 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-500/20">REPORTER</span>
                                                  )}
                                                  <div className={`flex items-center justify-center px-[6px] py-[4px] gap-2 h-[25px] rounded-[4px] text-xs font-medium leading-tight ${getStatusBadgeStyles(task.columnId)}`}>
-                                                    {COLUMNS.find(c => c.id === task.columnId)?.title}
+                                                    {getStatusConfig(task.columnId)?.label || task.columnId.toUpperCase()}
                                                  </div>
                                                  {task.points !== undefined && (
                                                     <span className="flex items-center justify-center w-5 h-5 bg-gray-100 dark:bg-[#2D2F36] rounded text-[10px] font-bold text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-[#3D404A]" title="Story Points">
@@ -341,7 +346,9 @@ const MyTasksView: React.FC = () => {
                                                  {task.title}
                                              </div>
                                              <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
-                                                 <Briefcase size={12} />
+                                                 {getProject(task.projectId) && (
+                                                   <ProductIcon project={getProject(task.projectId)!} size="xs" />
+                                                 )}
                                                  <span className="font-medium text-gray-600 dark:text-gray-400">{getProjectName(task.projectId)}</span>
                                              </div>
                                          </div>

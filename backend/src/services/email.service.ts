@@ -1,204 +1,108 @@
-import nodemailer from 'nodemailer';
+/**
+ * Email Service using Resend
+ * Handles all email sending for the application
+ */
+
+import { Resend } from 'resend';
 import { config } from '../config/index.js';
+import {
+  invitationHtml,
+  invitationText,
+  welcomeHtml,
+  welcomeText,
+  passwordResetHtml,
+  passwordResetText,
+  taskAssignedHtml,
+  taskAssignedText,
+  commentNotificationHtml,
+  commentNotificationText,
+  mentionHtml,
+  mentionText,
+  sprintReminderHtml,
+  sprintReminderText,
+  digestHtml,
+  digestText,
+  type InvitationTemplateData,
+  type WelcomeTemplateData,
+  type PasswordResetTemplateData,
+  type TaskAssignedTemplateData,
+  type CommentNotificationTemplateData,
+  type MentionTemplateData,
+  type SprintReminderTemplateData,
+  type DigestTemplateData,
+} from '../templates/email/index.js';
 
-// Initialize Gmail SMTP transporter
-const transporter = config.gmail.user && config.gmail.appPassword
-  ? nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: config.gmail.user,
-        pass: config.gmail.appPassword,
-      },
-    })
-  : null;
+// Initialize Resend client
+const resend = config.resend.apiKey ? new Resend(config.resend.apiKey) : null;
 
-interface SendInviteEmailParams {
-  toEmail: string;
-  inviterName: string;
-  organizationName: string;
-  inviteLink: string;
-  role: 'member' | 'admin';
-}
-
-interface EmailResult {
+/**
+ * Email result interface
+ */
+export interface EmailResult {
   success: boolean;
-  messageId?: string;
+  resendId?: string;
   error?: string;
 }
 
 /**
- * Generate the HTML template for invitation emails
+ * Base send email parameters
  */
-function getInviteEmailTemplate(params: SendInviteEmailParams): string {
-  const { inviterName, organizationName, inviteLink, role } = params;
-
-  const roleColor = role === 'admin' ? '#8B5CF6' : '#3B82F6';
-  const roleLabel = role === 'admin' ? 'Admin' : 'Member';
-
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>You're Invited to ${organizationName}</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f5f7;">
-  <table role="presentation" style="width: 100%; border-collapse: collapse;">
-    <tr>
-      <td align="center" style="padding: 40px 20px;">
-        <table role="presentation" style="width: 100%; max-width: 600px; border-collapse: collapse;">
-
-          <!-- Header -->
-          <tr>
-            <td style="background: linear-gradient(135deg, #172B4D 0%, #0052CC 100%); padding: 32px 40px; border-radius: 16px 16px 0 0;">
-              <table role="presentation" style="width: 100%;">
-                <tr>
-                  <td>
-                    <h1 style="margin: 0; font-size: 24px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px;">
-                      INFINIA
-                    </h1>
-                    <p style="margin: 4px 0 0 0; font-size: 12px; color: rgba(255,255,255,0.7); text-transform: uppercase; letter-spacing: 1px;">
-                      Product Suite
-                    </p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Main Content -->
-          <tr>
-            <td style="background-color: #ffffff; padding: 48px 40px;">
-              <!-- Invitation Message -->
-              <h2 style="margin: 0 0 8px 0; font-size: 28px; font-weight: 700; color: #172B4D; line-height: 1.3;">
-                You're invited!
-              </h2>
-              <p style="margin: 0 0 32px 0; font-size: 16px; color: #5E6C84; line-height: 1.6;">
-                <strong style="color: #172B4D;">${inviterName}</strong> has invited you to join
-                <strong style="color: #172B4D;">${organizationName}</strong> on Infinia.
-              </p>
-
-              <!-- Role Badge -->
-              <table role="presentation" style="margin-bottom: 32px;">
-                <tr>
-                  <td style="background-color: ${roleColor}15; border: 1px solid ${roleColor}30; border-radius: 8px; padding: 12px 20px;">
-                    <span style="font-size: 13px; font-weight: 600; color: ${roleColor};">
-                      You'll join as: ${roleLabel}
-                    </span>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- CTA Button -->
-              <table role="presentation" style="width: 100%; margin-bottom: 32px;">
-                <tr>
-                  <td align="center">
-                    <a href="${inviteLink}"
-                       style="display: inline-block; background: linear-gradient(135deg, #0052CC 0%, #0065FF 100%); color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 700; padding: 16px 48px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 82, 204, 0.3);">
-                      Accept Invitation
-                    </a>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Expiration Notice -->
-              <table role="presentation" style="width: 100%; background-color: #FEF3C7; border-radius: 8px; margin-bottom: 24px;">
-                <tr>
-                  <td style="padding: 16px 20px;">
-                    <p style="margin: 0; font-size: 14px; color: #92400E;">
-                      <strong>Note:</strong> This invitation will expire in 7 days.
-                    </p>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Link fallback -->
-              <p style="margin: 0; font-size: 13px; color: #5E6C84; line-height: 1.6;">
-                If the button doesn't work, copy and paste this link into your browser:
-              </p>
-              <p style="margin: 8px 0 0 0; font-size: 13px; color: #0052CC; word-break: break-all;">
-                <a href="${inviteLink}" style="color: #0052CC;">${inviteLink}</a>
-              </p>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: #F4F5F7; padding: 24px 40px; border-radius: 0 0 16px 16px; border-top: 1px solid #E2E8F0;">
-              <p style="margin: 0 0 8px 0; font-size: 13px; color: #5E6C84; text-align: center;">
-                This email was sent by Infinia Product Suite
-              </p>
-              <p style="margin: 0; font-size: 12px; color: #94A3B8; text-align: center;">
-                If you didn't expect this invitation, you can safely ignore this email.
-              </p>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-`;
+interface SendEmailParams {
+  to: string | string[];
+  subject: string;
+  html: string;
+  text: string;
+  replyTo?: string;
+  tags?: Array<{ name: string; value: string }>;
 }
 
 /**
- * Generate plain text version of the email
+ * Sanitize tag value for Resend (only ASCII letters, numbers, underscores, or dashes)
  */
-function getInviteEmailText(params: SendInviteEmailParams): string {
-  const { inviterName, organizationName, inviteLink, role } = params;
-  const roleLabel = role === 'admin' ? 'Admin' : 'Member';
-
-  return `
-You're invited to join ${organizationName} on Infinia!
-
-${inviterName} has invited you to join ${organizationName}.
-
-You'll join as: ${roleLabel}
-
-Accept your invitation by clicking the link below:
-${inviteLink}
-
-Note: This invitation will expire in 7 days.
-
----
-This email was sent by Infinia Product Suite.
-If you didn't expect this invitation, you can safely ignore this email.
-`.trim();
+function sanitizeTagValue(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 50);
 }
 
 /**
- * Send an invitation email using Gmail SMTP
+ * Send an email using Resend
  */
-export async function sendInviteEmail(params: SendInviteEmailParams): Promise<EmailResult> {
-  if (!transporter) {
-    console.warn('Gmail SMTP not configured. Email not sent.');
+async function sendEmail(params: SendEmailParams): Promise<EmailResult> {
+  if (!resend) {
+    console.warn('Resend not configured. Email not sent.');
     return {
       success: false,
-      error: 'Email service not configured. Please add GMAIL_USER and GMAIL_APP_PASSWORD to your environment.',
+      error: 'Email service not configured. Please add RESEND_API_KEY to your environment.',
     };
   }
 
-  const { toEmail, organizationName } = params;
+  const { to, subject, html, text, replyTo, tags } = params;
 
   try {
-    const info = await transporter.sendMail({
-      from: `"Infinia" <${config.gmail.user}>`,
-      to: toEmail,
-      subject: `You've been invited to join ${organizationName} on Infinia`,
-      html: getInviteEmailTemplate(params),
-      text: getInviteEmailText(params),
+    // Sanitize tag values for Resend API
+    const sanitizedTags = tags?.map(tag => ({
+      name: sanitizeTagValue(tag.name),
+      value: sanitizeTagValue(tag.value),
+    }));
+
+    const { data, error } = await resend.emails.send({
+      from: `${config.resend.fromName} <${config.resend.fromEmail}>`,
+      to: Array.isArray(to) ? to : [to],
+      subject,
+      html,
+      text,
+      replyTo: replyTo || config.resend.replyTo || undefined,
+      tags: sanitizedTags,
     });
 
-    console.log(`Invite email sent successfully to ${toEmail}, messageId: ${info.messageId}`);
-    return {
-      success: true,
-      messageId: info.messageId,
-    };
+    if (error) {
+      console.error('Resend API error:', error);
+      return { success: false, error: error.message };
+    }
+
+    console.log(`Email sent successfully to ${Array.isArray(to) ? to.join(', ') : to}, resendId: ${data?.id}`);
+    return { success: true, resendId: data?.id };
   } catch (err) {
-    console.error('Error sending invite email:', err);
+    console.error('Email send error:', err);
     return {
       success: false,
       error: err instanceof Error ? err.message : 'Unknown error occurred',
@@ -206,14 +110,324 @@ export async function sendInviteEmail(params: SendInviteEmailParams): Promise<Em
   }
 }
 
+// ===================
+// Invitation Email
+// ===================
+
+export interface SendInviteEmailParams {
+  toEmail: string;
+  inviterName: string;
+  organizationName: string;
+  inviteLink: string;
+  role: 'member' | 'admin';
+}
+
+/**
+ * Send an invitation email
+ */
+export async function sendInviteEmail(params: SendInviteEmailParams): Promise<EmailResult> {
+  const { toEmail, inviterName, organizationName, inviteLink, role } = params;
+
+  const templateData: InvitationTemplateData = {
+    inviterName,
+    organizationName,
+    inviteLink,
+    role,
+    expiresIn: '7 days',
+  };
+
+  return sendEmail({
+    to: toEmail,
+    subject: `You've been invited to join ${organizationName} on Infinia`,
+    html: invitationHtml(templateData),
+    text: invitationText(templateData),
+    tags: [
+      { name: 'type', value: 'invitation' },
+      { name: 'organization', value: organizationName },
+    ],
+  });
+}
+
+// ===================
+// Welcome Email
+// ===================
+
+export interface SendWelcomeEmailParams {
+  toEmail: string;
+  userName: string;
+  loginUrl: string;
+}
+
+/**
+ * Send a welcome email to new users
+ */
+export async function sendWelcomeEmail(params: SendWelcomeEmailParams): Promise<EmailResult> {
+  const { toEmail, userName, loginUrl } = params;
+
+  const templateData: WelcomeTemplateData = {
+    userName,
+    loginUrl,
+  };
+
+  return sendEmail({
+    to: toEmail,
+    subject: 'Welcome to Infinia!',
+    html: welcomeHtml(templateData),
+    text: welcomeText(templateData),
+    tags: [{ name: 'type', value: 'welcome' }],
+  });
+}
+
+// ===================
+// Password Reset Email
+// ===================
+
+export interface SendPasswordResetEmailParams {
+  toEmail: string;
+  userName: string;
+  resetLink: string;
+  expiresIn?: string;
+}
+
+/**
+ * Send a password reset email
+ */
+export async function sendPasswordResetEmail(params: SendPasswordResetEmailParams): Promise<EmailResult> {
+  const { toEmail, userName, resetLink, expiresIn = '1 hour' } = params;
+
+  const templateData: PasswordResetTemplateData = {
+    userName,
+    resetLink,
+    expiresIn,
+  };
+
+  return sendEmail({
+    to: toEmail,
+    subject: 'Reset your Infinia password',
+    html: passwordResetHtml(templateData),
+    text: passwordResetText(templateData),
+    tags: [{ name: 'type', value: 'password-reset' }],
+  });
+}
+
+// ===================
+// Task Assigned Email
+// ===================
+
+export interface SendTaskAssignedEmailParams {
+  toEmail: string;
+  assigneeName: string;
+  assignerName: string;
+  taskTitle: string;
+  taskKey: string;
+  taskType: string;
+  projectName: string;
+  priority?: string;
+  dueDate?: string;
+  taskUrl: string;
+}
+
+/**
+ * Send a task assignment notification email
+ */
+export async function sendTaskAssignedEmail(params: SendTaskAssignedEmailParams): Promise<EmailResult> {
+  const { toEmail, ...templateData } = params;
+
+  return sendEmail({
+    to: toEmail,
+    subject: `[${templateData.taskKey}] Task assigned to you: ${templateData.taskTitle}`,
+    html: taskAssignedHtml(templateData),
+    text: taskAssignedText(templateData),
+    tags: [
+      { name: 'type', value: 'task-assigned' },
+      { name: 'task', value: templateData.taskKey },
+    ],
+  });
+}
+
+// ===================
+// Comment Notification Email
+// ===================
+
+export interface SendCommentNotificationEmailParams {
+  toEmail: string;
+  recipientName: string;
+  commenterName: string;
+  commentPreview: string;
+  taskTitle: string;
+  taskKey: string;
+  projectName: string;
+  taskUrl: string;
+  isReply?: boolean;
+}
+
+/**
+ * Send a comment notification email
+ */
+export async function sendCommentNotificationEmail(params: SendCommentNotificationEmailParams): Promise<EmailResult> {
+  const { toEmail, ...templateData } = params;
+  const isReply = templateData.isReply ?? false;
+
+  return sendEmail({
+    to: toEmail,
+    subject: isReply
+      ? `[${templateData.taskKey}] ${templateData.commenterName} replied to your comment`
+      : `[${templateData.taskKey}] ${templateData.commenterName} commented on ${templateData.taskTitle}`,
+    html: commentNotificationHtml(templateData),
+    text: commentNotificationText(templateData),
+    tags: [
+      { name: 'type', value: isReply ? 'comment-reply' : 'comment' },
+      { name: 'task', value: templateData.taskKey },
+    ],
+  });
+}
+
+// ===================
+// Mention Email
+// ===================
+
+export interface SendMentionEmailParams {
+  toEmail: string;
+  recipientName: string;
+  mentionerName: string;
+  context: string;
+  taskTitle: string;
+  taskKey: string;
+  projectName: string;
+  taskUrl: string;
+}
+
+/**
+ * Send a mention notification email
+ */
+export async function sendMentionEmail(params: SendMentionEmailParams): Promise<EmailResult> {
+  const { toEmail, ...templateData } = params;
+
+  return sendEmail({
+    to: toEmail,
+    subject: `[${templateData.taskKey}] ${templateData.mentionerName} mentioned you`,
+    html: mentionHtml(templateData),
+    text: mentionText(templateData),
+    tags: [
+      { name: 'type', value: 'mention' },
+      { name: 'task', value: templateData.taskKey },
+    ],
+  });
+}
+
+// ===================
+// Sprint Reminder Email
+// ===================
+
+export interface SendSprintReminderEmailParams {
+  toEmail: string;
+  recipientName: string;
+  sprintName: string;
+  projectName: string;
+  reminderType: 'starting' | 'ending';
+  daysUntil: number;
+  sprintGoal?: string;
+  startDate: string;
+  endDate: string;
+  taskCount?: number;
+  completedCount?: number;
+  sprintUrl: string;
+}
+
+/**
+ * Send a sprint reminder email
+ */
+export async function sendSprintReminderEmail(params: SendSprintReminderEmailParams): Promise<EmailResult> {
+  const { toEmail, ...templateData } = params;
+
+  const timeText = templateData.daysUntil === 0
+    ? 'today'
+    : templateData.daysUntil === 1
+      ? 'tomorrow'
+      : `in ${templateData.daysUntil} days`;
+
+  return sendEmail({
+    to: toEmail,
+    subject: `Sprint "${templateData.sprintName}" ${templateData.reminderType === 'starting' ? 'starts' : 'ends'} ${timeText}`,
+    html: sprintReminderHtml(templateData),
+    text: sprintReminderText(templateData),
+    tags: [
+      { name: 'type', value: 'sprint-reminder' },
+      { name: 'sprint', value: templateData.sprintName },
+    ],
+  });
+}
+
+// ===================
+// Digest Email
+// ===================
+
+export interface SendDigestEmailParams {
+  toEmail: string;
+  recipientName: string;
+  frequency: 'daily' | 'weekly';
+  periodStart: string;
+  periodEnd: string;
+  tasks: Array<{
+    taskKey: string;
+    taskTitle: string;
+    projectName: string;
+    type: 'assigned' | 'comment' | 'mention' | 'status_change' | 'due_soon';
+    actorName?: string;
+    newStatus?: string;
+    dueDate?: string;
+  }>;
+  totalAssigned: number;
+  totalComments: number;
+  totalMentions: number;
+  dashboardUrl: string;
+}
+
+/**
+ * Send a digest email
+ */
+export async function sendDigestEmail(params: SendDigestEmailParams): Promise<EmailResult> {
+  const { toEmail, ...templateData } = params;
+
+  return sendEmail({
+    to: toEmail,
+    subject: `Your ${templateData.frequency} Infinia digest`,
+    html: digestHtml(templateData),
+    text: digestText(templateData),
+    tags: [
+      { name: 'type', value: `${templateData.frequency}-digest` },
+    ],
+  });
+}
+
+// ===================
+// Utility Functions
+// ===================
+
 /**
  * Check if email service is configured
  */
 export function isEmailServiceConfigured(): boolean {
-  return !!transporter;
+  return !!resend;
 }
 
+/**
+ * Get the configured from email address
+ */
+export function getFromEmail(): string {
+  return `${config.resend.fromName} <${config.resend.fromEmail}>`;
+}
+
+// Export as a unified service object
 export const emailService = {
   sendInviteEmail,
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+  sendTaskAssignedEmail,
+  sendCommentNotificationEmail,
+  sendMentionEmail,
+  sendSprintReminderEmail,
+  sendDigestEmail,
   isEmailServiceConfigured,
+  getFromEmail,
 };

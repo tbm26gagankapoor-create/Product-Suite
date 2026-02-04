@@ -40,10 +40,10 @@ import {
   PanelRightOpen,
   AlertTriangle
 } from 'lucide-react';
-import { DOC_NAV_ITEMS } from '../constants';
 import { Task, User as UserType } from '../types';
 import TaskDetailModal from './TaskDetailModal';
 import { useProjectData } from '../context/ProjectDataContext';
+import { useConfig } from '../context/ConfigContext';
 import { useToast } from '../context/ToastContext';
 import { aiClient } from '../lib/ai';
 import * as pdfjsLib from 'https://esm.sh/pdfjs-dist@4.0.379';
@@ -115,6 +115,7 @@ const STEPS = [
 const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, onClose, onCreate }) => {
   const { organizationUsers: users, currentUser } = useProjectData();
   const { error: showError, warning, success, info } = useToast();
+  const { docNavItems } = useConfig();
   const [step, setStep] = useState<'input' | 'processing' | 'review' | 'generating_docs' | 'prd_view' | 'planning' | 'creating_project'>('input');
 
   // Input Mode
@@ -807,7 +808,7 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
           setMessages([]);
 
           // Initialize progress for all sections
-          const sectionsToGenerate = DOC_NAV_ITEMS.filter(s => s.id !== 'prd');
+          const sectionsToGenerate = docNavItems.filter(s => s.id !== 'prd');
           setDocGenerationProgress(prev => {
               const initial: Record<string, 'pending' | 'generating' | 'completed' | 'error'> = { ...prev };
               sectionsToGenerate.forEach(s => { initial[s.id] = 'pending'; });
@@ -880,7 +881,7 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
 
   // Retry generating a single document
   const handleRetryDocument = async (sectionId: string) => {
-      const section = DOC_NAV_ITEMS.find(s => s.id === sectionId);
+      const section = docNavItems.find(s => s.id === sectionId);
       if (!section) return;
 
       setCurrentGeneratingDoc(sectionId);
@@ -928,12 +929,12 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
 
   const handleGeneratePlan = async () => {
       // Ensure all documentation is complete before generating plan
-      const allDocsComplete = DOC_NAV_ITEMS.every(doc =>
+      const allDocsComplete = docNavItems.every(doc =>
           docGenerationProgress[doc.id] === 'completed' || generatedDocs[doc.id]
       );
 
       if (!allDocsComplete) {
-          const pendingDocs = DOC_NAV_ITEMS.filter(doc =>
+          const pendingDocs = docNavItems.filter(doc =>
               !generatedDocs[doc.id] && docGenerationProgress[doc.id] !== 'completed'
           ).map(doc => doc.label);
 
@@ -1564,7 +1565,7 @@ OUTPUT ONLY VALID JSON:
           }
           else if (step === 'prd_view') {
               const currentContent = generatedDocs[activeDocSection] || '';
-              const sectionName = DOC_NAV_ITEMS.find(d => d.id === activeDocSection)?.label || 'Document';
+              const sectionName = docNavItems.find(d => d.id === activeDocSection)?.label || 'Document';
               const prompt = `
                 You are editing the "${sectionName}" section of a PRD.
                 Current Content (HTML): ${currentContent}
@@ -1663,13 +1664,13 @@ OUTPUT ONLY VALID JSON:
 
       try {
           const currentContent = generatedDocs[activeDocSection] || '';
-          const sectionName = DOC_NAV_ITEMS.find(d => d.id === activeDocSection)?.label || 'Document';
+          const sectionName = docNavItems.find(d => d.id === activeDocSection)?.label || 'Document';
 
           // Get FULL context from ALL generated docs for comprehensive answers
           const allDocsContext = Object.entries(generatedDocs)
               .filter(([_, content]) => content)
               .map(([id, content]) => {
-                  const docName = DOC_NAV_ITEMS.find(d => d.id === id)?.label || id;
+                  const docName = docNavItems.find(d => d.id === id)?.label || id;
                   // Strip HTML tags for context - include full content
                   const textContent = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
                   return `=== ${docName.toUpperCase()} ===\n${textContent}`;
@@ -2289,7 +2290,7 @@ STRICT RULES:
                               Document Generation Progress
                             </div>
                             <div className="grid grid-cols-3 gap-2">
-                              {DOC_NAV_ITEMS.map(doc => {
+                              {docNavItems.map(doc => {
                                 const status = docGenerationProgress[doc.id];
                                 const isGenerating = status === 'generating' || currentGeneratingDoc === doc.id;
                                 const isCompleted = status === 'completed' || generatedDocs[doc.id];
@@ -2476,7 +2477,7 @@ STRICT RULES:
                                                 <h3 className="text-[10px] font-bold uppercase text-gray-400 tracking-wider">Documents</h3>
                                             </div>
                                             <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
-                                                {DOC_NAV_ITEMS.map(section => (
+                                                {docNavItems.map(section => (
                                                     <button
                                                         key={section.id}
                                                         onClick={() => setActiveDocSection(section.id)}
@@ -2570,7 +2571,7 @@ STRICT RULES:
                                              ) : currentGeneratingDoc === activeDocSection ? (
                                                 <div className="flex flex-col items-center justify-center h-full gap-3">
                                                     <Loader2 size={24} className="animate-spin text-blue-500" />
-                                                    <span className="text-sm text-gray-500">Generating {DOC_NAV_ITEMS.find(d => d.id === activeDocSection)?.label}...</span>
+                                                    <span className="text-sm text-gray-500">Generating {docNavItems.find(d => d.id === activeDocSection)?.label}...</span>
                                                 </div>
                                              ) : (
                                                 <div className="flex flex-col items-center justify-center h-full gap-3">
@@ -3040,10 +3041,10 @@ STRICT RULES:
                             </button>
                         )}
                         {step === 'prd_view' && (() => {
-                            const allDocsComplete = DOC_NAV_ITEMS.every(doc =>
+                            const allDocsComplete = docNavItems.every(doc =>
                                 docGenerationProgress[doc.id] === 'completed' || generatedDocs[doc.id]
                             );
-                            const pendingDocs = DOC_NAV_ITEMS.filter(doc =>
+                            const pendingDocs = docNavItems.filter(doc =>
                                 !generatedDocs[doc.id] && docGenerationProgress[doc.id] !== 'completed'
                             );
                             const isGenerating = Object.values(docGenerationProgress).some(s => s === 'generating');

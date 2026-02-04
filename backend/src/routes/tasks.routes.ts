@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { tasksService } from '../services/tasks.service.js';
 import { projectsService } from '../services/projects.service.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.middleware.js';
+import { notificationService } from '../services/notification.service.js';
 
 const router = Router();
 
@@ -18,8 +19,8 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     return res.json({ success: true, data: [] });
   }
 
-  // Get user's accessible projects
-  const accessibleProjects = await projectsService.getAllForUser(user.id, user.isAdmin);
+  // Get user's accessible projects (filtered by organization)
+  const accessibleProjects = await projectsService.getAllForUser(user.id, user.isAdmin, user.organizationId);
   const accessibleProjectIds = new Set(accessibleProjects.map(p => p.id));
 
   // Get tasks with filters
@@ -32,22 +33,39 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   });
 
   // Filter tasks to only those from accessible projects
-  const tasks = allTasks.filter(task => accessibleProjectIds.has(task.project_id));
+  const filteredTasks = allTasks.filter(task => accessibleProjectIds.has(task.project_id));
 
-  res.json({ success: true, data: tasks });
+  // Add permissions to each task
+  const tasksWithPermissions = await Promise.all(
+    filteredTasks.map(async (task) => {
+      const permissions = await tasksService.getTaskPermissions(task.id, user.id, user.isAdmin);
+      return { ...task, permissions };
+    })
+  );
+
+  res.json({ success: true, data: tasksWithPermissions });
 });
 
-// Get task by ID or task_key
-router.get('/:id', async (req, res) => {
+// Get task by ID or task_key (with permissions)
+router.get('/:id', async (req: AuthRequest, res: Response) => {
+  const user = req.user;
   const task = await tasksService.getById(req.params.id);
   if (!task) {
     return res.status(404).json({ success: false, error: 'Task not found' });
   }
+
+  // Add permissions if user is authenticated
+  if (user) {
+    const permissions = await tasksService.getTaskPermissions(task.id, user.id, user.isAdmin);
+    return res.json({ success: true, data: { ...task, permissions } });
+  }
+
   res.json({ success: true, data: task });
 });
 
 // Create task
-router.post('/', async (req, res) => {
+router.post('/', async (req: AuthRequest, res: Response) => {
+  const user = req.user;
   const { project_id, title, description, type, priority, points, assignee_id, reporter_id, sprint_id, column_id, due_date, start_date, parent_epic_id } = req.body;
 
   if (!project_id || !title) {
@@ -73,46 +91,149 @@ router.post('/', async (req, res) => {
     parent_epic_id,
   });
 
+  // Send notification if task is assigned to someone (and user is authenticated)
+  if (task && assignee_id && user) {
+    // Fire and forget - don't block the response
+    notificationService.notifyTaskAssigned(task.id, assignee_id, user.id).catch(err => {
+      console.error('Error sending task assignment notification:', err);
+    });
+  }
+
   res.status(201).json({ success: true, data: task });
 });
 
-// Update task
-router.patch('/:id', async (req, res) => {
-  const task = await tasksService.update(req.params.id, req.body);
+// Update task (with permission check)
+router.patch('/:id', async (req: AuthRequest, res: Response) => {
+  const user = req.user;
+  const taskId = req.params.id;
+
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+
+  // Get the existing task to check for assignee changes
+  const existingTask = await tasksService.getById(taskId);
+  if (!existingTask) {
+    return res.status(404).json({ success: false, error: 'Task not found' });
+  }
+
+  // Get permissions for this task
+  const permissions = await tasksService.getTaskPermissions(taskId, user.id, user.isAdmin);
+
+  // Check if this is a status-only update
+  const isStatusOnly = tasksService.isStatusOnlyUpdate(req.body);
+
+  // If not a status-only update, user needs full edit permission
+  if (!isStatusOnly && !permissions.canEdit) {
+    return res.status(403).json({
+      success: false,
+      error: 'You do not have permission to edit this task. Only the reporter, admins, or project owners can edit.'
+    });
+  }
+
+  // For status-only updates, user needs at least canChangeStatus permission
+  if (isStatusOnly && !permissions.canChangeStatus) {
+    return res.status(403).json({
+      success: false,
+      error: 'You do not have permission to change the status of this task.'
+    });
+  }
+
+  const task = await tasksService.update(taskId, req.body);
   if (!task) {
     return res.status(404).json({ success: false, error: 'Task not found' });
   }
+
+  // Check if assignee changed - send notification
+  const newAssigneeId = req.body.assignee_id;
+  if (newAssigneeId && newAssigneeId !== existingTask.assignee_id) {
+    // Fire and forget - don't block the response
+    notificationService.notifyTaskAssigned(taskId, newAssigneeId, user.id).catch(err => {
+      console.error('Error sending task assignment notification:', err);
+    });
+  }
+
   res.json({ success: true, data: task });
 });
 
-// Delete task
-router.delete('/:id', async (req, res) => {
-  const deleted = await tasksService.delete(req.params.id);
+// Delete task (with permission check)
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
+  const user = req.user;
+  const taskId = req.params.id;
+
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+
+  // Get permissions for this task
+  const permissions = await tasksService.getTaskPermissions(taskId, user.id, user.isAdmin);
+
+  if (!permissions.canDelete) {
+    return res.status(403).json({
+      success: false,
+      error: 'You do not have permission to delete this task. Only the reporter, admins, or project owners can delete.'
+    });
+  }
+
+  const deleted = await tasksService.delete(taskId);
   if (!deleted) {
     return res.status(404).json({ success: false, error: 'Task not found' });
   }
   res.json({ success: true, message: 'Task deleted' });
 });
 
-// Move task to column
-router.post('/:id/move', async (req, res) => {
+// Move task to column (status change - allowed for all members)
+router.post('/:id/move', async (req: AuthRequest, res: Response) => {
+  const user = req.user;
+  const taskId = req.params.id;
   const { column_id } = req.body;
+
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+
   if (!column_id) {
     return res.status(400).json({ success: false, error: 'column_id is required' });
   }
 
-  const task = await tasksService.moveToColumn(req.params.id, column_id);
+  // Get permissions for this task
+  const permissions = await tasksService.getTaskPermissions(taskId, user.id, user.isAdmin);
+
+  if (!permissions.canChangeStatus) {
+    return res.status(403).json({
+      success: false,
+      error: 'You do not have permission to change the status of this task.'
+    });
+  }
+
+  const task = await tasksService.moveToColumn(taskId, column_id);
   if (!task) {
     return res.status(404).json({ success: false, error: 'Task not found' });
   }
   res.json({ success: true, data: task });
 });
 
-// Assign task to sprint
-router.post('/:id/sprint', async (req, res) => {
+// Assign task to sprint (requires edit permission)
+router.post('/:id/sprint', async (req: AuthRequest, res: Response) => {
+  const user = req.user;
+  const taskId = req.params.id;
   const { sprint_id } = req.body;
 
-  const task = await tasksService.assignToSprint(req.params.id, sprint_id || null);
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+
+  // Get permissions for this task
+  const permissions = await tasksService.getTaskPermissions(taskId, user.id, user.isAdmin);
+
+  if (!permissions.canEdit) {
+    return res.status(403).json({
+      success: false,
+      error: 'You do not have permission to assign this task to a sprint.'
+    });
+  }
+
+  const task = await tasksService.assignToSprint(taskId, sprint_id || null);
   if (!task) {
     return res.status(404).json({ success: false, error: 'Task not found' });
   }

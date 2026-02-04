@@ -28,8 +28,15 @@ import {
   LayoutGrid
 } from 'lucide-react';
 import { useProjectData } from '../context/ProjectDataContext';
-import { COLUMNS } from '../constants';
+import { useConfig } from '../context/ConfigContext';
 import { Task } from '../types';
+import * as LucideIcons from 'lucide-react';
+
+// Helper to get icon component by name
+const getIconByName = (iconName: string, size: number = 14): React.ReactNode => {
+  const IconComponent = (LucideIcons as any)[iconName];
+  return IconComponent ? <IconComponent size={size} /> : null;
+};
 import { aiClient } from '../lib/ai';
 
 // --- Reusable Custom Select Component ---
@@ -227,9 +234,9 @@ interface CreateTaskModalProps {
   onSuccess?: () => void;
 }
 
-const CreateTaskModal: React.FC<CreateTaskModalProps> = ({ 
-  isOpen, 
-  onClose, 
+const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
+  isOpen,
+  onClose,
   initialStatus = 'todo',
   initialType = 'task',
   initialProjectId,
@@ -238,6 +245,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   onSuccess
 }) => {
   const { addTask, generateNextId, sprints, tasks, projects, organizationUsers: users, currentUser } = useProjectData();
+  const { taskTypes, priorities, statuses } = useConfig();
   
   // Form State
   const [title, setTitle] = useState('');
@@ -446,22 +454,26 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Options Data
-  const typeOptions: SelectOption[] = [
-    { value: 'task', label: 'Task', icon: <CheckSquare size={14} />, color: 'text-blue-500' },
-    { value: 'bug', label: 'Bug', icon: <Bug size={14} />, color: 'text-red-500' },
-    { value: 'story', label: 'Story', icon: <Bookmark size={14} />, color: 'text-green-500' },
-    { value: 'feature', label: 'Feature', icon: <Rocket size={14} />, color: 'text-pink-500' },
-    { value: 'epic', label: 'Epic', icon: <Hexagon size={14} />, color: 'text-purple-600' },
-  ];
+  // Options Data - from config context
+  const typeOptions: SelectOption[] = taskTypes.map(t => ({
+    value: t.name,
+    label: t.label,
+    icon: getIconByName(t.icon, 14),
+    color: t.color
+  }));
 
-  const priorityOptions: SelectOption[] = [
-    { value: 'HIGH', label: 'High', icon: <ArrowUp size={14} />, color: 'text-red-500' },
-    { value: 'MEDIUM', label: 'Medium', icon: <Minus size={14} />, color: 'text-amber-500' },
-    { value: 'LOW', label: 'Low', icon: <ArrowDown size={14} />, color: 'text-blue-500' },
-  ];
+  const priorityOptions: SelectOption[] = priorities.map(p => ({
+    value: p.name,
+    label: p.label,
+    icon: getIconByName(p.icon, 14),
+    color: p.color
+  }));
 
-  const statusOptions = COLUMNS.map(col => ({ value: col.id, label: col.title, icon: <div className={`w-2 h-2 rounded-full ${col.id === 'done' ? 'bg-green-500' : 'bg-gray-400'}`} /> }));
+  const statusOptions: SelectOption[] = statuses.map(s => ({
+    value: s.name,
+    label: s.label,
+    icon: <div className={`w-2 h-2 rounded-full ${s.is_done_state ? 'bg-green-500' : 'bg-gray-400'}`} />
+  }));
   
   const assigneeOptions = users.map(u => ({ 
     value: u.id, 

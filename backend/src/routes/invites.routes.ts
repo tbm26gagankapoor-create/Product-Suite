@@ -115,9 +115,12 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Check if user is already a member
-    const existingUsers = await database.findMany<any>('users', { email: email.toLowerCase() });
-    for (const existingUser of existingUsers) {
+    // Check if user already exists in the system
+    const existingUser = await database.findOne<any>('users', { email: email.toLowerCase() });
+    const isExistingUser = !!existingUser;
+
+    // If user exists, check if they're already a member of this organization
+    if (existingUser) {
       const existingMembership = await organizationsService.getMember(organizationId, existingUser.id);
       if (existingMembership) {
         return res.status(400).json({
@@ -162,6 +165,8 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response) => {
           expiresAt: invite.expires_at,
           inviteLink,
         },
+        isExistingUser,
+        existingUserName: existingUser?.name || null,
         emailSent: emailResult.success,
         emailError: emailResult.error,
       },

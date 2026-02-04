@@ -101,6 +101,19 @@ export interface TaskWithDetails extends Task {
   has_description?: boolean;
 }
 
+export interface TaskPermissions {
+  canEdit: boolean;        // Full edit access (reporter, admin, project owner)
+  canComment: boolean;     // Can add comments
+  canChangeStatus: boolean; // Can move task between columns
+  canDelete: boolean;      // Can delete the task
+  isReporter: boolean;     // User is the reporter
+  isAssignee: boolean;     // User is the assignee
+}
+
+export interface TaskWithPermissions extends TaskWithDetails {
+  permissions?: TaskPermissions;
+}
+
 // Helper to generate task key
 async function generateTaskKey(projectId: string): Promise<string> {
   const project = await database.findById<any>('projects', projectId);
@@ -253,6 +266,36 @@ export const tasksService = {
       const byKey = await database.findOne<Task>('tasks', { task_key: id });
       if (!byKey) return null;
       id = byKey.id;
+    }
+
+    // If column_id is provided, resolve it to actual column UUID
+    // Frontend sends short names like 'todo', 'inprogress' - need to find actual column
+    if (updates.column_id) {
+      const isUUID = updates.column_id.includes('-') && updates.column_id.length > 20;
+      if (!isUUID) {
+        // Map frontend column names to backend column titles
+        const columnNameMap: Record<string, string> = {
+          'idea': 'IDEA',
+          'todo': 'TO DO',
+          'inprogress': 'IN PROGRESS',
+          'blocked': 'BLOCKED',
+          'testing': 'TESTING',
+          'done': 'DONE',
+        };
+        const columnTitle = columnNameMap[updates.column_id.toLowerCase()] || updates.column_id.toUpperCase();
+
+        // Find the column by title for this task's project
+        const task = existing || await database.findById<Task>('tasks', id);
+        if (task) {
+          const column = await database.findOne<any>('columns_status', {
+            project_id: task.project_id,
+            title: columnTitle
+          });
+          if (column) {
+            updates.column_id = column.id;
+          }
+        }
+      }
     }
 
     const updated = await database.update<Task>('tasks', id, {
@@ -420,5 +463,64 @@ export const tasksService = {
         type: t.type,
         priority: t.priority,
       }));
+  },
+
+  // ============================================
+  // Permission Checking
+  // ============================================
+
+  async getTaskPermissions(taskId: string, userId: string, isAdmin: boolean): Promise<TaskPermissions> {
+    const task = await database.findById<Task>('tasks', taskId);
+    if (!task) {
+      return {
+        canEdit: false,
+        canComment: false,
+        canChangeStatus: false,
+        canDelete: false,
+        isReporter: false,
+        isAssignee: false,
+      };
+    }
+
+    const isReporter = task.reporter_id === userId;
+    const isAssignee = task.assignee_id === userId;
+
+    // Get project to check ownership
+    const project = await database.findById<any>('projects', task.project_id);
+    const isProjectOwner = project?.owner_id === userId;
+
+    // Get project membership to check role
+    const membership = await database.findOne<any>('project_members', {
+      project_id: task.project_id,
+      user_id: userId
+    });
+    const isProjectMember = !!membership;
+    const projectRole = membership?.role || 'member';
+
+    // Admins, project owners, and reporters have full edit access
+    const canEdit = isAdmin || isProjectOwner || isReporter || projectRole === 'owner' || projectRole === 'admin';
+
+    // All project members can comment and change status
+    const canComment = isProjectMember || isAdmin || isProjectOwner;
+    const canChangeStatus = isProjectMember || isAdmin || isProjectOwner;
+
+    // Only admins, project owners, and reporters can delete
+    const canDelete = isAdmin || isProjectOwner || isReporter || projectRole === 'owner';
+
+    return {
+      canEdit,
+      canComment,
+      canChangeStatus,
+      canDelete,
+      isReporter,
+      isAssignee,
+    };
+  },
+
+  // Check if update is a status-only change (allowed for all members)
+  isStatusOnlyUpdate(updates: Partial<CreateTaskInput>): boolean {
+    const statusOnlyFields = ['column_id', 'status'];
+    const updateKeys = Object.keys(updates).filter(k => updates[k as keyof CreateTaskInput] !== undefined);
+    return updateKeys.every(key => statusOnlyFields.includes(key));
   },
 };

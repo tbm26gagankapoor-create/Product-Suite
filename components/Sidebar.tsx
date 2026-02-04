@@ -1,14 +1,25 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import * as LucideIcons from 'lucide-react';
 import {
   Folder, ChevronsRight, FileText, Calendar, Search, Bell, HelpCircle, Sun, Moon,
   PanelLeft, LogOut, LayoutGrid, Lightbulb, ListTodo, Settings2, Briefcase, Sparkles, X, Maximize2, Zap,
   CheckSquare, Users, Package, ArrowRight, UserCog
 } from 'lucide-react';
-import { NAV_ITEMS } from '../constants';
+import ProductIcon from './ProductIcon';
 import { View } from '../App';
 import { useTheme } from '../context/ThemeContext';
 import { useProjectData } from '../context/ProjectDataContext';
+import { useConfig } from '../context/ConfigContext';
+
+// Helper to get Lucide icon by name
+const getIconByName = (iconName: string, size: number = 20): React.ReactNode => {
+  const IconComponent = (LucideIcons as any)[iconName];
+  if (IconComponent) {
+    return <IconComponent size={size} />;
+  }
+  return <LucideIcons.Circle size={size} />;
+};
 import { CopilotModal } from './CopilotModal';
 import { Project, Task, Sprint, User } from '../types';
 
@@ -32,7 +43,8 @@ interface SearchResult {
 const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onLogout, activeProjectId, onProjectSelect }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { theme, toggleTheme } = useTheme();
-  const { currentUser, projects, tasks, sprints, users, isOrgAdmin } = useProjectData();
+  const { currentUser, projects, tasks, sprints, users, isOrgAdmin, currentOrganization, userOrganizations, switchOrganization } = useProjectData();
+  const { navItems } = useConfig();
 
   // Search State
   const [isSearchOpen, setIsSearchOpen] = useState(false); // Dropdown visibility
@@ -43,6 +55,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onLogout, 
   // Copilot Modal State
   const [isCopilotModalOpen, setIsCopilotModalOpen] = useState(false);
   const [copilotInitialQuery, setCopilotInitialQuery] = useState('');
+
+  // Organization Switcher State
+  const [isOrgSwitcherOpen, setIsOrgSwitcherOpen] = useState(false);
+  const [switchingOrg, setSwitchingOrg] = useState(false);
+  const orgSwitcherRef = useRef<HTMLDivElement>(null);
 
   // Global Search Results
   const searchResults = useMemo((): SearchResult[] => {
@@ -63,7 +80,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onLogout, 
         id: p.id,
         title: p.name,
         subtitle: p.key,
-        icon: <Package size={14} className="text-blue-500" />,
+        icon: <ProductIcon project={p} size="xs" />,
         data: p
       });
     });
@@ -148,6 +165,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onLogout, 
     const handleClickOutside = (event: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
         setIsSearchOpen(false);
+      }
+      if (orgSwitcherRef.current && !orgSwitcherRef.current.contains(event.target as Node)) {
+        setIsOrgSwitcherOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -320,19 +340,19 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onLogout, 
 
         {/* Main Menu */}
         <nav className={`space-y-1 mt-2 ${isCollapsed ? '' : 'px-2'}`}>
-          {NAV_ITEMS.map((item) => {
-             const isActive = (item.name === 'Home' && currentView === 'home') ||
-                              (item.name === 'Products' && (currentView === 'project' || currentView === 'project-list')) ||
-                              (item.name === 'Sprints' && currentView === 'sprints') ||
-                              (item.name === 'Settings' && currentView === 'settings') ||
-                              (item.name === 'Teams' && currentView === 'teams') ||
-                              (item.name === 'My Tasks' && currentView === 'my-tasks');
+          {navItems.map((item) => {
+             const isActive = (item.route === 'home' && currentView === 'home') ||
+                              (item.route === 'project-list' && (currentView === 'project' || currentView === 'project-list')) ||
+                              (item.route === 'sprints' && currentView === 'sprints') ||
+                              (item.route === 'settings' && currentView === 'settings') ||
+                              (item.route === 'teams' && currentView === 'teams') ||
+                              (item.route === 'my-tasks' && currentView === 'my-tasks');
 
              return (
               <a
                 key={item.name}
                 href="#"
-                onClick={(e) => handleNavClick(e, item.name)}
+                onClick={(e) => handleNavClick(e, item.label)}
                 className={`flex items-center ${isCollapsed ? 'justify-center w-10 h-10 mx-auto p-0' : 'px-3 gap-3 py-2.5 w-full'} rounded-xl transition-all duration-200 text-[14px] font-medium group relative overflow-hidden border ${
                   isActive
                     ? 'text-gray-900 dark:text-white bg-white dark:bg-[#1F2128] shadow-sm border-gray-200 dark:border-[#2D2F36]'
@@ -340,11 +360,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onLogout, 
                 }`}
               >
                 <span className={`relative z-10 transition-transform duration-300 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'group-hover:scale-110'}`}>
-                    {renderIcon(item.name, 20)}
+                    {getIconByName(item.icon, 20)}
                 </span>
 
                 <span className={`whitespace-nowrap transition-all duration-300 ${isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'}`}>
-                    {item.name}
+                    {item.label}
                 </span>
 
                 {isActive && !isCollapsed && <div className="absolute right-3 w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400"></div>}
@@ -398,8 +418,83 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onLogout, 
       </div>
       
       {/* Sidebar Footer */}
-      <div className={`border-t border-gray-200 dark:border-[#1F2128] bg-gray-50 dark:bg-[#0B0C0E] ${isCollapsed ? 'p-2' : 'p-4'}`}>
-        
+      <div className={`border-t border-gray-200 dark:border-[#1F2128] bg-gray-50 dark:bg-[#0B0C0E] ${isCollapsed ? 'p-2' : 'p-4 space-y-3'}`}>
+
+        {/* Organization Switcher - Only show if user has multiple orgs */}
+        {userOrganizations.length > 1 && currentOrganization && !isCollapsed && (
+          <div ref={orgSwitcherRef} className="relative">
+            <button
+              onClick={() => setIsOrgSwitcherOpen(!isOrgSwitcherOpen)}
+              className="w-full flex items-center gap-2 p-2 rounded-lg bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#2D2F36] hover:border-blue-300 dark:hover:border-blue-700 transition-colors"
+            >
+              <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                {currentOrganization.name.substring(0, 2).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0 text-left">
+                <div className="text-xs font-semibold text-gray-900 dark:text-white truncate">
+                  {currentOrganization.name}
+                </div>
+              </div>
+              <LucideIcons.ChevronDown size={14} className={`text-gray-400 transition-transform ${isOrgSwitcherOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Dropdown */}
+            {isOrgSwitcherOpen && (
+              <div className="absolute bottom-full left-0 right-0 mb-2 bg-white dark:bg-[#15171E] rounded-xl border border-gray-200 dark:border-[#2D2F36] shadow-xl overflow-hidden z-50">
+                <div className="p-2 border-b border-gray-100 dark:border-[#2D2F36]">
+                  <span className="text-[10px] font-bold uppercase text-gray-400 tracking-wider">Switch Organization</span>
+                </div>
+                <div className="max-h-48 overflow-y-auto">
+                  {userOrganizations.map((membership) => {
+                    const isActive = membership.organization.id === currentOrganization.id;
+                    return (
+                      <button
+                        key={membership.organization.id}
+                        onClick={async () => {
+                          if (!isActive && !switchingOrg) {
+                            setSwitchingOrg(true);
+                            try {
+                              await switchOrganization(membership.organization.id);
+                              setIsOrgSwitcherOpen(false);
+                            } catch (e) {
+                              console.error('Failed to switch org:', e);
+                            } finally {
+                              setSwitchingOrg(false);
+                            }
+                          }
+                        }}
+                        disabled={switchingOrg}
+                        className={`w-full flex items-center gap-2 p-2 transition-colors ${
+                          isActive
+                            ? 'bg-blue-50 dark:bg-blue-900/20'
+                            : 'hover:bg-gray-50 dark:hover:bg-[#1F2128]'
+                        } ${switchingOrg ? 'opacity-50' : ''}`}
+                      >
+                        <div className={`w-7 h-7 rounded-md flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${
+                          isActive ? 'bg-blue-500' : 'bg-gray-400'
+                        }`}>
+                          {membership.organization.name.substring(0, 2).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                          <div className={`text-xs font-semibold truncate ${
+                            isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'
+                          }`}>
+                            {membership.organization.name}
+                          </div>
+                          <div className="text-[10px] text-gray-400 capitalize">{membership.role}</div>
+                        </div>
+                        {isActive && (
+                          <LucideIcons.Check size={14} className="text-blue-500 flex-shrink-0" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* User Profile */}
         {currentUser && (
             <div 

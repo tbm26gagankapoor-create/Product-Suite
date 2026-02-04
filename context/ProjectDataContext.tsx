@@ -275,6 +275,38 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           }
         }
 
+        // Fetch user's organizations (multi-org support)
+        if (profile?.id) {
+          try {
+            const userOrgsResponse = await fetch('/api/v1/organizations/my-organizations', {
+              headers: getAuthHeaders(),
+            });
+            if (userOrgsResponse.ok) {
+              const userOrgsData = await userOrgsResponse.json();
+              if (userOrgsData.success && userOrgsData.data) {
+                const userOrgs: UserOrganizationMembership[] = userOrgsData.data.map((m: any) => ({
+                  organization: {
+                    id: m.organization.id,
+                    name: m.organization.name,
+                    slug: m.organization.slug,
+                    domain: m.organization.domain,
+                    logoUrl: m.organization.logoUrl,
+                    ownerId: m.organization.ownerId,
+                    memberCount: m.organization.memberCount,
+                  },
+                  role: m.role,
+                  joinedAt: m.joinedAt,
+                  isActive: m.organization.id === userOrgId,
+                }));
+                setUserOrganizations(userOrgs);
+              }
+            }
+          } catch (e) {
+            console.log('Could not fetch user organizations');
+            setUserOrganizations([]);
+          }
+        }
+
         // Fetch organization details if user has one
         if (userOrgId) {
           try {
@@ -557,6 +589,8 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           assignee_id: updatedTask.assignee?.id ?? null,
           sprint_id: updatedTask.sprintId,
           column_id: updatedTask.columnId,
+          due_date: updatedTask.dueDate || null,
+          start_date: updatedTask.startDate || null,
         }),
       });
     } catch (e) {
@@ -722,6 +756,10 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
             body: JSON.stringify({
               name: updates.name,
               avatar_url: updates.avatarUrl,
+              job_title: updates.jobTitle,
+              designation: updates.jobTitle, // Also update designation for sidebar display
+              location: updates.location,
+              bio: updates.bio,
             }),
           });
           const data = await response.json();
@@ -775,18 +813,52 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, [currentOrganization?.id, currentUser?.id, currentUser?.isAdmin]);
 
   const switchOrganization = useCallback(async (organizationId: string) => {
-    // Update local state to reflect organization switch
+    // Verify target org is in user's organizations
     const targetOrg = userOrganizations.find(m => m.organization.id === organizationId);
-    if (targetOrg) {
-      setCurrentOrganization(targetOrg.organization);
-      setUserOrganizations(prev => prev.map(m => ({
-        ...m,
-        isActive: m.organization.id === organizationId
-      })));
-      // Determine if user is admin in the new org
-      setIsOrgAdmin(targetOrg.role === 'owner' || targetOrg.role === 'admin');
-      // Refresh data for the new organization context
-      await fetchData();
+    if (!targetOrg) {
+      console.error('Cannot switch to organization: not a member');
+      return;
+    }
+
+    try {
+      // Call backend to switch active organization
+      const response = await fetch('/api/v1/users/switch-organization', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ organizationId }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to switch organization');
+      }
+
+      const data = await response.json();
+      if (data.success) {
+        // Update localStorage with new organization_id
+        const storedUser = localStorage.getItem('infinia_user');
+        if (storedUser) {
+          const userData = JSON.parse(storedUser);
+          userData.organization_id = organizationId;
+          localStorage.setItem('infinia_user', JSON.stringify(userData));
+        }
+
+        // Update local state
+        setCurrentOrganization(targetOrg.organization);
+        setUserOrganizations(prev => prev.map(m => ({
+          ...m,
+          isActive: m.organization.id === organizationId
+        })));
+
+        // Determine if user is admin in the new org
+        setIsOrgAdmin(targetOrg.role === 'owner' || targetOrg.role === 'admin');
+
+        // Refresh data for the new organization context
+        await fetchData();
+      }
+    } catch (e) {
+      console.error('Failed to switch organization:', e);
+      throw e;
     }
   }, [userOrganizations, fetchData]);
 

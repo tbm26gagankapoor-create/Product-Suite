@@ -25,6 +25,7 @@ import { useProjectData } from '../context/ProjectDataContext';
 import { User, Team, Project } from '../types';
 import { useToast } from '../context/ToastContext';
 import { api } from '../lib/api';
+import ProductIcon from './ProductIcon';
 
 // Helper for relative time
 const timeAgo = (date: Date) => {
@@ -352,9 +353,7 @@ const UserProfileView: React.FC = () => {
 
                                     return (
                                         <div key={project.id} className="p-4 flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-[#1F2128]/50 transition-colors cursor-pointer">
-                                            <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${project.color} flex items-center justify-center text-white font-bold text-xs`}>
-                                                {project.key}
-                                            </div>
+                                            <ProductIcon project={project} size="sm" />
                                             <div className="flex-1">
                                                 <h4 className="text-sm font-bold text-[#172B4D] dark:text-white">{project.name}</h4>
                                                 <p className="text-xs text-gray-500 truncate w-64">{project.description}</p>

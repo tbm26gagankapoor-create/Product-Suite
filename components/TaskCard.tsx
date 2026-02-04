@@ -1,39 +1,24 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import * as LucideIcons from 'lucide-react';
 import {
-  Rocket,
-  Bug,
-  CheckSquare,
-  Bookmark,
-  Calendar,
   Hexagon,
   CheckCircle2,
   Clock,
   Wrench,
   DollarSign,
-  SignalHigh,
-  SignalMedium,
-  SignalLow,
-  AlertTriangle
+  AlertTriangle,
+  CheckSquare
 } from 'lucide-react';
 import { Task } from '../types';
 import { useProjectData } from '../context/ProjectDataContext';
+import { useConfig } from '../context/ConfigContext';
 
-// Priority configuration with icons and colors
-const PRIORITY_CONFIG: Record<string, { icon: any; color: string; bg: string; label: string }> = {
-  'HIGH': { icon: SignalHigh, color: 'text-red-500', bg: 'bg-red-500/10', label: 'High' },
-  'MEDIUM': { icon: SignalMedium, color: 'text-amber-500', bg: 'bg-amber-500/10', label: 'Medium' },
-  'LOW': { icon: SignalLow, color: 'text-blue-500', bg: 'bg-blue-500/10', label: 'Low' },
-};
-
-// Work type configuration with colors
-const TYPE_CONFIG: Record<string, { icon: any; color: string; bg: string; label: string }> = {
-  'epic': { icon: Hexagon, color: 'text-purple-500', bg: 'bg-purple-500/10', label: 'Epic' },
-  'feature': { icon: Rocket, color: 'text-pink-500', bg: 'bg-pink-500/10', label: 'Feature' },
-  'bug': { icon: Bug, color: 'text-red-500', bg: 'bg-red-500/10', label: 'Bug' },
-  'story': { icon: Bookmark, color: 'text-emerald-500', bg: 'bg-emerald-500/10', label: 'Story' },
-  'task': { icon: CheckSquare, color: 'text-blue-500', bg: 'bg-blue-500/10', label: 'Task' },
+// Helper to get Lucide icon by name
+const getIconByName = (iconName: string): React.ComponentType<{ size?: number; className?: string }> => {
+  const icon = (LucideIcons as any)[iconName];
+  return icon || LucideIcons.Circle;
 };
 
 interface TaskCardProps {
@@ -44,14 +29,49 @@ interface TaskCardProps {
   onUpdate?: (task: Task) => void;
 }
 
-const getWorkTypeIcon = (type?: string, size: number = 14) => {
-    const config = TYPE_CONFIG[type || 'task'] || TYPE_CONFIG['task'];
-    const TypeIcon = config.icon;
-    return <TypeIcon size={size} className={config.color} />;
-};
-
 const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, isSelected, onToggleSelection, onClick, onUpdate }) => {
   const { tasks: allTasks } = useProjectData();
+  const { taskTypes, priorities, getTaskTypeConfig, getPriorityConfig } = useConfig();
+
+  // Get config for the task's type
+  const getTypeConfig = useMemo(() => (type?: string) => {
+    const config = getTaskTypeConfig(type || 'task');
+    if (config) {
+      return {
+        icon: getIconByName(config.icon),
+        color: config.color,
+        bg: config.bg_color,
+        label: config.label,
+      };
+    }
+    // Fallback for unknown types
+    return {
+      icon: CheckSquare,
+      color: 'text-blue-500',
+      bg: 'bg-blue-500/10',
+      label: 'Task',
+    };
+  }, [getTaskTypeConfig]);
+
+  // Get config for the task's priority
+  const getPriorityConfigMemo = useMemo(() => (priority?: string) => {
+    const config = getPriorityConfig(priority || 'MEDIUM');
+    if (config) {
+      return {
+        icon: getIconByName(config.icon),
+        color: config.color,
+        bg: config.bg_color,
+        label: config.label,
+      };
+    }
+    // Fallback
+    return {
+      icon: LucideIcons.SignalMedium,
+      color: 'text-amber-500',
+      bg: 'bg-amber-500/10',
+      label: 'Medium',
+    };
+  }, [getPriorityConfig]);
   const {
     id,
     title,
@@ -247,7 +267,7 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, isSelected, onTogg
                 <div className="flex items-center gap-2">
                     {/* Type Badge */}
                     {(() => {
-                        const typeConfig = TYPE_CONFIG[displayWorkType] || TYPE_CONFIG['task'];
+                        const typeConfig = getTypeConfig(displayWorkType);
                         const TypeIcon = typeConfig.icon;
                         return (
                             <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${typeConfig.bg}`}>
@@ -262,7 +282,7 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, isSelected, onTogg
                 </div>
 
                 {priority && (() => {
-                    const priorityConfig = PRIORITY_CONFIG[priority] || PRIORITY_CONFIG['MEDIUM'];
+                    const priorityConfig = getPriorityConfigMemo(priority);
                     const PriorityIcon = priorityConfig.icon;
                     return (
                         <div className={`flex items-center gap-1 px-2 py-1 rounded-md ${priorityConfig.bg}`}>

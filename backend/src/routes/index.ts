@@ -13,8 +13,13 @@ import teamsRoutes from './teams.routes.js';
 import organizationsRoutes from './organizations.routes.js';
 import invitesRoutes from './invites.routes.js';
 import onboardingRoutes from './onboarding.routes.js';
+import configRoutes from './config.routes.js';
+import notificationsRoutes from './notifications.routes.js';
+import githubOAuthRoutes from './github-oauth.routes.js';
+import githubIntegrationRoutes from './github-integration.routes.js';
 import { microsoftOAuthService } from '../services/microsoft-oauth.service.js';
 import { googleOAuthService } from '../services/google-oauth.service.js';
+import { githubOAuthService } from '../services/github-oauth.service.js';
 import { isEmailServiceConfigured } from '../services/email.service.js';
 
 const router = Router();
@@ -46,6 +51,7 @@ router.get('/health/detailed', (req, res) => {
   const integrations = {
     microsoftOAuth: microsoftOAuthService.isConfigured() ? 'configured' : 'not_configured',
     googleOAuth: googleOAuthService.isConfigured() ? 'configured' : 'not_configured',
+    githubOAuth: githubOAuthService.isConfigured() ? 'configured' : 'not_configured',
     email: isEmailServiceConfigured() ? 'configured' : 'not_configured',
   };
 
@@ -107,5 +113,9 @@ router.use('/teams', teamsRoutes);
 router.use('/organizations', organizationsRoutes);
 router.use('/invites', invitesRoutes);
 router.use('/onboarding', onboardingRoutes);
+router.use('/config', configRoutes);
+router.use('/notifications', notificationsRoutes);
+router.use('/auth', githubOAuthRoutes);
+router.use('/', githubIntegrationRoutes);
 
 export default router;

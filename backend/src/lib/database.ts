@@ -24,6 +24,8 @@ export interface DatabaseSchema {
   organization_members: any[];
   organization_join_requests: any[];
   organization_invites: any[];
+  github_integrations: any[];
+  github_sync_logs: any[];
 }
 
 // Helper function to generate UUID

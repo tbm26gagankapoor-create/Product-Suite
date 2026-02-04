@@ -1,26 +1,30 @@
 
-import React, { useState } from 'react';
-import { COLUMNS } from '../constants';
-import { Task } from '../types';
-import { 
-  Rocket, 
-  CheckSquare, 
-  Bug, 
-  Bookmark,
-  ChevronRight, 
-  ArrowUp, 
-  ArrowDown, 
-  Minus, 
-  Calendar, 
-  Plus, 
-  Filter, 
-  LayoutGrid, 
-  Hexagon,
-  MoreHorizontal
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { Task, Priority } from '../types';
+import {
+  CheckSquare,
+  Square,
+  ChevronRight,
+  ChevronDown,
+  Minus,
+  Calendar,
+  Plus,
+  Filter,
+  LayoutGrid,
+  X,
+  UserPlus
 } from 'lucide-react';
+import * as LucideIcons from 'lucide-react';
 import TaskDetailModal from './TaskDetailModal';
 import CreateTaskModal from './CreateTaskModal';
+import BulkActionToolbar from './BulkActionToolbar';
 import { useProjectData } from '../context/ProjectDataContext';
+import { useConfig } from '../context/ConfigContext';
+
+// Helper to get icon component by name
+const getIconComponentByName = (iconName: string): any => {
+  return (LucideIcons as any)[iconName] || CheckSquare;
+};
 
 interface ListViewProps {
   sprintId: string;
@@ -31,8 +35,9 @@ interface ListViewProps {
 }
 
 const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode = 'planning', projectId }) => {
-  const { tasks: allGlobalTasks, sprints } = useProjectData(); // Needed to find children and active sprint
-  
+  const { tasks: allGlobalTasks, sprints, users, updateTask, deleteTask } = useProjectData();
+  const { getTaskTypeConfig, getPriorityConfig, getStatusConfig, statuses, priorities } = useConfig();
+
   // Initialize with all epics expanded
   const [expandedEpics, setExpandedEpics] = useState<Set<string>>(
       new Set(tasks.filter(t => t.type === 'epic').map(t => t.id))
@@ -43,9 +48,158 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
       sprint: true
   });
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  
+
   // Create Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+
+  // Multi-select state
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const lastSelectedIdRef = useRef<string | null>(null);
+
+  // Inline editing state
+  const [editingCell, setEditingCell] = useState<{ taskId: string; field: 'status' | 'date' | 'assignee' | 'priority' } | null>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setEditingCell(null);
+    if (editingCell) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [editingCell]);
+
+  // Get all visible task IDs (for select all functionality)
+  const getVisibleTaskIds = useCallback((): string[] => {
+    const visibleIds: string[] = [];
+    const collectTaskIds = (taskList: Task[]) => {
+      taskList.forEach(task => {
+        visibleIds.push(task.id);
+        if (task.type === 'epic' && expandedEpics.has(task.id)) {
+          const children = allGlobalTasks.filter(t => t.parentEpicId === task.id);
+          children.forEach(child => visibleIds.push(child.id));
+        }
+      });
+    };
+
+    if (mode === 'sprint') {
+      collectTaskIds(getRootTasks(tasks));
+    } else {
+      if (expandedSections.active) {
+        const activeSprint = projectSprints.find(s => s.status === 'active') || projectSprints[0];
+        if (activeSprint) {
+          collectTaskIds(getRootTasks(tasks.filter(t => t.sprintId === activeSprint.id)));
+        }
+      }
+      if (expandedSections.backlog) {
+        collectTaskIds(getRootTasks(tasks.filter(t => !t.sprintId && t.columnId !== 'done')));
+      }
+    }
+    return visibleIds;
+  }, [tasks, expandedEpics, expandedSections, mode, allGlobalTasks]);
+
+  // Selection handlers
+  const toggleTaskSelection = useCallback((taskId: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+
+    if (event.shiftKey && lastSelectedIdRef.current) {
+      // Shift-click: range selection
+      const visibleIds = getVisibleTaskIds();
+      const lastIndex = visibleIds.indexOf(lastSelectedIdRef.current);
+      const currentIndex = visibleIds.indexOf(taskId);
+
+      if (lastIndex !== -1 && currentIndex !== -1) {
+        const start = Math.min(lastIndex, currentIndex);
+        const end = Math.max(lastIndex, currentIndex);
+        const rangeIds = visibleIds.slice(start, end + 1);
+
+        setSelectedTaskIds(prev => {
+          const next = new Set(prev);
+          rangeIds.forEach(id => next.add(id));
+          return next;
+        });
+      }
+    } else {
+      // Normal click or Ctrl/Cmd click: toggle individual
+      setSelectedTaskIds(prev => {
+        const next = new Set(prev);
+        if (next.has(taskId)) {
+          next.delete(taskId);
+        } else {
+          next.add(taskId);
+        }
+        return next;
+      });
+      lastSelectedIdRef.current = taskId;
+    }
+  }, [getVisibleTaskIds]);
+
+  const toggleSelectAll = useCallback(() => {
+    const visibleIds = getVisibleTaskIds();
+    const allSelected = visibleIds.every(id => selectedTaskIds.has(id));
+
+    if (allSelected) {
+      setSelectedTaskIds(new Set());
+    } else {
+      setSelectedTaskIds(new Set(visibleIds));
+    }
+  }, [getVisibleTaskIds, selectedTaskIds]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedTaskIds(new Set());
+    lastSelectedIdRef.current = null;
+  }, []);
+
+  // Bulk action handlers
+  const handleBulkStatusChange = useCallback(async (status: string) => {
+    const selectedTasks = tasks.filter(t => selectedTaskIds.has(t.id));
+    await Promise.all(selectedTasks.map(task =>
+      updateTask({ ...task, columnId: status })
+    ));
+    clearSelection();
+  }, [selectedTaskIds, tasks, updateTask, clearSelection]);
+
+  const handleBulkAssigneeChange = useCallback(async (assigneeId: string) => {
+    const selectedTasks = tasks.filter(t => selectedTaskIds.has(t.id));
+    const assignee = users.find(u => u.id === assigneeId);
+    if (!assignee) return;
+
+    await Promise.all(selectedTasks.map(task =>
+      updateTask({ ...task, assignee })
+    ));
+    clearSelection();
+  }, [selectedTaskIds, tasks, users, updateTask, clearSelection]);
+
+  const handleBulkPriorityChange = useCallback(async (priority: Priority) => {
+    const selectedTasks = tasks.filter(t => selectedTaskIds.has(t.id));
+    await Promise.all(selectedTasks.map(task =>
+      updateTask({ ...task, priority })
+    ));
+    clearSelection();
+  }, [selectedTaskIds, tasks, updateTask, clearSelection]);
+
+  const handleBulkSprintChange = useCallback(async (sprintId: string | null) => {
+    const selectedTasks = tasks.filter(t => selectedTaskIds.has(t.id));
+    await Promise.all(selectedTasks.map(task =>
+      updateTask({ ...task, sprintId: sprintId || undefined })
+    ));
+    clearSelection();
+  }, [selectedTaskIds, tasks, updateTask, clearSelection]);
+
+  const handleBulkDelete = useCallback(async () => {
+    if (!confirm(`Are you sure you want to delete ${selectedTaskIds.size} task(s)?`)) return;
+
+    const selectedTasksList = tasks.filter(t => selectedTaskIds.has(t.id));
+    await Promise.all(selectedTasksList.map(task =>
+      deleteTask(task.uuid || task.id)
+    ));
+    clearSelection();
+  }, [selectedTaskIds, tasks, deleteTask, clearSelection]);
+
+  // Get selected tasks for toolbar
+  const selectedTasks = tasks.filter(t => selectedTaskIds.has(t.id));
+
+  // Filter sprints by current project - moved here before getVisibleTaskIds uses it
+  const projectSprints = projectId ? sprints.filter(s => s.projectId === projectId) : sprints;
 
   const toggleEpic = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -66,33 +220,21 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
   };
 
   const getIcon = (type?: string) => {
-    switch(type) {
-      case 'epic': return <Hexagon size={14} className="text-purple-600" fill="currentColor" fillOpacity={0.2} />;
-      case 'feature': return <Rocket size={14} className="text-pink-500" />;
-      case 'bug': return <Bug size={14} className="text-red-500" />;
-      case 'story': return <Bookmark size={14} className="text-emerald-500" />;
-      case 'task': default: return <CheckSquare size={14} className="text-blue-500" />;
+    const config = getTaskTypeConfig(type || 'task');
+    if (config) {
+      const IconComponent = getIconComponentByName(config.icon);
+      return <IconComponent size={14} className={config.color} />;
     }
+    return <CheckSquare size={14} className="text-blue-500" />;
   };
 
   const getPriorityIcon = (priority?: string) => {
-      switch(priority) {
-          case 'HIGH': return <ArrowUp size={14} className="text-red-500" />;
-          case 'LOW': return <ArrowDown size={14} className="text-blue-500" />;
-          case 'MEDIUM': return <Minus size={14} className="text-amber-500" />;
-          default: return <Minus size={14} className="text-gray-600 dark:text-gray-500" />;
-      }
-  };
-
-  const StatusBadge = ({ status }: { status: string }) => {
-      const col = COLUMNS.find(c => c.id === status);
-      const label = col ? col.title : status;
-
-      return (
-          <div className="flex items-center justify-center px-[6px] py-[3px] rounded-[4px] text-[10px] font-bold uppercase tracking-wide w-full max-w-[100px] text-center bg-gray-100 dark:bg-[#2D2F36] text-gray-600 dark:text-gray-300">
-              {label}
-          </div>
-      );
+    const config = getPriorityConfig(priority || 'MEDIUM');
+    if (config) {
+      const IconComponent = getIconComponentByName(config.icon);
+      return <IconComponent size={14} className={config.color} />;
+    }
+    return <Minus size={14} className="text-gray-600 dark:text-gray-500" />;
   };
 
   const calculateProgress = (children: Task[]) => {
@@ -101,8 +243,8 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
       return Math.round((doneCount / children.length) * 100);
   };
 
-  // Structured Grid Columns
-  const GRID_COLS = "grid grid-cols-[48px_100px_1fr_140px_80px_110px_160px_130px] auto-rows-[44px]";
+  // Structured Grid Columns - includes checkbox column
+  const GRID_COLS = "grid grid-cols-[40px_48px_100px_1fr_140px_80px_110px_160px_130px] auto-rows-[44px]";
 
   const Cell = ({ children, className = '', onClick, style }: any) => (
       <div 
@@ -114,8 +256,32 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
       </div>
   );
 
-  const renderHeader = () => (
+  const renderHeader = () => {
+    const visibleIds = getVisibleTaskIds();
+    const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedTaskIds.has(id));
+    const someSelected = visibleIds.some(id => selectedTaskIds.has(id));
+
+    return (
       <div className={`${GRID_COLS} border-b border-gray-200 dark:border-[#2D2F36] bg-gray-50/90 dark:bg-[#15171E] text-[10px] font-bold text-gray-500 uppercase tracking-wider sticky top-0 z-10 backdrop-blur-sm shadow-sm`}>
+          {/* Select All Checkbox */}
+          <Cell className="justify-center">
+            <button
+              onClick={toggleSelectAll}
+              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-[#2D2F36] transition-colors"
+              title={allSelected ? "Deselect all" : "Select all"}
+            >
+              {allSelected ? (
+                <CheckSquare size={16} className="text-blue-500" />
+              ) : someSelected ? (
+                <div className="relative">
+                  <Square size={16} className="text-gray-400" />
+                  <Minus size={10} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-blue-500" />
+                </div>
+              ) : (
+                <Square size={16} className="text-gray-400" />
+              )}
+            </button>
+          </Cell>
           <Cell className="justify-center text-center"><span className="sr-only">Expand</span></Cell>
           <Cell>Key</Cell>
           <Cell>Title</Cell>
@@ -125,7 +291,8 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
           <Cell>Assignee</Cell>
           <Cell className="justify-end text-right">Due Date</Cell>
       </div>
-  );
+    );
+  };
 
   const renderSectionHeader = (title: string, count: number, sectionKey: string) => (
       <div 
@@ -151,7 +318,8 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
   const renderRow = (task: Task, depth: number = 0) => {
       const isExpanded = expandedEpics.has(task.id);
       const isEpic = task.type === 'epic';
-      
+      const isSelected = selectedTaskIds.has(task.id);
+
       const children = allGlobalTasks.filter(t => t.parentEpicId === task.id);
       const hasChildren = children.length > 0;
       const progress = isEpic ? calculateProgress(children) : 0;
@@ -160,20 +328,37 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
 
       return (
           <React.Fragment key={task.id}>
-              <div 
+              <div
                   onClick={() => handleTaskClick(task)}
                   className={`
                     ${GRID_COLS} border-b border-gray-100 dark:border-[#1F2128] transition-colors cursor-pointer group relative
-                    ${isEpic 
-                        ? 'bg-white dark:bg-[#0F1115] hover:bg-gray-50 dark:hover:bg-[#1A1D26]' 
-                        : 'bg-gray-50/30 dark:bg-[#0B0C0E] hover:bg-gray-100 dark:hover:bg-[#15171E]'
+                    ${isSelected
+                        ? 'bg-blue-50 dark:bg-blue-500/10 border-l-2 border-l-blue-500'
+                        : isEpic
+                            ? 'bg-white dark:bg-[#0F1115] hover:bg-gray-50 dark:hover:bg-[#1A1D26]'
+                            : 'bg-gray-50/30 dark:bg-[#0B0C0E] hover:bg-gray-100 dark:hover:bg-[#15171E]'
                     }
                   `}
               >
+                  {/* Checkbox Cell */}
+                  <Cell className="justify-center">
+                    <button
+                      onClick={(e) => toggleTaskSelection(task.id, e)}
+                      className="p-1 rounded hover:bg-gray-200 dark:hover:bg-[#2D2F36] transition-colors"
+                      title={isSelected ? "Deselect" : "Select"}
+                    >
+                      {isSelected ? (
+                        <CheckSquare size={16} className="text-blue-500" />
+                      ) : (
+                        <Square size={16} className="text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300" />
+                      )}
+                    </button>
+                  </Cell>
+
                   {/* Expand Cell */}
                   <Cell className="justify-center">
                       {isEpic && hasChildren ? (
-                          <button 
+                          <button
                             onClick={(e) => toggleEpic(task.id, e)}
                             className="p-1 rounded hover:bg-gray-200 dark:hover:bg-[#2D2F36] text-gray-400 transition-colors"
                           >
@@ -205,7 +390,7 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
                       </div>
                   </Cell>
 
-                  {/* Status / Progress */}
+                  {/* Status / Progress - Inline Editable */}
                   <Cell>
                       {isEpic && hasChildren ? (
                           <div className="flex items-center gap-2 w-full group/progress">
@@ -215,7 +400,35 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
                               <span className="text-[10px] text-gray-500 font-mono w-6 text-right">{progress}%</span>
                           </div>
                       ) : (
-                          <StatusBadge status={task.columnId} />
+                          <div className="relative w-full">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingCell(editingCell?.taskId === task.id && editingCell?.field === 'status' ? null : { taskId: task.id, field: 'status' });
+                              }}
+                              className="flex items-center justify-between gap-1 px-[6px] py-[3px] rounded-[4px] text-[10px] font-bold uppercase tracking-wide w-full max-w-[120px] bg-gray-100 dark:bg-[#2D2F36] text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3D404A] transition-colors"
+                            >
+                              <span className="truncate">{getStatusConfig(task.columnId)?.label || task.columnId}</span>
+                              <ChevronDown size={12} className="flex-shrink-0 opacity-50" />
+                            </button>
+                            {editingCell?.taskId === task.id && editingCell?.field === 'status' && (
+                              <div className="absolute top-full left-0 mt-1 w-36 bg-white dark:bg-[#1F2128] rounded-lg shadow-xl border border-gray-200 dark:border-[#2D2F36] z-50 py-1 overflow-hidden">
+                                {statuses.map((status) => (
+                                  <button
+                                    key={status.name}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateTask({ ...task, columnId: status.name });
+                                      setEditingCell(null);
+                                    }}
+                                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors ${task.columnId === status.name ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}
+                                  >
+                                    {status.label}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                       )}
                   </Cell>
 
@@ -228,38 +441,142 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
                       ) : <span className="text-gray-300">-</span>}
                   </Cell>
 
-                  {/* Priority */}
+                  {/* Priority - Inline Editable */}
                   <Cell>
-                      <div className="flex items-center gap-1.5">
+                      <div className="relative">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingCell(editingCell?.taskId === task.id && editingCell?.field === 'priority' ? null : { taskId: task.id, field: 'priority' });
+                          }}
+                          className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors"
+                        >
                           {getPriorityIcon(task.priority)}
                           <span className="text-xs text-gray-600 dark:text-gray-400 capitalize">{(task.priority || 'medium').toLowerCase()}</span>
-                      </div>
-                  </Cell>
-
-                  {/* Assignee */}
-                  <Cell>
-                      <div className="flex items-center gap-2">
-                          {task.assignee ? (
-                              <>
-                                  <img src={task.assignee.avatarUrl} alt="" className="w-5 h-5 rounded-full border border-gray-200 dark:border-gray-700" />
-                                  <span className="text-xs text-gray-600 dark:text-gray-400 truncate max-w-[90px]">{task.assignee.name.split(' ')[0]}</span>
-                              </>
-                          ) : (
-                              <span className="text-xs text-gray-400 italic">Unassigned</span>
-                          )}
-                      </div>
-                  </Cell>
-
-                  {/* Due Date */}
-                  <Cell className="justify-end">
-                      {task.dueDate ? (
-                          <div className={`flex items-center gap-1.5 text-xs font-mono ${new Date(task.dueDate) < new Date() ? 'text-red-500 font-bold' : 'text-gray-500 dark:text-gray-400'}`}>
-                              <Calendar size={12} className="opacity-50" />
-                              {new Date(task.dueDate).toLocaleDateString(undefined, {month:'short', day:'numeric'})}
+                          <ChevronDown size={10} className="opacity-50" />
+                        </button>
+                        {editingCell?.taskId === task.id && editingCell?.field === 'priority' && (
+                          <div className="absolute top-full left-0 mt-1 w-32 bg-white dark:bg-[#1F2128] rounded-lg shadow-xl border border-gray-200 dark:border-[#2D2F36] z-50 py-1 overflow-hidden">
+                            {priorities.map((p) => (
+                              <button
+                                key={p.name}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateTask({ ...task, priority: p.name as Priority });
+                                  setEditingCell(null);
+                                }}
+                                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors flex items-center gap-2 ${task.priority === p.name ? 'bg-blue-50 dark:bg-blue-500/10' : ''}`}
+                              >
+                                <span className={`w-2 h-2 rounded-full ${p.name === 'HIGH' ? 'bg-red-500' : p.name === 'MEDIUM' ? 'bg-amber-500' : 'bg-blue-500'}`} />
+                                <span className={p.name === 'HIGH' ? 'text-red-600 dark:text-red-400' : p.name === 'MEDIUM' ? 'text-amber-600 dark:text-amber-400' : 'text-blue-600 dark:text-blue-400'}>
+                                  {p.label}
+                                </span>
+                              </button>
+                            ))}
                           </div>
-                      ) : (
-                          <span className="text-gray-300">-</span>
-                      )}
+                        )}
+                      </div>
+                  </Cell>
+
+                  {/* Assignee - Inline Editable */}
+                  <Cell>
+                      <div className="relative">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingCell(editingCell?.taskId === task.id && editingCell?.field === 'assignee' ? null : { taskId: task.id, field: 'assignee' });
+                          }}
+                          className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors"
+                        >
+                          {task.assignee ? (
+                            <>
+                              <img src={task.assignee.avatarUrl} alt="" className="w-5 h-5 rounded-full border border-gray-200 dark:border-gray-700" />
+                              <span className="text-xs text-gray-600 dark:text-gray-400 truncate max-w-[70px]">{task.assignee.name.split(' ')[0]}</span>
+                            </>
+                          ) : (
+                            <>
+                              <UserPlus size={14} className="text-gray-400" />
+                              <span className="text-xs text-gray-400 italic">Assign</span>
+                            </>
+                          )}
+                          <ChevronDown size={10} className="opacity-50 flex-shrink-0" />
+                        </button>
+                        {editingCell?.taskId === task.id && editingCell?.field === 'assignee' && (
+                          <div className="absolute top-full right-0 mt-1 w-48 bg-white dark:bg-[#1F2128] rounded-lg shadow-xl border border-gray-200 dark:border-[#2D2F36] z-50 py-1 overflow-hidden max-h-56 overflow-y-auto custom-scrollbar">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateTask({ ...task, assignee: undefined as any });
+                                setEditingCell(null);
+                              }}
+                              className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors"
+                            >
+                              Unassigned
+                            </button>
+                            <div className="h-px bg-gray-200 dark:bg-[#2D2F36] my-1" />
+                            {users.map((user) => (
+                              <button
+                                key={user.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateTask({ ...task, assignee: user });
+                                  setEditingCell(null);
+                                }}
+                                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors flex items-center gap-2 ${task.assignee?.id === user.id ? 'bg-blue-50 dark:bg-blue-500/10' : ''}`}
+                              >
+                                <img src={user.avatarUrl} alt="" className="w-5 h-5 rounded-full" />
+                                <span className="text-gray-700 dark:text-gray-300 truncate">{user.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                  </Cell>
+
+                  {/* Due Date - Inline Editable */}
+                  <Cell className="justify-end">
+                      <div className="relative">
+                        {editingCell?.taskId === task.id && editingCell?.field === 'date' ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="date"
+                              defaultValue={task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : ''}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                const newDate = e.target.value ? new Date(e.target.value).toISOString() : undefined;
+                                updateTask({ ...task, dueDate: newDate });
+                                setEditingCell(null);
+                              }}
+                              onBlur={() => setEditingCell(null)}
+                              autoFocus
+                              className="w-28 px-2 py-1 text-xs bg-white dark:bg-[#1F2128] border border-blue-500 rounded text-gray-700 dark:text-gray-300 focus:outline-none"
+                            />
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateTask({ ...task, dueDate: undefined });
+                                setEditingCell(null);
+                              }}
+                              className="p-0.5 text-gray-400 hover:text-red-500 transition-colors"
+                              title="Clear date"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingCell({ taskId: task.id, field: 'date' });
+                            }}
+                            className={`flex items-center gap-1.5 text-xs font-mono px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors ${task.dueDate && new Date(task.dueDate) < new Date() ? 'text-red-500 font-bold' : 'text-gray-500 dark:text-gray-400'}`}
+                          >
+                            <Calendar size={12} className="opacity-50" />
+                            {task.dueDate ? new Date(task.dueDate).toLocaleDateString(undefined, {month:'short', day:'numeric'}) : <span className="text-gray-300 italic">Set date</span>}
+                          </button>
+                        )}
+                      </div>
                   </Cell>
               </div>
 
@@ -270,10 +587,11 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
   };
 
   const renderGhostRow = (label: string) => (
-      <div 
+      <div
         onClick={() => setIsCreateModalOpen(true)}
         className={`${GRID_COLS} hover:bg-gray-50 dark:hover:bg-[#15171E] transition-colors group cursor-pointer border-b border-transparent`}
       >
+          <Cell></Cell>
           <Cell></Cell>
           <Cell></Cell>
           <Cell>
@@ -286,8 +604,6 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
       </div>
   );
 
-  // Filter sprints by current project to ensure sprint-to-product uniqueness
-  const projectSprints = projectId ? sprints.filter(s => s.projectId === projectId) : sprints;
   const activeSprint = projectSprints.find(s => s.status === 'active') || projectSprints[0];
   
   const getRootTasks = (taskList: Task[]) => {
@@ -396,10 +712,23 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
       )}
 
       {/* Create Task Modal */}
-      <CreateTaskModal 
+      <CreateTaskModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         initialProjectId={projectId || (tasks.length > 0 ? tasks[0].projectId : undefined)}
+      />
+
+      {/* Bulk Action Toolbar */}
+      <BulkActionToolbar
+        selectedTasks={selectedTasks}
+        onClearSelection={clearSelection}
+        onBulkStatusChange={handleBulkStatusChange}
+        onBulkAssigneeChange={handleBulkAssigneeChange}
+        onBulkPriorityChange={handleBulkPriorityChange}
+        onBulkSprintChange={handleBulkSprintChange}
+        onBulkDelete={handleBulkDelete}
+        sprints={projectSprints}
+        users={users}
       />
     </div>
   );

@@ -2,11 +2,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Plus, MoreHorizontal, Users, Grid, Settings, ChevronsRight, Search, List as ListIcon, LayoutGrid, ArrowLeft,
-  Mail, Trophy, Target, ArrowUpRight, CheckCircle2, AlertCircle, Clock, Layers, Briefcase, MapPin, Edit2,
-  UserX, UserCheck, Shield, UserPlus
+  Mail, Trophy, Target, ArrowUpRight, CheckCircle2, AlertCircle, Clock, Layers, MapPin, Edit2,
+  UserX, UserCheck, Shield, UserPlus, Lightbulb
 } from 'lucide-react';
+import ProductIcon from './ProductIcon';
 import { Team, User } from '../types';
 import { useProjectData } from '../context/ProjectDataContext';
+import { useConfig } from '../context/ConfigContext';
 import CreateTeamModal from './CreateTeamModal';
 import EditUserModal from './EditUserModal';
 import InviteUserModal from './InviteUserModal';
@@ -14,6 +16,7 @@ import { api } from '../lib/api';
 
 // --- Helper Component: Team Avatar ---
 const TeamAvatar = ({ team, size = 'md', className = '' }: { team: Team, size?: 'sm' | 'md' | 'lg' | 'xl', className?: string }) => {
+    const { themeColors } = useConfig();
     const initials = team.name
         .split(' ')
         .map(n => n[0])
@@ -28,8 +31,9 @@ const TeamAvatar = ({ team, size = 'md', className = '' }: { team: Team, size?: 
         xl: "w-24 h-24 text-3xl"
     };
 
-    // Deterministic color based on name length
-    const colors = [
+    // Get team avatar colors from config, with fallback
+    const teamAvatarColors = themeColors.filter(c => c.category === 'team_avatar');
+    const fallbackColors = [
         'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400',
         'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400',
         'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400',
@@ -37,8 +41,12 @@ const TeamAvatar = ({ team, size = 'md', className = '' }: { team: Team, size?: 
         'bg-pink-100 text-pink-600 dark:bg-pink-900/30 dark:text-pink-400',
         'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400',
     ];
-    const colorIndex = team.name.length % colors.length;
-    const colorClass = colors[colorIndex];
+
+    // Deterministic color based on name length
+    const colorIndex = team.name.length % (teamAvatarColors.length || fallbackColors.length);
+    const colorClass = teamAvatarColors.length > 0
+        ? `${teamAvatarColors[colorIndex].light_classes} dark:${teamAvatarColors[colorIndex].dark_classes.replace(/\s+/g, ' dark:')}`
+        : fallbackColors[colorIndex];
 
     // Check if avatarUrl exists and is not a default placeholder if you have one, or just check truthy
     // Assuming empty string or null means no avatar
@@ -442,7 +450,7 @@ const UserDetail: React.FC<UserDetailProps> = ({ userId, onBack, onSelectTeam })
               <div className="space-y-3">
                 {userProjects.length === 0 ? (
                   <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                    <Briefcase size={32} className="mx-auto mb-2 opacity-50" />
+                    <Lightbulb size={32} className="mx-auto mb-2 opacity-50" />
                     <p className="text-sm">No products assigned</p>
                   </div>
                 ) : (
@@ -451,7 +459,7 @@ const UserDetail: React.FC<UserDetailProps> = ({ userId, onBack, onSelectTeam })
                       key={project.id}
                       className="w-full flex items-center gap-3 p-3 bg-gray-50 dark:bg-[#1F2128] rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-transparent hover:border-indigo-500 transition-all cursor-pointer group text-left"
                     >
-                      <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${project.color || 'from-blue-500 to-indigo-600'} flex items-center justify-center text-white font-bold text-xs`}>{project.key}</div>
+                      <ProductIcon project={project} size="sm" />
                       <div className="flex-1 min-w-0">
                         <h4 className="text-sm font-bold text-[#172B4D] dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{project.name}</h4>
                         <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{project.description}</p>
@@ -701,7 +709,7 @@ const TeamDetail: React.FC<TeamDetailProps> = ({ team, onBack }) => {
           <div className="divide-y divide-gray-100 dark:divide-[#1F2128]">
             {teamProjects.length === 0 ? (
               <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-                <Briefcase size={32} className="mx-auto mb-2 opacity-50" />
+                <Lightbulb size={32} className="mx-auto mb-2 opacity-50" />
                 <p className="text-sm">No products assigned</p>
               </div>
             ) : (
@@ -712,7 +720,7 @@ const TeamDetail: React.FC<TeamDetailProps> = ({ team, onBack }) => {
                 return (
                   <div key={project.id} className="p-4 hover:bg-gray-50 dark:hover:bg-[#1F2128]/50 transition-colors cursor-pointer group">
                     <div className="flex items-center gap-4">
-                      <div className={`w-11 h-11 rounded-lg bg-gradient-to-br ${project.color || 'from-blue-500 to-indigo-600'} flex items-center justify-center text-white font-bold text-xs`}>{project.key}</div>
+                      <ProductIcon project={project} size="md" />
                       <div className="flex-1 min-w-0">
                         <h4 className="text-sm font-bold text-[#172B4D] dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{project.name}</h4>
                         <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{project.description}</p>

@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Clock, CheckCircle, AlertCircle, TrendingUp, MoreHorizontal, Calendar, 
-  ChevronsRight, ArrowUpRight, Activity, Zap, GitCommit, MessageSquare, 
-  Box, AlertTriangle, ArrowRight, ChevronDown, Layers, Users, CheckSquare, 
+import {
+  Clock, CheckCircle, AlertCircle, TrendingUp, MoreHorizontal, Calendar,
+  ChevronsRight, ArrowUpRight, Activity, Zap, GitCommit, MessageSquare,
+  Box, AlertTriangle, ArrowRight, ChevronDown, Layers, Users, CheckSquare,
   Plus, Hexagon, Lightbulb, Ban, LayoutGrid, BarChart2
 } from 'lucide-react';
-import { COLUMNS } from '../constants';
+import ProductIcon from './ProductIcon';
 import TaskDetailModal from './TaskDetailModal';
 import CreateTaskModal from './CreateTaskModal';
 import SprintModal from './SprintModal';
@@ -99,8 +99,11 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
               velocity,
               activeSprint: activeS?.name || 'No Active Sprint',
               blocking: blockers,
-              progress: progress, 
-              color: p.color
+              progress: progress,
+              color: p.color,
+              icon: p.icon,
+              iconColor: p.iconColor,
+              imageUrl: p.imageUrl
           };
       });
   }, [projects, tasks, sprints]);
@@ -271,9 +274,7 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
                     {productHealth.map(prod => (
                         <div key={prod.id} onClick={() => onViewChange('project')} className="grid grid-cols-12 px-8 py-5 items-center hover:bg-gray-50 dark:hover:bg-[#1F2128]/50 transition-colors cursor-pointer group">
                             <div className="col-span-5 flex items-center gap-4">
-                                <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${prod.color || 'from-blue-600 to-blue-700'} flex items-center justify-center text-white shadow-sm flex-shrink-0`}>
-                                    <span className="font-bold text-xs">{prod.key.substring(0, 3)}</span>
-                                </div>
+                                <ProductIcon project={prod} size="sm" />
                                 <div>
                                     <div className="text-sm font-bold text-[#172B4D] dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{prod.name}</div>
                                     <div className="text-[10px] text-[#5E6C84] dark:text-gray-500 mt-0.5">Velocity: {prod.velocity} pts</div>

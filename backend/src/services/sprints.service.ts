@@ -72,9 +72,30 @@ export const sprintsService = {
     );
   },
 
-  async getAllForUser(userId: string, isAdmin: boolean, projectId?: string): Promise<SprintWithStats[]> {
+  async getAllForUser(userId: string, isAdmin: boolean, projectId?: string, organizationId?: string | null): Promise<SprintWithStats[]> {
+    // Get all projects and filter by organization first
+    let allProjects = await database.getAll<any>('projects');
+    if (organizationId) {
+      allProjects = allProjects.filter(p => p.organization_id === organizationId);
+    }
+    const orgProjectIds = new Set(allProjects.map(p => p.id));
+
     if (isAdmin) {
-      return this.getAll(projectId);
+      let sprints = await database.getAll<Sprint>('sprints');
+      // Filter to only sprints from organization's projects
+      sprints = sprints.filter(s => orgProjectIds.has(s.project_id));
+      if (projectId) {
+        sprints = sprints.filter(s => s.project_id === projectId);
+      }
+      const sprintsWithStats = await Promise.all(
+        sprints.map(async (sprint) => ({
+          ...sprint,
+          ...(await getSprintStats(sprint.id)),
+        }))
+      );
+      return sprintsWithStats.sort((a, b) =>
+        new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
+      );
     }
 
     // Get all project IDs the user has access to
@@ -82,13 +103,12 @@ export const sprintsService = {
     const membershipProjectIds = new Set(memberships.map(pm => pm.project_id));
 
     // Also include projects where user is owner
-    const projects = await database.getAll<any>('projects');
-    projects.filter(p => p.owner_id === userId).forEach(p => membershipProjectIds.add(p.id));
+    allProjects.filter(p => p.owner_id === userId).forEach(p => membershipProjectIds.add(p.id));
 
     let sprints = await database.getAll<Sprint>('sprints');
 
-    // Filter by accessible projects
-    sprints = sprints.filter(s => membershipProjectIds.has(s.project_id));
+    // Filter by accessible projects AND organization
+    sprints = sprints.filter(s => membershipProjectIds.has(s.project_id) && orgProjectIds.has(s.project_id));
 
     if (projectId) {
       sprints = sprints.filter(s => s.project_id === projectId);

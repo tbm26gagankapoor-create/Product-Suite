@@ -48,8 +48,20 @@ import {
   Link2
 } from 'lucide-react';
 import { Task, Comment } from '../types';
-import { COLUMNS } from '../constants';
 import { useProjectData } from '../context/ProjectDataContext';
+import { useConfig } from '../context/ConfigContext';
+import * as LucideIcons from 'lucide-react';
+
+// Helper to get icon component by name
+const getIconByName = (iconName: string, size: number = 14): React.ReactNode => {
+  const IconComponent = (LucideIcons as any)[iconName];
+  return IconComponent ? <IconComponent size={size} /> : null;
+};
+
+// Helper to get icon class from config
+const getIconComponentByName = (iconName: string): any => {
+  return (LucideIcons as any)[iconName] || LucideIcons.Circle;
+};
 import { aiClient } from '../lib/ai';
 import { activityService } from '../services/activity.service';
 import { tasksService, TaskLink, AvailableTask } from '../services/tasks.service';
@@ -92,6 +104,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   onUpdate
 }) => {
   const { sprints, projects, tasks: allTasks, organizationUsers: users, addTask, updateTask, deleteTask, generateNextId, addComment, currentUser } = useProjectData();
+  const { taskTypes, priorities, statuses, getTaskTypeConfig, getPriorityConfig, getStatusConfig } = useConfig();
 
   // Safely get global task with fallbacks for missing properties
   const globalTask = task ? (allTasks.find((t: Task) => t.id === task.id) || task) : null;
@@ -147,6 +160,16 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
 
   const isEpic = (currentTask.type || 'task') === 'epic';
   const childTasks = allTasks.filter((t: Task) => t.parentEpicId === currentTask.id);
+
+  // Get task permissions (from API response)
+  const permissions = currentTask.permissions || {
+    canEdit: true,
+    canComment: true,
+    canChangeStatus: true,
+    canDelete: true,
+    isReporter: false,
+    isAssignee: false,
+  };
 
   useEffect(() => {
     if (globalTask) {
@@ -388,13 +411,12 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   };
 
   const getTypeIcon = (type?: string) => {
-    switch (type) {
-      case 'epic': return <Hexagon size={14} className="text-purple-600" />;
-      case 'bug': return <Bug size={14} className="text-red-500" />;
-      case 'story': return <Bookmark size={14} className="text-green-500" />;
-      case 'feature': return <Rocket size={14} className="text-pink-500" />;
-      default: return <CheckSquare size={14} className="text-blue-500" />;
+    const config = getTaskTypeConfig(type || 'task');
+    if (config) {
+      const IconComponent = getIconComponentByName(config.icon);
+      return <IconComponent size={14} className={config.color} />;
     }
+    return <CheckSquare size={14} className="text-blue-500" />;
   };
 
   return (
@@ -404,7 +426,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-[#1F2128] bg-white dark:bg-[#15171E] flex-shrink-0">
           <div className="flex items-center gap-3">
-            {/* Type Selector */}
+            {/* Type Selector - requires edit permission */}
             <div className="relative">
               <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
                 {getTypeIcon(currentTask.type)}
@@ -412,13 +434,12 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               <select
                 value={currentTask.type || 'task'}
                 onChange={handleTypeChange}
-                className="bg-gray-100 dark:bg-[#1F2128] border border-gray-200 dark:border-[#2D2F36] rounded-lg pl-8 pr-3 py-1 text-xs font-medium text-[#172B4D] dark:text-white outline-none focus:border-blue-500 shadow-sm capitalize appearance-none cursor-pointer hover:bg-gray-200 dark:hover:bg-[#2D2F36]/80 transition-colors"
+                disabled={!permissions.canEdit}
+                className={`bg-gray-100 dark:bg-[#1F2128] border border-gray-200 dark:border-[#2D2F36] rounded-lg pl-8 pr-3 py-1 text-xs font-medium text-[#172B4D] dark:text-white outline-none focus:border-blue-500 shadow-sm capitalize appearance-none transition-colors ${permissions.canEdit ? 'cursor-pointer hover:bg-gray-200 dark:hover:bg-[#2D2F36]/80' : 'cursor-default opacity-75'}`}
               >
-                <option value="task">Task</option>
-                <option value="bug">Bug</option>
-                <option value="story">Story</option>
-                <option value="feature">Feature</option>
-                <option value="epic">Epic</option>
+                {taskTypes.map(t => (
+                  <option key={t.name} value={t.name}>{t.label}</option>
+                ))}
               </select>
             </div>
 
@@ -449,14 +470,16 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               AI Assist
             </button>
             <div className="h-4 w-px bg-gray-300 dark:bg-[#2D2F36] mx-1"></div>
-            {/* Delete */}
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-2 rounded hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors"
-              title="Delete Task"
-            >
-              <Trash2 size={18} />
-            </button>
+            {/* Delete - only show if user has permission */}
+            {permissions.canDelete && (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-2 rounded hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors"
+                title="Delete Task"
+              >
+                <Trash2 size={18} />
+              </button>
+            )}
             {/* Close */}
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-2 rounded hover:bg-gray-100 dark:hover:bg-[#2D2F36] ml-2">
               <X size={20} />
@@ -503,35 +526,30 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
             <input
               type="text"
               value={currentTask.title}
-              onChange={(e) => handleUpdateCurrentTask({ title: e.target.value })}
-              className="w-full text-2xl font-bold text-[#172B4D] dark:text-white bg-transparent border-none focus:ring-0 p-0 mb-6 placeholder:text-gray-400 focus:outline-none"
+              onChange={(e) => permissions.canEdit && handleUpdateCurrentTask({ title: e.target.value })}
+              readOnly={!permissions.canEdit}
+              className={`w-full text-2xl font-bold text-[#172B4D] dark:text-white bg-transparent border-none focus:ring-0 p-0 mb-6 placeholder:text-gray-400 focus:outline-none ${!permissions.canEdit ? 'cursor-default' : ''}`}
               placeholder="Task Title"
             />
 
             {/* Primary Properties Grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8 border-b border-gray-200 dark:border-[#2D2F36] pb-6">
-              {/* Status */}
+              {/* Status - can change if user has canChangeStatus permission */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Status</label>
                 <div className="relative">
                   <button
-                    onClick={() => setShowStatusDropdown(!showStatusDropdown)}
-                    className="w-full flex items-center gap-2 bg-gray-50 dark:bg-[#1F2128] px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors"
+                    onClick={() => permissions.canChangeStatus && setShowStatusDropdown(!showStatusDropdown)}
+                    disabled={!permissions.canChangeStatus}
+                    className={`w-full flex items-center gap-2 bg-gray-50 dark:bg-[#1F2128] px-3 py-2 rounded-lg transition-colors ${permissions.canChangeStatus ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2D2F36]' : 'cursor-default opacity-75'}`}
                   >
                     {(() => {
-                      const statusConfig: Record<string, { icon: any; color: string; bg: string }> = {
-                        'backlog': { icon: Circle, color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-700' },
-                        'todo': { icon: Circle, color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30' },
-                        'inprogress': { icon: PlayCircle, color: 'text-amber-500', bg: 'bg-amber-100 dark:bg-amber-900/30' },
-                        'blocked': { icon: PauseCircle, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30' },
-                        'done': { icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-100 dark:bg-emerald-900/30' },
-                      };
-                      const config = statusConfig[currentTask.columnId] || statusConfig['backlog'];
-                      const StatusIcon = config.icon;
-                      return <StatusIcon size={16} className={config.color} />;
+                      const config = getStatusConfig(currentTask.columnId);
+                      const StatusIcon = config?.icon ? getIconComponentByName(config.icon) : Circle;
+                      return <StatusIcon size={16} className={config?.color || 'text-gray-500'} />;
                     })()}
                     <span className="text-sm font-medium text-[#172B4D] dark:text-gray-200 truncate flex-1 text-left">
-                      {COLUMNS.find(c => c.id === currentTask.columnId)?.title || 'Backlog'}
+                      {getStatusConfig(currentTask.columnId)?.label || 'Backlog'}
                     </span>
                     <ChevronDown size={12} className="text-gray-400" />
                   </button>
@@ -541,34 +559,26 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                       <div className="fixed inset-0 z-10" onClick={() => setShowStatusDropdown(false)} />
                       <div className="absolute left-0 top-full mt-1 w-56 bg-white dark:bg-[#1F2128] rounded-xl shadow-xl border border-gray-200 dark:border-[#2D2F36] py-2 z-20 overflow-hidden">
                         <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Status</div>
-                        {COLUMNS.map((col) => {
-                          const statusConfig: Record<string, { icon: any; color: string; bg: string; description: string }> = {
-                            'backlog': { icon: Circle, color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-700', description: 'Not yet started' },
-                            'todo': { icon: Circle, color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30', description: 'Ready to work on' },
-                            'inprogress': { icon: PlayCircle, color: 'text-amber-500', bg: 'bg-amber-100 dark:bg-amber-900/30', description: 'Currently working' },
-                            'blocked': { icon: PauseCircle, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', description: 'Waiting on something' },
-                            'done': { icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-100 dark:bg-emerald-900/30', description: 'Completed' },
-                          };
-                          const config = statusConfig[col.id] || statusConfig['backlog'];
-                          const StatusIcon = config.icon;
-                          const isSelected = currentTask.columnId === col.id;
+                        {statuses.map((status) => {
+                          const StatusIcon = status.icon ? getIconComponentByName(status.icon) : Circle;
+                          const isSelected = currentTask.columnId === status.name;
                           return (
                             <button
-                              key={col.id}
+                              key={status.name}
                               onClick={() => {
-                                handleUpdateCurrentTask({ columnId: col.id });
+                                handleUpdateCurrentTask({ columnId: status.name });
                                 setShowStatusDropdown(false);
                               }}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-[#2D2F36] transition-colors text-left ${
                                 isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''
                               }`}
                             >
-                              <div className={`w-8 h-8 rounded-lg ${config.bg} flex items-center justify-center`}>
-                                <StatusIcon size={16} className={config.color} />
+                              <div className={`w-8 h-8 rounded-lg ${status.bg_color || 'bg-gray-100 dark:bg-gray-700'} flex items-center justify-center`}>
+                                <StatusIcon size={16} className={status.color} />
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium text-[#172B4D] dark:text-gray-200">{col.title}</div>
-                                <div className="text-[10px] text-gray-400">{config.description}</div>
+                                <div className="text-sm font-medium text-[#172B4D] dark:text-gray-200">{status.label}</div>
+                                <div className="text-[10px] text-gray-400">{status.is_done_state ? 'Completed' : 'In progress'}</div>
                               </div>
                               {isSelected && <Check size={16} className="text-blue-500 flex-shrink-0" />}
                             </button>
@@ -580,29 +590,22 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 </div>
               </div>
 
-              {/* Priority */}
+              {/* Priority - requires edit permission */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Priority</label>
                 <div className="relative">
                   <button
-                    onClick={() => setShowPriorityDropdown(!showPriorityDropdown)}
-                    className="w-full flex items-center gap-2 bg-gray-50 dark:bg-[#1F2128] px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors"
+                    onClick={() => permissions.canEdit && setShowPriorityDropdown(!showPriorityDropdown)}
+                    disabled={!permissions.canEdit}
+                    className={`w-full flex items-center gap-2 bg-gray-50 dark:bg-[#1F2128] px-3 py-2 rounded-lg transition-colors ${permissions.canEdit ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2D2F36]' : 'cursor-default opacity-75'}`}
                   >
                     {(() => {
-                      const priorityConfig: Record<string, { icon: any; color: string }> = {
-                        'HIGH': { icon: SignalHigh, color: 'text-red-500' },
-                        'MEDIUM': { icon: SignalMedium, color: 'text-amber-500' },
-                        'LOW': { icon: SignalLow, color: 'text-blue-500' },
-                      };
-                      const config = priorityConfig[currentTask.priority] || priorityConfig['MEDIUM'];
-                      const PriorityIcon = config.icon;
-                      return <PriorityIcon size={16} className={config.color} />;
+                      const config = getPriorityConfig(currentTask.priority);
+                      const PriorityIcon = config?.icon ? getIconComponentByName(config.icon) : SignalMedium;
+                      return <PriorityIcon size={16} className={config?.color || 'text-amber-500'} />;
                     })()}
-                    <span className={`text-sm font-semibold truncate flex-1 text-left ${
-                      currentTask.priority === 'HIGH' ? 'text-red-600' :
-                      currentTask.priority === 'LOW' ? 'text-blue-600' : 'text-amber-600'
-                    }`}>
-                      {currentTask.priority === 'HIGH' ? 'High' : currentTask.priority === 'LOW' ? 'Low' : 'Medium'}
+                    <span className={`text-sm font-semibold truncate flex-1 text-left ${getPriorityConfig(currentTask.priority)?.color || 'text-amber-600'}`}>
+                      {getPriorityConfig(currentTask.priority)?.label || 'Medium'}
                     </span>
                     <ChevronDown size={12} className="text-gray-400" />
                   </button>
@@ -612,30 +615,26 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                       <div className="fixed inset-0 z-10" onClick={() => setShowPriorityDropdown(false)} />
                       <div className="absolute left-0 top-full mt-1 w-56 bg-white dark:bg-[#1F2128] rounded-xl shadow-xl border border-gray-200 dark:border-[#2D2F36] py-2 z-20 overflow-hidden">
                         <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Priority Level</div>
-                        {[
-                          { value: 'HIGH', label: 'High', icon: SignalHigh, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', description: 'Critical, needs immediate attention' },
-                          { value: 'MEDIUM', label: 'Medium', icon: SignalMedium, color: 'text-amber-500', bg: 'bg-amber-100 dark:bg-amber-900/30', description: 'Important, but not urgent' },
-                          { value: 'LOW', label: 'Low', icon: SignalLow, color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30', description: 'Can be done when time permits' },
-                        ].map((priority) => {
-                          const PriorityIcon = priority.icon;
-                          const isSelected = currentTask.priority === priority.value;
+                        {priorities.map((priority) => {
+                          const PriorityIcon = priority.icon ? getIconComponentByName(priority.icon) : SignalMedium;
+                          const isSelected = currentTask.priority === priority.name;
                           return (
                             <button
-                              key={priority.value}
+                              key={priority.name}
                               onClick={() => {
-                                handleUpdateCurrentTask({ priority: priority.value as 'HIGH' | 'MEDIUM' | 'LOW' });
+                                handleUpdateCurrentTask({ priority: priority.name as 'HIGH' | 'MEDIUM' | 'LOW' });
                                 setShowPriorityDropdown(false);
                               }}
                               className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-[#2D2F36] transition-colors text-left ${
                                 isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''
                               }`}
                             >
-                              <div className={`w-8 h-8 rounded-lg ${priority.bg} flex items-center justify-center`}>
+                              <div className={`w-8 h-8 rounded-lg ${priority.bg_color} flex items-center justify-center`}>
                                 <PriorityIcon size={16} className={priority.color} />
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className={`text-sm font-semibold ${priority.color}`}>{priority.label}</div>
-                                <div className="text-[10px] text-gray-400">{priority.description}</div>
+                                <div className="text-[10px] text-gray-400">{priority.name === 'HIGH' ? 'Critical, needs immediate attention' : priority.name === 'LOW' ? 'Can be done when time permits' : 'Important, but not urgent'}</div>
                               </div>
                               {isSelected && <Check size={16} className="text-blue-500 flex-shrink-0" />}
                             </button>
@@ -647,13 +646,14 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 </div>
               </div>
 
-              {/* Assigned To */}
+              {/* Assigned To - requires edit permission */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Assigned To</label>
                 <div className="relative">
                   <button
-                    onClick={() => setShowAssigneeDropdown(!showAssigneeDropdown)}
-                    className="w-full flex items-center gap-2 bg-gray-50 dark:bg-[#1F2128] px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2D2F36] transition-colors"
+                    onClick={() => permissions.canEdit && setShowAssigneeDropdown(!showAssigneeDropdown)}
+                    disabled={!permissions.canEdit}
+                    className={`w-full flex items-center gap-2 bg-gray-50 dark:bg-[#1F2128] px-3 py-2 rounded-lg transition-colors ${permissions.canEdit ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-[#2D2F36]' : 'cursor-default opacity-75'}`}
                   >
                     {currentTask.assignee?.avatarUrl ? (
                       <img src={currentTask.assignee.avatarUrl} className="w-6 h-6 rounded-full border-2 border-white dark:border-gray-600 shadow-sm" />
@@ -726,14 +726,15 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 </div>
               </div>
 
-              {/* Points */}
+              {/* Points - requires edit permission */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Points</label>
                 <input
                   type="number"
                   value={currentTask.points || 0}
-                  onChange={(e) => handleUpdateCurrentTask({ points: parseInt(e.target.value) || 0 })}
-                  className="w-full bg-gray-50 dark:bg-[#1F2128] border-none rounded-lg px-3 py-2 text-sm font-mono text-[#172B4D] dark:text-gray-200 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                  onChange={(e) => permissions.canEdit && handleUpdateCurrentTask({ points: parseInt(e.target.value) || 0 })}
+                  readOnly={!permissions.canEdit}
+                  className={`w-full bg-gray-50 dark:bg-[#1F2128] border-none rounded-lg px-3 py-2 text-sm font-mono text-[#172B4D] dark:text-gray-200 focus:ring-1 focus:ring-blue-500 focus:outline-none ${!permissions.canEdit ? 'cursor-default opacity-75' : ''}`}
                 />
               </div>
             </div>
@@ -744,7 +745,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
                   <AlignLeft size={14} /> Description
                 </label>
-                {!isEditingDescription && currentTask.description && (
+                {!isEditingDescription && currentTask.description && permissions.canEdit && (
                   <button
                     onClick={() => setIsEditingDescription(true)}
                     className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-medium"
@@ -863,8 +864,8 @@ Tips:
               ) : (
                 <div className="space-y-3">
                   <div
-                    onClick={() => setIsEditingDescription(true)}
-                    className="group min-h-[120px] p-4 rounded-xl border border-gray-200 dark:border-[#2D2F36] bg-gray-50/50 dark:bg-[#1F2128]/30 hover:bg-gray-50 dark:hover:bg-[#1F2128]/50 hover:border-gray-300 dark:hover:border-[#3D3F46] cursor-text transition-all text-sm text-[#172B4D] dark:text-gray-300 leading-relaxed"
+                    onClick={() => permissions.canEdit && setIsEditingDescription(true)}
+                    className={`group min-h-[120px] p-4 rounded-xl border border-gray-200 dark:border-[#2D2F36] bg-gray-50/50 dark:bg-[#1F2128]/30 transition-all text-sm text-[#172B4D] dark:text-gray-300 leading-relaxed ${permissions.canEdit ? 'hover:bg-gray-50 dark:hover:bg-[#1F2128]/50 hover:border-gray-300 dark:hover:border-[#3D3F46] cursor-text' : 'cursor-default'}`}
                   >
                     {currentTask.description ? (
                       <div className="prose prose-sm dark:prose-invert max-w-none">
@@ -875,7 +876,7 @@ Tips:
                     ) : (
                       <div className="flex flex-col items-center justify-center h-full min-h-[80px] text-gray-400">
                         <AlignLeft size={20} className="mb-2 opacity-50" />
-                        <p className="text-sm">Click to add a description...</p>
+                        <p className="text-sm">{permissions.canEdit ? 'Click to add a description...' : 'No description'}</p>
                       </div>
                     )}
                   </div>
@@ -940,9 +941,7 @@ Tips:
                       <div key={st.id} className="grid grid-cols-[32px_1fr_100px_100px_120px] gap-4 px-4 py-3 items-center hover:bg-gray-50 dark:hover:bg-[#1F2128]/50 transition-colors group">
                         {/* Icon */}
                         <div className="flex justify-center text-gray-400">
-                          {st.type === 'bug' ? <Bug size={14} className="text-red-500" /> :
-                           st.type === 'feature' ? <Rocket size={14} className="text-pink-500" /> :
-                           <CheckSquare size={14} className="text-blue-500" />}
+                          {getTypeIcon(st.type)}
                         </div>
 
                         {/* Title */}
@@ -1009,29 +1008,31 @@ Tips:
               <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <MessageSquare size={14} /> Activity
               </label>
-              <div className="flex gap-4 mb-8 mt-4">
-                {currentUser && (
-                  <img src={currentUser.avatarUrl} className="w-9 h-9 rounded-full border border-gray-200 dark:border-[#2D2F36]" />
-                )}
-                <div className="flex-1">
-                  <div className="relative">
-                    <textarea
-                      rows={2}
-                      value={newComment}
-                      onChange={(e) => setNewComment(e.target.value)}
-                      placeholder="Add a comment..."
-                      className="w-full bg-white dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-xl p-3 text-sm focus:outline-none focus:border-blue-500 resize-none pr-12 text-[#172B4D] dark:text-white shadow-sm"
-                    />
-                    <button
-                      onClick={handleAddComment}
-                      disabled={!newComment.trim()}
-                      className="absolute bottom-2 right-2 p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <Send size={14} />
-                    </button>
+              {permissions.canComment && (
+                <div className="flex gap-4 mb-8 mt-4">
+                  {currentUser && (
+                    <img src={currentUser.avatarUrl} className="w-9 h-9 rounded-full border border-gray-200 dark:border-[#2D2F36]" />
+                  )}
+                  <div className="flex-1">
+                    <div className="relative">
+                      <textarea
+                        rows={2}
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        placeholder="Add a comment..."
+                        className="w-full bg-white dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-xl p-3 text-sm focus:outline-none focus:border-blue-500 resize-none pr-12 text-[#172B4D] dark:text-white shadow-sm"
+                      />
+                      <button
+                        onClick={handleAddComment}
+                        disabled={!newComment.trim()}
+                        className="absolute bottom-2 right-2 p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <Send size={14} />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               <div className="space-y-6 pl-2">
                 {isLoadingActivity ? (
@@ -1226,8 +1227,9 @@ Tips:
                   <span className="text-xs text-gray-500">Sprint</span>
                   <div className="relative">
                     <button
-                      onClick={() => setShowSprintDropdown(!showSprintDropdown)}
-                      className="w-full flex items-center gap-2 bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#2D2F36] rounded-lg px-3 py-2 text-left hover:border-blue-400 dark:hover:border-blue-500 transition-colors shadow-sm"
+                      onClick={() => permissions.canEdit && setShowSprintDropdown(!showSprintDropdown)}
+                      disabled={!permissions.canEdit}
+                      className={`w-full flex items-center gap-2 bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#2D2F36] rounded-lg px-3 py-2 text-left transition-colors shadow-sm ${permissions.canEdit ? 'hover:border-blue-400 dark:hover:border-blue-500' : 'cursor-default opacity-75'}`}
                     >
                       {(() => {
                         const currentSprint = sprints.find((s: any) => s.id === currentTask.sprintId);
@@ -1410,8 +1412,9 @@ Tips:
                   <input
                     type="date"
                     value={currentTask.startDate ? new Date(currentTask.startDate).toISOString().split('T')[0] : ''}
-                    onChange={(e) => handleUpdateCurrentTask({ startDate: e.target.value })}
-                    className="w-full bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#2D2F36] rounded-lg px-3 py-1.5 text-xs text-[#172B4D] dark:text-white outline-none focus:border-blue-500"
+                    onChange={(e) => permissions.canEdit && handleUpdateCurrentTask({ startDate: e.target.value })}
+                    readOnly={!permissions.canEdit}
+                    className={`w-full bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#2D2F36] rounded-lg px-3 py-1.5 text-xs text-[#172B4D] dark:text-white outline-none focus:border-blue-500 ${!permissions.canEdit ? 'cursor-default opacity-75' : ''}`}
                   />
                 </div>
 
@@ -1420,8 +1423,9 @@ Tips:
                   <input
                     type="date"
                     value={currentTask.dueDate ? new Date(currentTask.dueDate).toISOString().split('T')[0] : ''}
-                    onChange={(e) => handleUpdateCurrentTask({ dueDate: e.target.value })}
-                    className="w-full bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#2D2F36] rounded-lg px-3 py-1.5 text-xs text-[#172B4D] dark:text-white outline-none focus:border-blue-500"
+                    onChange={(e) => permissions.canEdit && handleUpdateCurrentTask({ dueDate: e.target.value })}
+                    readOnly={!permissions.canEdit}
+                    className={`w-full bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#2D2F36] rounded-lg px-3 py-1.5 text-xs text-[#172B4D] dark:text-white outline-none focus:border-blue-500 ${!permissions.canEdit ? 'cursor-default opacity-75' : ''}`}
                   />
                 </div>
               </div>
@@ -1455,28 +1459,31 @@ Tips:
                               {link.blocking_task?.title}
                             </span>
                           </div>
-                          <button
-                            onClick={() => handleRemoveBlockingTask(link.id)}
-                            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all"
-                          >
-                            <X size={14} />
-                          </button>
+                          {permissions.canEdit && (
+                            <button
+                              onClick={() => handleRemoveBlockingTask(link.id)}
+                              className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all"
+                            >
+                              <X size={14} />
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>
                   )}
 
-                  {/* Add Blocking Task Button/Dropdown */}
-                  <div className="relative">
-                    <button
-                      onClick={() => {
-                        setShowBlockedByDropdown(!showBlockedByDropdown);
-                        if (!showBlockedByDropdown) loadAvailableTasks();
-                      }}
-                      className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
-                    >
-                      <Plus size={10} /> Add blocking task
-                    </button>
+                  {/* Add Blocking Task Button/Dropdown - requires edit permission */}
+                  {permissions.canEdit && (
+                    <div className="relative">
+                      <button
+                        onClick={() => {
+                          setShowBlockedByDropdown(!showBlockedByDropdown);
+                          if (!showBlockedByDropdown) loadAvailableTasks();
+                        }}
+                        className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                      >
+                        <Plus size={10} /> Add blocking task
+                      </button>
 
                     {showBlockedByDropdown && (
                       <>
@@ -1518,7 +1525,8 @@ Tips:
                         </div>
                       </>
                     )}
-                  </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Blocks Section (read-only display) */}

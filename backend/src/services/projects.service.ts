@@ -70,12 +70,24 @@ export const projectsService = {
     return projectsWithStats;
   },
 
-  async getAllForUser(userId: string, isAdmin: boolean): Promise<ProjectWithStats[]> {
-    if (isAdmin) {
-      return this.getAll();
+  async getAllForUser(userId: string, isAdmin: boolean, organizationId?: string | null): Promise<ProjectWithStats[]> {
+    let allProjects = await database.getAll<Project>('projects');
+
+    // Filter by organization if provided
+    if (organizationId) {
+      allProjects = allProjects.filter(project => project.organization_id === organizationId);
     }
 
-    const allProjects = await database.getAll<Project>('projects');
+    // Admins can see all projects in the organization
+    if (isAdmin) {
+      const projectsWithStats = await Promise.all(
+        allProjects.map(async (project) => ({
+          ...project,
+          ...(await getProjectStats(project.id)),
+        }))
+      );
+      return projectsWithStats;
+    }
 
     // Get all project IDs where the user is a member
     const memberships = await database.findMany<any>('project_members', { user_id: userId });

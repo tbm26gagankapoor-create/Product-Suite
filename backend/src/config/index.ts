@@ -48,15 +48,37 @@ export const config = {
     scopes: ['openid', 'profile', 'email'],
   },
 
+  // GitHub OAuth Configuration (for repository integration)
+  // App owned by: @tbm26gagankapoor-create | App ID: 2787348
+  github: {
+    clientId: process.env.GITHUB_CLIENT_ID || 'Iv23likKwxpNvstXyFyK',
+    clientSecret: process.env.GITHUB_CLIENT_SECRET || '36e5355722e6cf55876dd94ab063db3513607eae',
+    redirectUri: process.env.GITHUB_REDIRECT_URI || 'http://localhost:3001/api/v1/auth/github/callback',
+    scopes: ['repo', 'read:user', 'user:email'],
+  },
+
+  // Encryption Configuration (for storing sensitive tokens)
+  encryption: {
+    key: process.env.ENCRYPTION_KEY || '',
+  },
+
   // Frontend URL (for OAuth redirects)
   frontend: {
     url: process.env.FRONTEND_URL || 'http://localhost:5173',
   },
 
-  // Gmail SMTP Configuration
+  // Gmail SMTP Configuration (legacy - kept for fallback)
   gmail: {
     user: process.env.GMAIL_USER || '',
     appPassword: process.env.GMAIL_APP_PASSWORD || '',
+  },
+
+  // Resend Email Configuration
+  resend: {
+    apiKey: process.env.RESEND_API_KEY || '',
+    fromEmail: process.env.RESEND_FROM_EMAIL || 'noreply@infinia.app',
+    fromName: process.env.RESEND_FROM_NAME || 'Infinia',
+    replyTo: process.env.RESEND_REPLY_TO || '',
   },
 } as const;
 

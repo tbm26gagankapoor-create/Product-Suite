@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-    ChevronDown, 
-    Sparkles, 
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+    ChevronDown,
+    Sparkles,
     Search,
     ChevronRight,
     ArrowRight,
@@ -22,13 +22,24 @@ import {
     X,
     Trash2,
     GripVertical,
-    Save
+    Save,
+    Github,
+    AlertCircle
 } from 'lucide-react';
-import { DOC_NAV_ITEMS, USERS } from '../constants';
+import * as LucideIcons from 'lucide-react';
 import { Project, User as UserType, DocVersion } from '../types';
 import { useProjectData } from '../context/ProjectDataContext';
+import { useConfig } from '../context/ConfigContext';
+
+// Helper to get icon component by name
+const getIconComponentByName = (iconName: string): any => {
+    return (LucideIcons as any)[iconName] || FileText;
+};
 import { aiClient } from '../lib/ai';
 import { documentsService } from '../services/documents.service';
+import { githubApi } from '../services/api';
+import GitHubIntegrationSettings from './GitHubIntegrationSettings';
+import type { GitHubIntegration } from '../types';
 
 interface PRDViewProps {
     project?: Project;
@@ -82,17 +93,18 @@ const timeAgo = (date: Date) => {
 
 const PRDView: React.FC<PRDViewProps> = ({ project }) => {
     // --- Context ---
-    const { updateProject } = useProjectData();
+    const { updateProject, currentUser } = useProjectData();
+    const { docNavItems } = useConfig();
 
     // --- State ---
-    const [activeSection, setActiveSection] = useState(DOC_NAV_ITEMS[0].id);
+    const [activeSection, setActiveSection] = useState(docNavItems[0]?.id || 'prd');
     const [localDocs, setLocalDocs] = useState<Record<string, string>>({});
     const [prompt, setPrompt] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
     const [lastSaved, setLastSaved] = useState<Date>(new Date());
 
-    // Feature State
-    const [sections, setSections] = useState<Section[]>(DOC_NAV_ITEMS);
+    // Feature State - Transform docNavItems to match Section interface
+    const [sections, setSections] = useState<Section[]>([]);
     
     // Structure State for Drag & Drop
     const [docStructure, setDocStructure] = useState<DocGroup[]>([
@@ -118,8 +130,24 @@ const PRDView: React.FC<PRDViewProps> = ({ project }) => {
     const [saveComment, setSaveComment] = useState('');
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
+    // GitHub Integration State
+    const [showGitHubSettings, setShowGitHubSettings] = useState(false);
+    const [githubIntegration, setGithubIntegration] = useState<GitHubIntegration | null>(null);
+    const [isSyncing, setIsSyncing] = useState(false);
+
     const contentRef = useRef<HTMLDivElement>(null);
-    const currentUser = USERS[0]; // Gagan
+
+    // Initialize sections from config when docNavItems is available
+    useEffect(() => {
+        if (docNavItems.length > 0 && sections.length === 0) {
+            setSections(docNavItems.map(item => ({
+                id: item.name,
+                label: item.label,
+                icon: item.icon,
+                isCustom: false
+            })));
+        }
+    }, [docNavItems, sections.length]);
 
     const cleanHtml = (text: string) => {
         if (!text) return '';
@@ -157,6 +185,55 @@ const PRDView: React.FC<PRDViewProps> = ({ project }) => {
     useEffect(() => {
         setHasUnsavedChanges(false);
     }, [activeSection]);
+
+    // Load GitHub integration status
+    const loadGitHubIntegration = useCallback(async () => {
+        if (!project?.id) return;
+        try {
+            const integration = await githubApi.getIntegration(project.id);
+            setGithubIntegration(integration);
+        } catch (error) {
+            console.error('Failed to load GitHub integration:', error);
+        }
+    }, [project?.id]);
+
+    useEffect(() => {
+        loadGitHubIntegration();
+    }, [loadGitHubIntegration]);
+
+    // Handle GitHub manual sync
+    const handleGitHubSync = async () => {
+        if (!project?.id || !githubIntegration || isSyncing) return;
+
+        // Check if repo is configured - if not, open settings modal
+        const needsSetup = !githubIntegration.repoOwner || !githubIntegration.repoName;
+        if (needsSetup) {
+            setShowGitHubSettings(true);
+            return;
+        }
+
+        const content = localDocs[activeSection] || '';
+        if (!content) return;
+
+        setIsSyncing(true);
+        try {
+            const result = await githubApi.manualSync(project.id, activeSection, content);
+            if (result.success) {
+                // Reload integration to get updated lastSyncAt
+                await loadGitHubIntegration();
+                alert('Successfully synced to GitHub!');
+            } else {
+                console.error('GitHub sync failed:', result.error);
+                alert(`GitHub sync failed: ${result.error || 'Unknown error'}\n\nTip: If you see "Resource not accessible", try selecting a different repository in GitHub Settings.`);
+            }
+        } catch (error) {
+            console.error('GitHub sync error:', error);
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            alert(`GitHub sync error: ${errorMessage}`);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
 
     // Handle Content Updates (Live Edit without Auto-save to history)
     const handleContentBlur = () => {
@@ -533,7 +610,10 @@ const PRDView: React.FC<PRDViewProps> = ({ project }) => {
                                                     <GripVertical size={12} />
                                                 </div>
                                                 
-                                                <item.icon size={13} className={`${isActive ? 'text-blue-500' : 'text-gray-400 dark:text-gray-600 group-hover:text-gray-500 dark:group-hover:text-gray-400'} flex-shrink-0`} />
+                                                {(() => {
+                                                    const IconComponent = typeof item.icon === 'string' ? getIconComponentByName(item.icon) : item.icon;
+                                                    return <IconComponent size={13} className={`${isActive ? 'text-blue-500' : 'text-gray-400 dark:text-gray-600 group-hover:text-gray-500 dark:group-hover:text-gray-400'} flex-shrink-0`} />;
+                                                })()}
                                                 <span className="truncate flex-1 select-none">{item.label}</span>
                                                 {hasContent && !isActive && (
                                                     <div className="ml-auto w-1 h-1 rounded-full bg-green-500 flex-shrink-0"></div>
@@ -615,6 +695,61 @@ const PRDView: React.FC<PRDViewProps> = ({ project }) => {
                                         <Share2 size={14} />
                                         <span>Share</span>
                                     </button>
+
+                                    {/* GitHub Sync Button */}
+                                    <div className="h-4 w-px bg-gray-200 dark:bg-[#2D2F36] mx-1"></div>
+                                    {githubIntegration ? (
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={handleGitHubSync}
+                                                disabled={isSyncing || !localDocs[activeSection]}
+                                                title={
+                                                    !githubIntegration.repoOwner || !githubIntegration.repoName
+                                                        ? 'Click to configure GitHub repository'
+                                                        : githubIntegration.lastSyncAt
+                                                            ? `Last synced: ${new Date(githubIntegration.lastSyncAt).toLocaleString()}`
+                                                            : 'Sync to GitHub'
+                                                }
+                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                                                    isSyncing
+                                                        ? 'bg-gray-100 dark:bg-[#1F2128] text-gray-400 cursor-wait'
+                                                        : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-[#1F2128]'
+                                                }`}
+                                            >
+                                                {isSyncing ? (
+                                                    <Loader2 size={14} className="animate-spin" />
+                                                ) : (
+                                                    <Github size={14} />
+                                                )}
+                                                <span>Sync</span>
+                                                {/* Show warning if repo not configured */}
+                                                {(!githubIntegration.repoOwner || !githubIntegration.repoName) && (
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                                )}
+                                                {githubIntegration.repoOwner && githubIntegration.repoName && githubIntegration.lastSyncStatus === 'success' && (
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                                                )}
+                                                {githubIntegration.repoOwner && githubIntegration.repoName && githubIntegration.lastSyncStatus === 'failed' && (
+                                                    <AlertCircle size={12} className="text-red-500" />
+                                                )}
+                                            </button>
+                                            <button
+                                                onClick={() => setShowGitHubSettings(true)}
+                                                className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1F2128] transition-colors"
+                                                title="GitHub Settings"
+                                            >
+                                                <MoreHorizontal size={14} />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => setShowGitHubSettings(true)}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-gray-500 hover:bg-gray-100 dark:hover:bg-[#1F2128] transition-colors"
+                                        >
+                                            <Github size={14} />
+                                            <span>GitHub</span>
+                                        </button>
+                                    )}
                                 </div>
                             </div>
 
@@ -753,25 +888,38 @@ const PRDView: React.FC<PRDViewProps> = ({ project }) => {
                     <div className="bg-white dark:bg-[#15171E] w-full max-w-sm rounded-xl shadow-2xl border border-gray-200 dark:border-[#2D2F36] p-6">
                         <h3 className="text-lg font-bold text-[#172B4D] dark:text-white mb-2">Save Version</h3>
                         <p className="text-sm text-gray-500 mb-4">Create a checkpoint for this document section.</p>
-                        
+
                         <div className="space-y-3 mb-6">
                             <label className="text-xs font-bold uppercase text-gray-500">Summary (Optional)</label>
-                            <input 
-                                type="text" 
+                            <input
+                                type="text"
                                 value={saveComment}
                                 onChange={(e) => setSaveComment(e.target.value)}
-                                placeholder="e.g. Updated requirements table" 
+                                placeholder="e.g. Updated requirements table"
                                 className="w-full bg-gray-50 dark:bg-[#0B0C0E] border border-gray-200 dark:border-[#2D2F36] rounded-lg px-3 py-2 text-sm text-[#172B4D] dark:text-white focus:outline-none focus:border-blue-500"
                                 autoFocus
                             />
                         </div>
-                        
+
                         <div className="flex justify-end gap-2">
                             <button onClick={() => setIsSaveModalOpen(false)} className="px-3 py-2 text-sm font-bold text-gray-500 hover:text-gray-700 dark:hover:text-white">Cancel</button>
                             <button onClick={handleManualSave} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700">Save Version</button>
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* GitHub Integration Settings Modal */}
+            {showGitHubSettings && project && (
+                <GitHubIntegrationSettings
+                    projectId={project.id}
+                    projectName={project.name}
+                    isModal={true}
+                    onClose={() => {
+                        setShowGitHubSettings(false);
+                        loadGitHubIntegration();
+                    }}
+                />
             )}
 
         </div>

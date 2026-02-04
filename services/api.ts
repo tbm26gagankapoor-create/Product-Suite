@@ -8,6 +8,15 @@ interface ApiResponse<T> {
   message?: string;
 }
 
+// Helper to get auth headers
+function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem('infinia_token');
+  if (token) {
+    return { Authorization: `Bearer ${token}` };
+  }
+  return {};
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -17,6 +26,7 @@ async function request<T>(
   const config: RequestInit = {
     headers: {
       'Content-Type': 'application/json',
+      ...getAuthHeaders(),
       ...options.headers,
     },
     ...options,
@@ -53,8 +63,17 @@ export const projectsApi = {
   getAll: () => request<any[]>('/projects'),
   getById: (id: string) => request<any>(`/projects/${id}`),
   getByCode: (code: string) => request<any>(`/projects/code/${code}`),
-  create: (data: { name: string; code: string; description?: string; owner_id?: string }) =>
-    request<any>('/projects', { method: 'POST', body: JSON.stringify(data) }),
+  create: (data: {
+    name: string;
+    code: string;
+    description?: string;
+    owner_id?: string;
+    image_url?: string;
+    icon?: string;
+    icon_color?: string;
+    vision?: string;
+    prd?: string;
+  }) => request<any>('/projects', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: Partial<any>) =>
     request<any>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: string) =>
@@ -203,6 +222,203 @@ export const healthApi = {
   check: () => request<{ status: string; timestamp: string; database: string }>('/health'),
 };
 
+// ============================================
+// CONFIG API
+// ============================================
+export interface TaskTypeConfig {
+  id: string;
+  organization_id?: string;
+  name: string;
+  label: string;
+  icon: string;
+  color: string;
+  bg_color: string;
+  display_order: number;
+  is_active: boolean;
+}
+
+export interface PriorityConfig {
+  id: string;
+  organization_id?: string;
+  name: string;
+  label: string;
+  icon: string;
+  color: string;
+  bg_color: string;
+  display_order: number;
+  is_active: boolean;
+}
+
+export interface StatusConfig {
+  id: string;
+  organization_id?: string;
+  name: string;
+  label: string;
+  icon?: string;
+  color: string;
+  bg_color?: string;
+  is_default: boolean;
+  is_done_state: boolean;
+  display_order: number;
+  is_active: boolean;
+}
+
+export interface RoleConfig {
+  id: string;
+  organization_id?: string;
+  name: string;
+  label: string;
+  color: string;
+  bg_color: string;
+  permissions: string[];
+  display_order: number;
+  is_active: boolean;
+}
+
+export interface NavItemConfig {
+  id: string;
+  organization_id?: string;
+  type: 'main' | 'doc';
+  name: string;
+  label: string;
+  icon: string;
+  route?: string;
+  parent_id?: string;
+  display_order: number;
+  is_active: boolean;
+  requires_admin: boolean;
+}
+
+export interface ThemeColorConfig {
+  id: string;
+  organization_id?: string;
+  category: string;
+  name: string;
+  light_classes: string;
+  dark_classes: string;
+  display_order: number;
+  is_active: boolean;
+}
+
+export interface AppConfig {
+  taskTypes: TaskTypeConfig[];
+  priorities: PriorityConfig[];
+  statuses: StatusConfig[];
+  roles: RoleConfig[];
+  navItems: NavItemConfig[];
+  docNavItems: NavItemConfig[];
+  themeColors: ThemeColorConfig[];
+}
+
+// ============================================
+// GITHUB INTEGRATION API
+// ============================================
+import type { GitHubIntegration, GitHubRepo, GitHubBranch, GitHubSyncLog, GitHubSyncResult } from '../types';
+
+export const githubApi = {
+  // Check if GitHub OAuth is configured
+  getStatus: () => request<{ configured: boolean }>('/auth/github/status'),
+
+  // Get integration settings for a project
+  getIntegration: (projectId: string) => request<GitHubIntegration | null>(`/projects/${projectId}/github`),
+
+  // Connect GitHub (redirect to OAuth)
+  connectGitHub: (projectId: string) => {
+    // This redirects to the OAuth flow
+    // Include token in query param since browser redirects don't send Authorization header
+    const token = localStorage.getItem('infinia_token');
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+    window.location.href = `/api/v1/auth/github/connect/${projectId}${tokenParam}`;
+  },
+
+  // Disconnect GitHub integration
+  disconnectGitHub: (projectId: string) =>
+    request<void>(`/projects/${projectId}/github`, { method: 'DELETE' }),
+
+  // Update integration settings
+  updateSettings: (
+    projectId: string,
+    settings: {
+      repoOwner?: string;
+      repoName?: string;
+      branch?: string;
+      filePath?: string;
+      autoSyncEnabled?: boolean;
+      syncSections?: string[];
+    }
+  ) => request<GitHubIntegration>(`/projects/${projectId}/github`, {
+    method: 'PATCH',
+    body: JSON.stringify(settings),
+  }),
+
+  // List available repositories
+  listRepos: (projectId: string) => request<GitHubRepo[]>(`/projects/${projectId}/github/repos`),
+
+  // List branches for a repository
+  listBranches: (projectId: string, owner?: string, repo?: string) => {
+    const params = new URLSearchParams();
+    if (owner) params.append('owner', owner);
+    if (repo) params.append('repo', repo);
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    return request<GitHubBranch[]>(`/projects/${projectId}/github/branches${queryString}`);
+  },
+
+  // Manually trigger a sync
+  manualSync: (projectId: string, sectionId: string, content: string) =>
+    request<GitHubSyncResult>(`/projects/${projectId}/github/sync`, {
+      method: 'POST',
+      body: JSON.stringify({ sectionId, content }),
+    }),
+
+  // Test GitHub connection
+  testConnection: (projectId: string) =>
+    request<{ success: boolean; error?: string }>(`/projects/${projectId}/github/test`, {
+      method: 'POST',
+    }),
+
+  // Get sync logs
+  getSyncLogs: (projectId: string, limit = 50) =>
+    request<GitHubSyncLog[]>(`/projects/${projectId}/github/logs?limit=${limit}`),
+
+  // Create a new repository
+  createRepo: (projectId: string, options: { name: string; description?: string; isPrivate?: boolean }) =>
+    request<{ success: boolean; repo?: GitHubRepo; error?: string }>(`/projects/${projectId}/github/repos`, {
+      method: 'POST',
+      body: JSON.stringify(options),
+    }),
+};
+
+export const configApi = {
+  getAll: (organizationId?: string) => {
+    const params = organizationId ? `?organization_id=${organizationId}` : '';
+    return request<AppConfig>(`/config${params}`);
+  },
+  getTaskTypes: (organizationId?: string) => {
+    const params = organizationId ? `?organization_id=${organizationId}` : '';
+    return request<TaskTypeConfig[]>(`/config/task-types${params}`);
+  },
+  getPriorities: (organizationId?: string) => {
+    const params = organizationId ? `?organization_id=${organizationId}` : '';
+    return request<PriorityConfig[]>(`/config/priorities${params}`);
+  },
+  getStatuses: (organizationId?: string) => {
+    const params = organizationId ? `?organization_id=${organizationId}` : '';
+    return request<StatusConfig[]>(`/config/statuses${params}`);
+  },
+  getRoles: (organizationId?: string) => {
+    const params = organizationId ? `?organization_id=${organizationId}` : '';
+    return request<RoleConfig[]>(`/config/roles${params}`);
+  },
+  getNavigation: (organizationId?: string) => {
+    const params = organizationId ? `?organization_id=${organizationId}` : '';
+    return request<{ main: NavItemConfig[]; doc: NavItemConfig[] }>(`/config/navigation${params}`);
+  },
+  getThemeColors: (organizationId?: string) => {
+    const params = organizationId ? `?organization_id=${organizationId}` : '';
+    return request<ThemeColorConfig[]>(`/config/theme-colors${params}`);
+  },
+};
+
 // Default export with all APIs
 export default {
   users: usersApi,
@@ -213,4 +429,6 @@ export default {
   columns: columnsApi,
   comments: commentsApi,
   health: healthApi,
+  config: configApi,
+  github: githubApi,
 };

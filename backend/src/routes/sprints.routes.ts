@@ -18,7 +18,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   }
 
   const projectId = req.query.project_id as string | undefined;
-  const sprints = await sprintsService.getAllForUser(user.id, user.isAdmin, projectId);
+  const sprints = await sprintsService.getAllForUser(user.id, user.isAdmin, projectId, user.organizationId);
   res.json({ success: true, data: sprints });
 });
 

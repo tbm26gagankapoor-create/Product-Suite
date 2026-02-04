@@ -2,21 +2,17 @@
 import React, { useState, useMemo } from 'react';
 import { Plus, Search, ListFilter, MoreHorizontal, X, Trash2, AlertCircle, Circle, PlayCircle, PauseCircle, CheckCircle2, Lightbulb, Check, SignalHigh, SignalMedium, SignalLow, User, Layers } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { COLUMNS } from '../constants';
+import * as LucideIcons from 'lucide-react';
 import { Task } from '../types';
 import TaskCard from './TaskCard';
 import TaskDetailModal from './TaskDetailModal';
 import CreateTaskModal from './CreateTaskModal';
 import { useProjectData } from '../context/ProjectDataContext';
+import { useConfig } from '../context/ConfigContext';
 
-// Column configuration with icons and colors
-const COLUMN_CONFIG: Record<string, { icon: any; color: string; bg: string }> = {
-  'backlog': { icon: Circle, color: 'text-gray-400', bg: 'bg-gray-500/10' },
-  'idea': { icon: Lightbulb, color: 'text-amber-400', bg: 'bg-amber-500/10' },
-  'todo': { icon: Circle, color: 'text-blue-400', bg: 'bg-blue-500/10' },
-  'inprogress': { icon: PlayCircle, color: 'text-amber-400', bg: 'bg-amber-500/10' },
-  'blocked': { icon: PauseCircle, color: 'text-red-400', bg: 'bg-red-500/10' },
-  'done': { icon: CheckCircle2, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+// Helper to get icon component by name
+const getIconComponentByName = (iconName: string): any => {
+  return (LucideIcons as any)[iconName] || Circle;
 };
 
 interface KanbanBoardProps {
@@ -30,7 +26,8 @@ interface KanbanBoardProps {
 type GroupBy = 'none' | 'priority' | 'assignee' | 'epic';
 
 const KanbanBoard: React.FC<KanbanBoardProps> = ({ sprintId, tasks, onTaskUpdate, title = "Product roadmap", projectId }) => {
-  const { tasks: allTasks, organizationUsers: users, deleteTask } = useProjectData(); // Needed to lookup Epics and Users
+  const { tasks: allTasks, organizationUsers: users, deleteTask } = useProjectData();
+  const { statuses, getStatusConfig } = useConfig();
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   
   // View State
@@ -287,21 +284,20 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ sprintId, tasks, onTaskUpdate
       {/* Board Columns (Horizontal Scroll) */}
       <div className="flex-1 overflow-x-auto overflow-y-hidden px-8 pb-6">
           <div className="flex h-full gap-4 min-w-max">
-              {COLUMNS.map((column) => {
-                  const columnConfig = COLUMN_CONFIG[column.id] || COLUMN_CONFIG['backlog'];
-                  const ColumnIcon = columnConfig.icon;
-                  const columnTaskCount = tasks.filter(t => t.columnId === column.id).length;
+              {statuses.map((status) => {
+                  const ColumnIcon = status.icon ? getIconComponentByName(status.icon) : Circle;
+                  const columnTaskCount = tasks.filter(t => t.columnId === status.name).length;
 
                   return (
                   <div
-                    key={column.id}
+                    key={status.name}
                     className="w-80 flex-shrink-0 flex flex-col bg-gray-100/50 dark:bg-[#1a1a1f] h-full rounded-2xl border border-gray-200/50 dark:border-white/5"
                   >
                       {/* Column Header */}
                       <div className="flex items-center justify-between sticky top-0 z-10 px-4 py-3 group">
                           <div className="flex items-center gap-2">
                               <h3 className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                  {column.title}
+                                  {status.label}
                               </h3>
                               <span className="bg-gray-200/80 dark:bg-[#2a2a30] text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded-md text-[10px] font-bold min-w-[24px] text-center">
                                 {columnTaskCount}
@@ -309,7 +305,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ sprintId, tasks, onTaskUpdate
                           </div>
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button
-                                onClick={() => { setCreateColumnId(column.id); setIsCreateModalOpen(true); }}
+                                onClick={() => { setCreateColumnId(status.name); setIsCreateModalOpen(true); }}
                                 className="p-1.5 hover:bg-gray-200 dark:hover:bg-[#2D2F36] rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
                               >
                                   <Plus size={14} />
@@ -323,13 +319,13 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ sprintId, tasks, onTaskUpdate
                       {/* Column Body / Swimlanes */}
                       <div className="flex-1 overflow-y-auto custom-scrollbar px-3 pb-3 space-y-4">
                           {swimlaneGroups.map(group => {
-                              const groupTasks = group.tasks.filter(t => t.columnId === column.id);
+                              const groupTasks = group.tasks.filter(t => t.columnId === status.name);
                               
                               return (
                                   <div 
                                     key={group.id} 
                                     onDragOver={handleDragOver}
-                                    onDrop={(e) => handleDrop(e, column.id, group.id)}
+                                    onDrop={(e) => handleDrop(e, status.name, group.id)}
                                     className={`flex flex-col gap-3 min-h-[100px] ${groupBy !== 'none' ? 'border-b border-dashed border-gray-300 dark:border-gray-700 pb-4 mb-2' : ''}`}
                                   >
                                       {/* Swimlane Header if needed */}

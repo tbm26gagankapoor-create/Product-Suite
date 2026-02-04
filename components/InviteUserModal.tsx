@@ -11,7 +11,9 @@ import {
   Copy,
   Check,
   Send,
-  Loader2
+  Loader2,
+  UserCheck,
+  UserRoundPlus
 } from 'lucide-react';
 import { useProjectData } from '../context/ProjectDataContext';
 import { api } from '../lib/api';
@@ -33,6 +35,8 @@ const InviteUserModal: React.FC<InviteUserModalProps> = ({ onClose, onInviteSent
   const [copied, setCopied] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [emailError, setEmailError] = useState('');
+  const [isExistingUser, setIsExistingUser] = useState(false);
+  const [existingUserName, setExistingUserName] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,6 +66,8 @@ const InviteUserModal: React.FC<InviteUserModalProps> = ({ onClose, onInviteSent
       );
       setInviteLink(result.invite.inviteLink);
       setEmailSent(result.emailSent);
+      setIsExistingUser(result.isExistingUser || false);
+      setExistingUserName(result.existingUserName || null);
       if (result.emailError) {
         setEmailError(result.emailError);
       }
@@ -199,6 +205,33 @@ const InviteUserModal: React.FC<InviteUserModalProps> = ({ onClose, onInviteSent
           {/* Success Message with Invite Link - Infinia Design */}
           {success && (
             <div className="space-y-3">
+              {/* User Status - Existing or New */}
+              {isExistingUser ? (
+                <div className="p-3 bg-[#3B82F6]/10 border border-[#3B82F6]/30 rounded-lg text-[#3B82F6] text-xs font-medium flex items-start gap-2">
+                  <UserCheck size={14} className="flex-shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold">Existing user found!</span>
+                    <p className="mt-1 text-[#9CA3AF]">
+                      {existingUserName ? (
+                        <><span className="text-[#3B82F6]">{existingUserName}</span> ({email}) is already registered. They just need to accept the invitation.</>
+                      ) : (
+                        <>{email} is already registered. They just need to accept the invitation.</>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-[#8B5CF6]/10 border border-[#8B5CF6]/30 rounded-lg text-[#8B5CF6] text-xs font-medium flex items-start gap-2">
+                  <UserRoundPlus size={14} className="flex-shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold">New user invitation</span>
+                    <p className="mt-1 text-[#9CA3AF]">
+                      {email} is not registered yet. They'll need to create an account first.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Email Status */}
               {emailSent ? (
                 <div className="p-3 bg-[#10B981]/10 border border-[#10B981]/30 rounded-lg text-[#10B981] text-xs font-medium flex items-start gap-2">
@@ -241,7 +274,11 @@ const InviteUserModal: React.FC<InviteUserModalProps> = ({ onClose, onInviteSent
                   </button>
                 </div>
                 <p className="text-xs text-[#6B7280]">
-                  When they sign up with <span className="font-medium text-[#9CA3AF]">{email}</span>, they'll automatically join your organization.
+                  {isExistingUser ? (
+                    <>Share this link with <span className="font-medium text-[#9CA3AF]">{existingUserName || email}</span> to join your organization.</>
+                  ) : (
+                    <>When they sign up with <span className="font-medium text-[#9CA3AF]">{email}</span>, they'll automatically join your organization.</>
+                  )}
                 </p>
               </div>
             </div>

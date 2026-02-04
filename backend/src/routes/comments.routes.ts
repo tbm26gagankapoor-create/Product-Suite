@@ -1,7 +1,10 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { commentsService } from '../services/comments.service.js';
 import { activityService } from '../services/activity.service.js';
+import { tasksService } from '../services/tasks.service.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.middleware.js';
+import { notificationService } from '../services/notification.service.js';
+import { User } from '../models/index.js';
 
 const router = Router();
 
@@ -23,17 +26,31 @@ router.get('/:id', async (req, res) => {
   res.json({ success: true, data: comment });
 });
 
-// Create comment
-router.post('/', async (req: AuthRequest, res) => {
+// Create comment (with permission check)
+router.post('/', async (req: AuthRequest, res: Response) => {
+  const user = req.user;
   const { task_id, user_id, content, parent_comment_id } = req.body;
 
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+
   // Use user_id from body or from authenticated user
-  const actualUserId = user_id || req.user?.id;
+  const actualUserId = user_id || user.id;
 
   if (!task_id || !actualUserId || !content) {
     return res.status(400).json({
       success: false,
       error: 'task_id and content are required',
+    });
+  }
+
+  // Check permission to comment
+  const permissions = await tasksService.getTaskPermissions(task_id, user.id, user.isAdmin);
+  if (!permissions.canComment) {
+    return res.status(403).json({
+      success: false,
+      error: 'You do not have permission to comment on this task.'
     });
   }
 
@@ -47,6 +64,37 @@ router.post('/', async (req: AuthRequest, res) => {
     user_id: actualUserId,
     new_value: content.substring(0, 100), // Store first 100 chars of comment
   });
+
+  // Send notifications (fire and forget)
+  if (comment) {
+    // Notify about the new comment
+    notificationService.notifyCommentAdded(task_id, comment.id, actualUserId).catch(err => {
+      console.error('Error sending comment notification:', err);
+    });
+
+    // Parse and notify @mentions
+    const mentionedUsernames = notificationService.parseMentions(content);
+    if (mentionedUsernames.length > 0) {
+      // Look up user IDs from usernames
+      (async () => {
+        try {
+          const mentionedUsers = await User.find({
+            $or: [
+              { name: { $in: mentionedUsernames } },
+              { email: { $regex: new RegExp(`^(${mentionedUsernames.join('|')})@`, 'i') } }
+            ]
+          });
+          const mentionedUserIds = mentionedUsers.map(u => u.id);
+
+          if (mentionedUserIds.length > 0) {
+            await notificationService.notifyMention(task_id, mentionedUserIds, actualUserId, content);
+          }
+        } catch (err) {
+          console.error('Error sending mention notifications:', err);
+        }
+      })();
+    }
+  }
 
   res.status(201).json({ success: true, data: comment });
 });

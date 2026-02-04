@@ -9,6 +9,13 @@ export interface User {
   avatar_url: string | null;
   designation: string | null;
   organization_id?: string;
+  location?: string;
+  bio?: string;
+  website?: string;
+  job_title?: string;
+  social_links?: Record<string, string>;
+  status?: string;
+  last_active_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -19,6 +26,12 @@ export interface CreateUserInput {
   password: string;
   avatar_url?: string;
   designation?: string;
+  location?: string;
+  bio?: string;
+  website?: string;
+  job_title?: string;
+  organization_id?: string;
+  status?: string;
 }
 
 export const usersService = {
@@ -51,6 +64,12 @@ export const usersService = {
       password_hash: await bcrypt.hash(input.password, 10),
       avatar_url: input.avatar_url || null,
       designation: input.designation || null,
+      organization_id: input.organization_id,
+      location: input.location,
+      bio: input.bio,
+      website: input.website,
+      job_title: input.job_title,
+      status: input.status || 'active',
       created_at: now(),
       updated_at: now(),
     };

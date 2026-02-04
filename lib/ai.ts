@@ -1,8 +1,9 @@
 
 // Custom AI Client for model.iamsaif.ai
-export const SAIF_API_KEY = "sk-QFZWnv7xcrm4oqKSNK04RQ";
-export const SAIF_API_BASE_URL = "https://model.iamsaif.ai/v1"; 
-export const SAIF_MODEL = "openai/gpt-oss-120b";
+// API credentials should be set in environment variables
+export const SAIF_API_KEY = import.meta.env.VITE_SAIF_API_KEY || '';
+export const SAIF_API_BASE_URL = import.meta.env.VITE_SAIF_API_BASE_URL || 'https://model.iamsaif.ai/v1';
+export const SAIF_MODEL = import.meta.env.VITE_SAIF_MODEL || 'openai/gpt-oss-120b';
 
 // CORS Proxy to handle browser restrictions if direct call fails
 const CORS_PROXY = "https://corsproxy.io/?";

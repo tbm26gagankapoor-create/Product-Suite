@@ -12,9 +12,9 @@ import {
   ArrowUp
 } from 'lucide-react';
 import { Task, User } from '../types';
-import { COLUMNS } from '../constants';
 import TaskDetailModal from './TaskDetailModal';
 import { useProjectData } from '../context/ProjectDataContext';
+import { useConfig } from '../context/ConfigContext';
 
 // Import new timeline components
 import TimelineHeader from './timeline/TimelineHeader';
@@ -66,6 +66,7 @@ const getValidDate = (dateStr?: string, defaultOffset = 0): string => {
 
 const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
   const { sprints } = useProjectData();
+  const { getStatusConfig } = useConfig();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Scale State
@@ -381,7 +382,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({ tasks, onTaskUpdate }) => {
                         </div>
                         <div className="w-24 flex-shrink-0 flex justify-center">
                             <span className={`text-[9px] px-2 py-0.5 rounded border uppercase font-bold tracking-wider ${getStatusBadgeStyles(row.data.columnId)}`}>
-                                {COLUMNS.find(c => c.id === row.data.columnId)?.title || row.data.columnId}
+                                {getStatusConfig(row.data.columnId)?.label || row.data.columnId}
                             </span>
                         </div>
                       </>

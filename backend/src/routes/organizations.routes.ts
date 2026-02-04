@@ -1,8 +1,40 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { organizationsService } from '../services/organizations.service.js';
+import { authMiddleware, AuthRequest } from '../middleware/auth.middleware.js';
 import database from '../lib/database.js';
 
 const router = Router();
+
+// Get organizations for the current user (requires auth)
+router.get('/my-organizations', authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) {
+    return res.status(401).json({ success: false, error: 'User not authenticated' });
+  }
+
+  const organizations = await organizationsService.getUserOrganizations(userId);
+
+  // Get user's membership details for each org
+  const memberships = await Promise.all(organizations.map(async (org) => {
+    const member = await organizationsService.getMember(org.id, userId);
+    return {
+      organization: {
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        domain: org.domain,
+        logoUrl: org.logo_url,
+        ownerId: org.owner_id,
+        memberCount: org.memberCount,
+        projectCount: org.projectCount,
+      },
+      role: member?.role || 'member',
+      joinedAt: member?.joined_at,
+    };
+  }));
+
+  res.json({ success: true, data: memberships });
+});
 
 // Get all organizations (with optional filters)
 router.get('/', async (req, res) => {

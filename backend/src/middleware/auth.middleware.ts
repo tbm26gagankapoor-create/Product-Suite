@@ -9,6 +9,7 @@ export interface AuthUser {
   name: string;
   designation: string;
   isAdmin: boolean;
+  organizationId: string | null;
 }
 
 export interface AuthRequest extends Request {
@@ -42,6 +43,7 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
         name: user.name,
         designation: user.designation || 'Member',
         isAdmin: user.designation === 'Admin',
+        organizationId: user.organization_id || null,
       };
     }
   } catch (error) {
@@ -80,6 +82,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
       name: user.name,
       designation: user.designation || 'Member',
       isAdmin: user.designation === 'Admin',
+      organizationId: user.organization_id || null,
     };
 
     next();

@@ -11,7 +11,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { Task, Sprint, User, Priority } from '../types';
-import { COLUMNS } from '../constants';
+import { useConfig } from '../context/ConfigContext';
 
 interface BulkActionToolbarProps {
   selectedTasks: Task[];
@@ -36,6 +36,7 @@ const BulkActionToolbar: React.FC<BulkActionToolbarProps> = ({
   sprints,
   users,
 }) => {
+  const { statuses } = useConfig();
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
 
   if (selectedTasks.length === 0) return null;
@@ -81,13 +82,13 @@ const BulkActionToolbar: React.FC<BulkActionToolbarProps> = ({
           {activeDropdown === 'status' && (
             <div className="absolute bottom-full left-0 mb-2 w-48 bg-gray-800 rounded-xl shadow-xl border border-gray-700 overflow-hidden">
               <div className="p-1">
-                {COLUMNS.map((column) => (
+                {statuses.map((status) => (
                   <button
-                    key={column.id}
-                    onClick={() => handleAction(() => onBulkStatusChange(column.id))}
+                    key={status.name}
+                    onClick={() => handleAction(() => onBulkStatusChange(status.name))}
                     className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 rounded-lg transition-colors"
                   >
-                    {column.title}
+                    {status.label}
                   </button>
                 ))}
               </div>

@@ -35,6 +35,7 @@ import { useProjectData } from '../context/ProjectDataContext';
 import { Sprint, Project, User } from '../types';
 import SprintDetailView from './SprintDetailView';
 import SprintModal from './SprintModal';
+import ProductIcon from './ProductIcon';
 
 interface SprintsViewProps {
   onProjectSelect?: (projectId: string) => void;
@@ -773,13 +774,7 @@ const SprintsView: React.FC<SprintsViewProps> = ({ onProjectSelect }) => {
                                     <div className="w-64 px-6 py-4 border-r border-gray-200 dark:border-[#1F2128] bg-white dark:bg-[#15171E] flex-shrink-0 flex items-center">
                                         <div className="flex items-center gap-3">
                                             {/* Avatar/Icon */}
-                                            <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden shadow-sm ${project?.color ? `bg-gradient-to-br ${project.color}` : 'bg-gradient-to-br from-blue-500 to-blue-600'}`}>
-                                                {project?.imageUrl ? (
-                                                    <img src={project.imageUrl} alt={project.name} className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <span className="text-[10px] font-bold text-white">{project?.key?.substring(0, 2) || 'PR'}</span>
-                                                )}
-                                            </div>
+                                            {project && <ProductIcon project={project} size="sm" />}
                                             <div className="min-w-0 flex-1">
                                                 <button
                                                     onClick={() => project && onProjectSelect?.(project.id)}

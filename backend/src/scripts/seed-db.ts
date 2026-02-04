@@ -161,6 +161,76 @@ const database = {
     { id: 'pref-004', user_id: 'user-004', theme: 'dark', default_project_id: 'proj-002', notification_email: true, notification_push: true, created_at: timestamp, updated_at: timestamp },
     { id: 'pref-005', user_id: 'user-005', theme: 'light', default_project_id: 'proj-001', notification_email: false, notification_push: true, created_at: timestamp, updated_at: timestamp },
   ],
+
+  // Task Type Configurations (system defaults - organization_id is null)
+  task_type_configs: [
+    { id: 'tasktype-001', organization_id: null, name: 'epic', label: 'Epic', icon: 'Hexagon', color: 'text-purple-500', bg_color: 'bg-purple-500/10', display_order: 1, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'tasktype-002', organization_id: null, name: 'feature', label: 'Feature', icon: 'Rocket', color: 'text-pink-500', bg_color: 'bg-pink-500/10', display_order: 2, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'tasktype-003', organization_id: null, name: 'bug', label: 'Bug', icon: 'Bug', color: 'text-red-500', bg_color: 'bg-red-500/10', display_order: 3, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'tasktype-004', organization_id: null, name: 'story', label: 'Story', icon: 'Bookmark', color: 'text-emerald-500', bg_color: 'bg-emerald-500/10', display_order: 4, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'tasktype-005', organization_id: null, name: 'task', label: 'Task', icon: 'CheckSquare', color: 'text-blue-500', bg_color: 'bg-blue-500/10', display_order: 5, is_active: true, created_at: timestamp, updated_at: timestamp },
+  ],
+
+  // Priority Configurations
+  priority_configs: [
+    { id: 'priority-001', organization_id: null, name: 'HIGH', label: 'High', icon: 'SignalHigh', color: 'text-red-500', bg_color: 'bg-red-500/10', display_order: 1, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'priority-002', organization_id: null, name: 'MEDIUM', label: 'Medium', icon: 'SignalMedium', color: 'text-amber-500', bg_color: 'bg-amber-500/10', display_order: 2, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'priority-003', organization_id: null, name: 'LOW', label: 'Low', icon: 'SignalLow', color: 'text-blue-500', bg_color: 'bg-blue-500/10', display_order: 3, is_active: true, created_at: timestamp, updated_at: timestamp },
+  ],
+
+  // Status Configurations
+  status_configs: [
+    { id: 'status-001', organization_id: null, name: 'idea', label: 'IDEA', icon: 'Lightbulb', color: 'gray', bg_color: 'bg-gray-500/10', is_default: false, is_done_state: false, display_order: 1, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'status-002', organization_id: null, name: 'todo', label: 'TO DO', icon: 'Circle', color: 'blue', bg_color: 'bg-blue-500/10', is_default: true, is_done_state: false, display_order: 2, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'status-003', organization_id: null, name: 'inprogress', label: 'IN PROGRESS', icon: 'Clock', color: 'yellow', bg_color: 'bg-yellow-500/10', is_default: false, is_done_state: false, display_order: 3, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'status-004', organization_id: null, name: 'blocked', label: 'BLOCKED', icon: 'AlertTriangle', color: 'red', bg_color: 'bg-red-500/10', is_default: false, is_done_state: false, display_order: 4, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'status-005', organization_id: null, name: 'testing', label: 'TESTING', icon: 'FlaskConical', color: 'purple', bg_color: 'bg-purple-500/10', is_default: false, is_done_state: false, display_order: 5, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'status-006', organization_id: null, name: 'done', label: 'DONE', icon: 'CheckCircle', color: 'green', bg_color: 'bg-green-500/10', is_default: false, is_done_state: true, display_order: 6, is_active: true, created_at: timestamp, updated_at: timestamp },
+  ],
+
+  // Role Configurations
+  role_configs: [
+    { id: 'role-001', organization_id: null, name: 'owner', label: 'Owner', color: 'text-purple-700 dark:text-purple-400', bg_color: 'bg-purple-100 dark:bg-purple-900/30', permissions: ['all'], display_order: 1, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'role-002', organization_id: null, name: 'admin', label: 'Admin', color: 'text-blue-700 dark:text-blue-400', bg_color: 'bg-blue-100 dark:bg-blue-900/30', permissions: ['manage_members', 'manage_projects', 'manage_settings'], display_order: 2, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'role-003', organization_id: null, name: 'member', label: 'Member', color: 'text-gray-600 dark:text-gray-400', bg_color: 'bg-gray-100 dark:bg-gray-800', permissions: ['view', 'create', 'edit'], display_order: 3, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'role-004', organization_id: null, name: 'viewer', label: 'Viewer', color: 'text-gray-500 dark:text-gray-500', bg_color: 'bg-gray-100 dark:bg-gray-800', permissions: ['view'], display_order: 4, is_active: true, created_at: timestamp, updated_at: timestamp },
+  ],
+
+  // Navigation Items - Main sidebar
+  nav_items: [
+    { id: 'nav-001', organization_id: null, type: 'main', name: 'home', label: 'Home', icon: 'Home', route: 'home', display_order: 1, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-002', organization_id: null, type: 'main', name: 'products', label: 'Products', icon: 'Folder', route: 'project-list', display_order: 2, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-003', organization_id: null, type: 'main', name: 'sprints', label: 'Sprints', icon: 'Zap', route: 'sprints', display_order: 3, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-004', organization_id: null, type: 'main', name: 'my-tasks', label: 'My Tasks', icon: 'CheckSquare', route: 'my-tasks', display_order: 4, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-005', organization_id: null, type: 'main', name: 'teams', label: 'Teams', icon: 'Users', route: 'teams', display_order: 5, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-006', organization_id: null, type: 'main', name: 'settings', label: 'Settings', icon: 'Settings', route: 'settings', display_order: 6, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    // Document navigation items
+    { id: 'nav-007', organization_id: null, type: 'doc', name: 'prd', label: 'PRD Requirements', icon: 'FileText', route: null, display_order: 1, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-008', organization_id: null, type: 'doc', name: 'roadmap', label: 'Roadmap', icon: 'Activity', route: null, display_order: 2, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-009', organization_id: null, type: 'doc', name: 'modules', label: 'Modules & Features', icon: 'Layers', route: null, display_order: 3, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-010', organization_id: null, type: 'doc', name: 'business', label: 'Business Logic', icon: 'Network', route: null, display_order: 4, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-011', organization_id: null, type: 'doc', name: 'data', label: 'Data Schema', icon: 'Database', route: null, display_order: 5, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-012', organization_id: null, type: 'doc', name: 'app', label: 'App Structure', icon: 'FolderTree', route: null, display_order: 6, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-013', organization_id: null, type: 'doc', name: 'tech', label: 'Tech Stack', icon: 'Cpu', route: null, display_order: 7, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-014', organization_id: null, type: 'doc', name: 'design-guidelines', label: 'Design Guidelines', icon: 'Palette', route: null, display_order: 8, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-015', organization_id: null, type: 'doc', name: 'design', label: 'Design System', icon: 'SwatchBook', route: null, display_order: 9, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-016', organization_id: null, type: 'doc', name: 'adrs', label: 'ADRs', icon: 'FileCheck', route: null, display_order: 10, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-017', organization_id: null, type: 'doc', name: 'specs', label: 'Specs', icon: 'FileCode', route: null, display_order: 11, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-018', organization_id: null, type: 'doc', name: 'user-flows', label: 'User Flows', icon: 'GitBranch', route: null, display_order: 12, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-019', organization_id: null, type: 'doc', name: 'biz-flow', label: 'Business Flows', icon: 'Workflow', route: null, display_order: 13, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-020', organization_id: null, type: 'doc', name: 'sys-flow', label: 'System Flows', icon: 'CircuitBoard', route: null, display_order: 14, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+    { id: 'nav-021', organization_id: null, type: 'doc', name: 'integrations', label: 'Integrations', icon: 'Plug', route: null, display_order: 15, is_active: true, requires_admin: false, created_at: timestamp, updated_at: timestamp },
+  ],
+
+  // Theme Colors
+  theme_colors: [
+    { id: 'color-001', organization_id: null, category: 'team_avatar', name: 'blue', light_classes: 'bg-blue-100 text-blue-600', dark_classes: 'bg-blue-900/30 text-blue-400', display_order: 1, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'color-002', organization_id: null, category: 'team_avatar', name: 'purple', light_classes: 'bg-purple-100 text-purple-600', dark_classes: 'bg-purple-900/30 text-purple-400', display_order: 2, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'color-003', organization_id: null, category: 'team_avatar', name: 'green', light_classes: 'bg-green-100 text-green-600', dark_classes: 'bg-green-900/30 text-green-400', display_order: 3, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'color-004', organization_id: null, category: 'team_avatar', name: 'amber', light_classes: 'bg-amber-100 text-amber-600', dark_classes: 'bg-amber-900/30 text-amber-400', display_order: 4, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'color-005', organization_id: null, category: 'team_avatar', name: 'pink', light_classes: 'bg-pink-100 text-pink-600', dark_classes: 'bg-pink-900/30 text-pink-400', display_order: 5, is_active: true, created_at: timestamp, updated_at: timestamp },
+    { id: 'color-006', organization_id: null, category: 'team_avatar', name: 'indigo', light_classes: 'bg-indigo-100 text-indigo-600', dark_classes: 'bg-indigo-900/30 text-indigo-400', display_order: 6, is_active: true, created_at: timestamp, updated_at: timestamp },
+  ],
 };
 
 fs.writeFileSync(DB_PATH, JSON.stringify(database, null, 2));

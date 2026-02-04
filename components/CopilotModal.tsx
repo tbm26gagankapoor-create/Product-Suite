@@ -7,7 +7,7 @@ import {
   BarChart3, Clock, Flag, Bug, Lightbulb, RefreshCw
 } from 'lucide-react';
 import { useProjectData } from '../context/ProjectDataContext';
-import { aiClient } from '../lib/ai';
+import { aiClient, SAIF_API_KEY } from '../lib/ai';
 import { Task, Sprint, Project } from '../types';
 import CreateTaskModal, { CreateTaskData } from './CreateTaskModal';
 
@@ -223,6 +223,17 @@ export const CopilotModal: React.FC<CopilotModalProps> = ({ isOpen, onClose, ini
   const processQuery = async (query: string) => {
     setIsProcessing(true);
 
+    // Early check for API key
+    if (!SAIF_API_KEY) {
+      setMessages(prev => [...prev, {
+        id: `err-${Date.now()}`,
+        role: 'assistant',
+        content: "AI service is not configured. Please set the `VITE_SAIF_API_KEY` environment variable in your `.env.local` file to enable the copilot."
+      }]);
+      setIsProcessing(false);
+      return;
+    }
+
     const projectsList = projects.map(p =>
       `- ${p.name} (Key: ${p.key}, Status: ${p.status})`
     ).join('\n');
@@ -385,9 +396,27 @@ INSTRUCTIONS:
         setMessages(prev => [...prev, { id: `ai-${Date.now()}`, role: 'assistant', content: responseText }]);
       }
 
-    } catch (err) {
-      console.error(err);
-      setMessages(prev => [...prev, { id: `err-${Date.now()}`, role: 'assistant', content: "Sorry, I encountered an error. Please try again." }]);
+    } catch (err: any) {
+      console.error('Copilot error:', err);
+
+      // Determine user-friendly error message based on error type
+      let errorMessage = "Sorry, I encountered an error. Please try again.";
+
+      if (!SAIF_API_KEY) {
+        errorMessage = "AI service is not configured. Please set the VITE_SAIF_API_KEY environment variable.";
+      } else if (err.message?.includes('401') || err.message?.includes('403') || err.message?.includes('Unauthorized')) {
+        errorMessage = "AI service authentication failed. Please check your API key configuration.";
+      } else if (err.message?.includes('429') || err.message?.includes('quota') || err.message?.includes('rate') || err.message?.includes('Too Many Requests')) {
+        errorMessage = "AI service is temporarily busy due to rate limiting. Please wait a moment and try again.";
+      } else if (err.message?.includes('Network') || err.message?.includes('Failed to fetch') || err.message?.includes('CORS')) {
+        errorMessage = "Unable to connect to AI service. Please check your internet connection and try again.";
+      } else if (err.message?.includes('500') || err.message?.includes('502') || err.message?.includes('503')) {
+        errorMessage = "AI service is temporarily unavailable. Please try again in a few moments.";
+      } else if (err.message?.includes('timeout') || err.message?.includes('Timeout')) {
+        errorMessage = "Request timed out. The AI service may be experiencing high load. Please try again.";
+      }
+
+      setMessages(prev => [...prev, { id: `err-${Date.now()}`, role: 'assistant', content: errorMessage }]);
     } finally {
       setIsProcessing(false);
     }

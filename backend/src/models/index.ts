@@ -594,6 +594,8 @@ export interface IOAuthState extends Document {
   state: string;
   provider: string;
   redirect_uri?: string;
+  project_id?: string;  // For GitHub integration OAuth
+  user_id?: string;     // For GitHub integration OAuth
   created_at: Date;
   expires_at: Date;
 }
@@ -603,6 +605,8 @@ const oauthStateSchema = new Schema<IOAuthState>({
   state: { type: String, required: true, unique: true, index: true },
   provider: { type: String, required: true },
   redirect_uri: String,
+  project_id: String,
+  user_id: String,
   created_at: { type: Date, default: Date.now },
   expires_at: { type: Date, required: true },
 });
@@ -631,6 +635,466 @@ const taskLinkSchema = new Schema<ITaskLink>({
 taskLinkSchema.index({ blocking_task_id: 1, blocked_task_id: 1 }, { unique: true });
 
 // ===================
+// Task Type Config Model
+// ===================
+export interface ITaskTypeConfig extends Document {
+  id: string;
+  organization_id?: string;
+  name: string;
+  label: string;
+  icon: string;
+  color: string;
+  bg_color: string;
+  display_order: number;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+const taskTypeConfigSchema = new Schema<ITaskTypeConfig>({
+  id: { type: String, required: true, unique: true, index: true },
+  organization_id: { type: String, index: true },
+  name: { type: String, required: true },
+  label: { type: String, required: true },
+  icon: { type: String, required: true },
+  color: { type: String, required: true },
+  bg_color: { type: String, required: true },
+  display_order: { type: Number, default: 0 },
+  is_active: { type: Boolean, default: true },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now },
+});
+
+taskTypeConfigSchema.index({ organization_id: 1, name: 1 }, { unique: true });
+
+// ===================
+// Priority Config Model
+// ===================
+export interface IPriorityConfig extends Document {
+  id: string;
+  organization_id?: string;
+  name: string;
+  label: string;
+  icon: string;
+  color: string;
+  bg_color: string;
+  display_order: number;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+const priorityConfigSchema = new Schema<IPriorityConfig>({
+  id: { type: String, required: true, unique: true, index: true },
+  organization_id: { type: String, index: true },
+  name: { type: String, required: true },
+  label: { type: String, required: true },
+  icon: { type: String, required: true },
+  color: { type: String, required: true },
+  bg_color: { type: String, required: true },
+  display_order: { type: Number, default: 0 },
+  is_active: { type: Boolean, default: true },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now },
+});
+
+priorityConfigSchema.index({ organization_id: 1, name: 1 }, { unique: true });
+
+// ===================
+// Status Config Model
+// ===================
+export interface IStatusConfig extends Document {
+  id: string;
+  organization_id?: string;
+  name: string;
+  label: string;
+  icon?: string;
+  color: string;
+  bg_color?: string;
+  is_default: boolean;
+  is_done_state: boolean;
+  display_order: number;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+const statusConfigSchema = new Schema<IStatusConfig>({
+  id: { type: String, required: true, unique: true, index: true },
+  organization_id: { type: String, index: true },
+  name: { type: String, required: true },
+  label: { type: String, required: true },
+  icon: String,
+  color: { type: String, required: true },
+  bg_color: String,
+  is_default: { type: Boolean, default: false },
+  is_done_state: { type: Boolean, default: false },
+  display_order: { type: Number, default: 0 },
+  is_active: { type: Boolean, default: true },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now },
+});
+
+statusConfigSchema.index({ organization_id: 1, name: 1 }, { unique: true });
+
+// ===================
+// Role Config Model
+// ===================
+export interface IRoleConfig extends Document {
+  id: string;
+  organization_id?: string;
+  name: string;
+  label: string;
+  color: string;
+  bg_color: string;
+  permissions: string[];
+  display_order: number;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+const roleConfigSchema = new Schema<IRoleConfig>({
+  id: { type: String, required: true, unique: true, index: true },
+  organization_id: { type: String, index: true },
+  name: { type: String, required: true },
+  label: { type: String, required: true },
+  color: { type: String, required: true },
+  bg_color: { type: String, required: true },
+  permissions: [String],
+  display_order: { type: Number, default: 0 },
+  is_active: { type: Boolean, default: true },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now },
+});
+
+roleConfigSchema.index({ organization_id: 1, name: 1 }, { unique: true });
+
+// ===================
+// Nav Item Model
+// ===================
+export interface INavItem extends Document {
+  id: string;
+  organization_id?: string;
+  type: 'main' | 'doc';
+  name: string;
+  label: string;
+  icon: string;
+  route?: string;
+  parent_id?: string;
+  display_order: number;
+  is_active: boolean;
+  requires_admin: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+const navItemSchema = new Schema<INavItem>({
+  id: { type: String, required: true, unique: true, index: true },
+  organization_id: { type: String, index: true },
+  type: { type: String, required: true, enum: ['main', 'doc'] },
+  name: { type: String, required: true },
+  label: { type: String, required: true },
+  icon: { type: String, required: true },
+  route: String,
+  parent_id: String,
+  display_order: { type: Number, default: 0 },
+  is_active: { type: Boolean, default: true },
+  requires_admin: { type: Boolean, default: false },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now },
+});
+
+navItemSchema.index({ organization_id: 1, type: 1, name: 1 }, { unique: true });
+
+// ===================
+// Theme Color Model
+// ===================
+export interface IThemeColor extends Document {
+  id: string;
+  organization_id?: string;
+  category: string;
+  name: string;
+  light_classes: string;
+  dark_classes: string;
+  display_order: number;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+const themeColorSchema = new Schema<IThemeColor>({
+  id: { type: String, required: true, unique: true, index: true },
+  organization_id: { type: String, index: true },
+  category: { type: String, required: true },
+  name: { type: String, required: true },
+  light_classes: { type: String, required: true },
+  dark_classes: { type: String, required: true },
+  display_order: { type: Number, default: 0 },
+  is_active: { type: Boolean, default: true },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now },
+});
+
+themeColorSchema.index({ organization_id: 1, category: 1, name: 1 }, { unique: true });
+
+// ===================
+// User Notification Preferences Model
+// ===================
+export interface IUserNotificationPreferences extends Document {
+  id: string;
+  user_id: string;
+
+  // Email notification preferences
+  email_enabled: boolean;
+  email_digest_frequency: 'instant' | 'daily' | 'weekly' | 'none';
+
+  // Per-type email preferences
+  email_task_assigned: boolean;
+  email_task_mentioned: boolean;
+  email_comment_added: boolean;
+  email_comment_reply: boolean;
+  email_sprint_reminder: boolean;
+  email_project_updates: boolean;
+  email_due_date_reminder: boolean;
+
+  // In-app notification preferences
+  inapp_enabled: boolean;
+  inapp_task_assigned: boolean;
+  inapp_task_mentioned: boolean;
+  inapp_comment_added: boolean;
+  inapp_comment_reply: boolean;
+  inapp_sprint_reminder: boolean;
+  inapp_project_updates: boolean;
+  inapp_status_change: boolean;
+
+  // Quiet hours
+  quiet_hours_enabled: boolean;
+  quiet_hours_start: string;
+  quiet_hours_end: string;
+  quiet_hours_timezone: string;
+
+  created_at: Date;
+  updated_at: Date;
+}
+
+const userNotificationPreferencesSchema = new Schema<IUserNotificationPreferences>({
+  id: { type: String, required: true, unique: true, index: true },
+  user_id: { type: String, required: true, unique: true, index: true },
+
+  // Email preferences
+  email_enabled: { type: Boolean, default: true },
+  email_digest_frequency: { type: String, default: 'instant', enum: ['instant', 'daily', 'weekly', 'none'] },
+
+  email_task_assigned: { type: Boolean, default: true },
+  email_task_mentioned: { type: Boolean, default: true },
+  email_comment_added: { type: Boolean, default: true },
+  email_comment_reply: { type: Boolean, default: true },
+  email_sprint_reminder: { type: Boolean, default: true },
+  email_project_updates: { type: Boolean, default: false },
+  email_due_date_reminder: { type: Boolean, default: true },
+
+  // In-app preferences
+  inapp_enabled: { type: Boolean, default: true },
+  inapp_task_assigned: { type: Boolean, default: true },
+  inapp_task_mentioned: { type: Boolean, default: true },
+  inapp_comment_added: { type: Boolean, default: true },
+  inapp_comment_reply: { type: Boolean, default: true },
+  inapp_sprint_reminder: { type: Boolean, default: true },
+  inapp_project_updates: { type: Boolean, default: true },
+  inapp_status_change: { type: Boolean, default: true },
+
+  // Quiet hours
+  quiet_hours_enabled: { type: Boolean, default: false },
+  quiet_hours_start: { type: String, default: '22:00' },
+  quiet_hours_end: { type: String, default: '08:00' },
+  quiet_hours_timezone: { type: String, default: 'UTC' },
+
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now },
+});
+
+// ===================
+// Notification Model (Backend storage for in-app notifications)
+// ===================
+export type NotificationType =
+  | 'task_assigned'
+  | 'task_mentioned'
+  | 'comment_added'
+  | 'comment_reply'
+  | 'sprint_reminder'
+  | 'project_update'
+  | 'status_change'
+  | 'due_date_reminder'
+  | 'system';
+
+export interface INotification extends Document {
+  id: string;
+  user_id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  action_url?: string;
+  metadata?: {
+    task_id?: string;
+    project_id?: string;
+    sprint_id?: string;
+    comment_id?: string;
+    actor_id?: string;
+    actor_name?: string;
+  };
+  read: boolean;
+  email_sent: boolean;
+  email_sent_at?: Date;
+  created_at: Date;
+}
+
+const notificationSchema = new Schema<INotification>({
+  id: { type: String, required: true, unique: true, index: true },
+  user_id: { type: String, required: true, index: true },
+  type: {
+    type: String,
+    required: true,
+    enum: ['task_assigned', 'task_mentioned', 'comment_added', 'comment_reply', 'sprint_reminder', 'project_update', 'status_change', 'due_date_reminder', 'system'],
+  },
+  title: { type: String, required: true },
+  message: { type: String, required: true },
+  action_url: String,
+  metadata: {
+    task_id: String,
+    project_id: String,
+    sprint_id: String,
+    comment_id: String,
+    actor_id: String,
+    actor_name: String,
+  },
+  read: { type: Boolean, default: false, index: true },
+  email_sent: { type: Boolean, default: false },
+  email_sent_at: Date,
+  created_at: { type: Date, default: Date.now, index: true },
+});
+
+notificationSchema.index({ user_id: 1, created_at: -1 });
+notificationSchema.index({ user_id: 1, read: 1 });
+
+// ===================
+// Email Log Model (Audit trail for sent emails)
+// ===================
+export interface IEmailLog extends Document {
+  id: string;
+  to_email: string;
+  to_user_id?: string;
+  template_type: string;
+  subject: string;
+  resend_id?: string;
+  status: 'sent' | 'failed' | 'bounced' | 'delivered';
+  error_message?: string;
+  metadata?: Record<string, unknown>;
+  created_at: Date;
+}
+
+const emailLogSchema = new Schema<IEmailLog>({
+  id: { type: String, required: true, unique: true, index: true },
+  to_email: { type: String, required: true, index: true },
+  to_user_id: { type: String, index: true },
+  template_type: { type: String, required: true, index: true },
+  subject: { type: String, required: true },
+  resend_id: String,
+  status: { type: String, required: true, enum: ['sent', 'failed', 'bounced', 'delivered'], default: 'sent' },
+  error_message: String,
+  metadata: Schema.Types.Mixed,
+  created_at: { type: Date, default: Date.now, index: true },
+});
+
+// ===================
+// GitHub Integration Model
+// ===================
+export interface IGitHubIntegration extends Document {
+  id: string;
+  project_id: string;
+  // GitHub Connection
+  github_access_token: string;  // Encrypted
+  github_refresh_token?: string; // Encrypted (if available)
+  github_token_expires_at?: Date;
+  github_username: string;
+  github_user_id: string;
+  // Repository Settings
+  repo_owner: string;
+  repo_name: string;
+  branch: string;
+  file_path: string;  // e.g., "docs/PRD.md" or "docs/{{section}}.md"
+  // Sync Settings
+  auto_sync_enabled: boolean;
+  sync_sections: string[];  // Which sections to sync, empty = all
+  last_sync_at?: Date;
+  last_sync_status?: 'success' | 'failed' | 'pending';
+  last_sync_error?: string;
+  last_commit_sha?: string;
+  // Metadata
+  connected_by: string;  // User ID who set up integration
+  created_at: Date;
+  updated_at: Date;
+}
+
+const gitHubIntegrationSchema = new Schema<IGitHubIntegration>({
+  id: { type: String, required: true, unique: true, index: true },
+  project_id: { type: String, required: true, index: true },
+  github_access_token: { type: String, required: true },
+  github_refresh_token: String,
+  github_token_expires_at: Date,
+  github_username: { type: String, required: true },
+  github_user_id: { type: String, required: true },
+  repo_owner: { type: String, default: '' },  // Empty until user selects/creates repo
+  repo_name: { type: String, default: '' },   // Empty until user selects/creates repo
+  branch: { type: String, default: 'main' },
+  file_path: { type: String, default: 'docs/PRD.md' },
+  auto_sync_enabled: { type: Boolean, default: true },
+  sync_sections: [String],
+  last_sync_at: Date,
+  last_sync_status: { type: String, enum: ['success', 'failed', 'pending'] },
+  last_sync_error: String,
+  last_commit_sha: String,
+  connected_by: { type: String, required: true },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now },
+});
+
+gitHubIntegrationSchema.index({ project_id: 1 }, { unique: true });
+
+// ===================
+// GitHub Sync Log Model (Audit Trail)
+// ===================
+export interface IGitHubSyncLog extends Document {
+  id: string;
+  integration_id: string;
+  project_id: string;
+  section_id: string;
+  action: 'sync' | 'manual_push' | 'disconnect';
+  status: 'success' | 'failed';
+  commit_sha?: string;
+  commit_url?: string;
+  error_message?: string;
+  triggered_by: string;  // User ID
+  created_at: Date;
+}
+
+const gitHubSyncLogSchema = new Schema<IGitHubSyncLog>({
+  id: { type: String, required: true, unique: true, index: true },
+  integration_id: { type: String, required: true, index: true },
+  project_id: { type: String, required: true, index: true },
+  section_id: { type: String, required: true },
+  action: { type: String, required: true, enum: ['sync', 'manual_push', 'disconnect'] },
+  status: { type: String, required: true, enum: ['success', 'failed'] },
+  commit_sha: String,
+  commit_url: String,
+  error_message: String,
+  triggered_by: { type: String, required: true },
+  created_at: { type: Date, default: Date.now, index: true },
+});
+
+gitHubSyncLogSchema.index({ project_id: 1, created_at: -1 });
+
+// ===================
 // Export Models
 // ===================
 export const User = mongoose.model<IUser>('User', userSchema);
@@ -655,6 +1119,17 @@ export const TeamMember = mongoose.model<ITeamMember>('TeamMember', teamMemberSc
 export const TeamProject = mongoose.model<ITeamProject>('TeamProject', teamProjectSchema);
 export const OAuthState = mongoose.model<IOAuthState>('OAuthState', oauthStateSchema);
 export const TaskLink = mongoose.model<ITaskLink>('TaskLink', taskLinkSchema);
+export const TaskTypeConfig = mongoose.model<ITaskTypeConfig>('TaskTypeConfig', taskTypeConfigSchema);
+export const PriorityConfig = mongoose.model<IPriorityConfig>('PriorityConfig', priorityConfigSchema);
+export const StatusConfig = mongoose.model<IStatusConfig>('StatusConfig', statusConfigSchema);
+export const RoleConfig = mongoose.model<IRoleConfig>('RoleConfig', roleConfigSchema);
+export const NavItem = mongoose.model<INavItem>('NavItem', navItemSchema);
+export const ThemeColor = mongoose.model<IThemeColor>('ThemeColor', themeColorSchema);
+export const UserNotificationPreferences = mongoose.model<IUserNotificationPreferences>('UserNotificationPreferences', userNotificationPreferencesSchema);
+export const Notification = mongoose.model<INotification>('Notification', notificationSchema);
+export const EmailLog = mongoose.model<IEmailLog>('EmailLog', emailLogSchema);
+export const GitHubIntegration = mongoose.model<IGitHubIntegration>('GitHubIntegration', gitHubIntegrationSchema);
+export const GitHubSyncLog = mongoose.model<IGitHubSyncLog>('GitHubSyncLog', gitHubSyncLogSchema);
 
 // Model map for database abstraction
 export const models: Record<string, mongoose.Model<any>> = {
@@ -680,4 +1155,15 @@ export const models: Record<string, mongoose.Model<any>> = {
   team_members: TeamMember,
   team_projects: TeamProject,
   oauth_states: OAuthState,
+  task_type_configs: TaskTypeConfig,
+  priority_configs: PriorityConfig,
+  status_configs: StatusConfig,
+  role_configs: RoleConfig,
+  nav_items: NavItem,
+  theme_colors: ThemeColor,
+  user_notification_preferences: UserNotificationPreferences,
+  notifications: Notification,
+  email_logs: EmailLog,
+  github_integrations: GitHubIntegration,
+  github_sync_logs: GitHubSyncLog,
 };

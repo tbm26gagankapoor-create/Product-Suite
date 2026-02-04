@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useProjectData } from '../context/ProjectDataContext';
+import { useConfig } from '../context/ConfigContext';
 import { organizationsService } from '../services/organizations.service';
 import { OrganizationRole, Organization } from '../types';
 import InviteUserModal from './InviteUserModal';
@@ -86,15 +87,24 @@ const Toggle: React.FC<{
 );
 
 const RoleBadge: React.FC<{ role: OrganizationRole }> = ({ role }) => {
-  const colors: Record<OrganizationRole, string> = {
+  const { getRoleConfig } = useConfig();
+  const roleConfig = getRoleConfig(role);
+
+  // Fallback colors if config not found
+  const fallbackColors: Record<OrganizationRole, string> = {
     owner: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800',
     admin: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800',
     member: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700',
     viewer: 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-500 border-gray-200 dark:border-gray-700',
   };
+
+  const colorClass = roleConfig
+    ? `${roleConfig.bg_color} ${roleConfig.color} border-gray-200 dark:border-gray-700`
+    : fallbackColors[role];
+
   return (
-    <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded border ${colors[role]}`}>
-      {role}
+    <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded border ${colorClass}`}>
+      {roleConfig?.label || role}
     </span>
   );
 };
@@ -127,7 +137,7 @@ const SettingsView: React.FC = () => {
   const {
     connectionStatus, connectionError, refreshData, projects, tasks, sprints, teams,
     currentUser, currentOrganization, organizationMembers, isOrgAdmin, refreshOrganization, users,
-    updateCurrentUser
+    updateCurrentUser, userOrganizations, switchOrganization
   } = useProjectData();
   const { error: showError, success } = useToast();
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
@@ -148,6 +158,9 @@ const SettingsView: React.FC = () => {
   const [editOrgSlug, setEditOrgSlug] = useState('');
   const [savingOrg, setSavingOrg] = useState(false);
   const [orgEditError, setOrgEditError] = useState<string | null>(null);
+
+  // Organization switching state
+  const [switchingOrg, setSwitchingOrg] = useState(false);
 
   // Invite modal state
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -513,6 +526,87 @@ const SettingsView: React.FC = () => {
                   Manage your organization's profile and settings
                 </p>
               </div>
+
+              {/* Organization Switcher - Show if user has multiple orgs */}
+              {userOrganizations.length > 1 && (
+                <SectionCard className="mb-6">
+                  <SectionHeader
+                    icon={Layers}
+                    title="Your Organizations"
+                    description="Switch between organizations you belong to"
+                    gradient="from-indigo-500 to-purple-600"
+                  />
+                  <div className="p-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {userOrganizations.map((membership) => {
+                        const isActive = membership.organization.id === currentOrganization?.id;
+                        return (
+                          <button
+                            key={membership.organization.id}
+                            onClick={async () => {
+                              if (!isActive && !switchingOrg) {
+                                setSwitchingOrg(true);
+                                try {
+                                  await switchOrganization(membership.organization.id);
+                                  success('Organization Switched', `Now viewing ${membership.organization.name}`);
+                                } catch (e) {
+                                  showError('Switch Failed', 'Could not switch organization');
+                                } finally {
+                                  setSwitchingOrg(false);
+                                }
+                              }
+                            }}
+                            disabled={switchingOrg}
+                            className={`relative p-4 rounded-xl border-2 transition-all text-left ${
+                              isActive
+                                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                                : 'border-gray-200 dark:border-[#2D2F36] hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-[#1F2128]'
+                            } ${switchingOrg ? 'opacity-50 cursor-wait' : ''}`}
+                          >
+                            <div className="flex items-center gap-3">
+                              {membership.organization.logoUrl ? (
+                                <img
+                                  src={membership.organization.logoUrl}
+                                  alt={membership.organization.name}
+                                  className="w-10 h-10 rounded-lg object-cover"
+                                />
+                              ) : (
+                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm ${
+                                  isActive ? 'bg-blue-500' : 'bg-gradient-to-br from-gray-400 to-gray-500'
+                                }`}>
+                                  {membership.organization.name.substring(0, 2).toUpperCase()}
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <h3 className={`font-semibold text-sm truncate ${
+                                  isActive ? 'text-blue-700 dark:text-blue-400' : 'text-[#172B4D] dark:text-white'
+                                }`}>
+                                  {membership.organization.name}
+                                </h3>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">
+                                  {membership.role}
+                                </p>
+                              </div>
+                              {isActive && (
+                                <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center">
+                                  <Check size={12} className="text-white" />
+                                </div>
+                              )}
+                            </div>
+                            {isActive && (
+                              <div className="absolute top-2 right-2">
+                                <span className="px-2 py-0.5 text-[10px] font-bold uppercase bg-blue-500 text-white rounded-full">
+                                  Active
+                                </span>
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </SectionCard>
+              )}
 
               {currentOrganization ? (
                 <>

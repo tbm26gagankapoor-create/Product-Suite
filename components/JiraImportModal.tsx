@@ -15,7 +15,6 @@ import {
 } from 'lucide-react';
 import { useProjectData } from '../context/ProjectDataContext';
 import { Project, Task, Sprint } from '../types';
-import { USERS } from '../constants';
 import { JiraClient, JiraProject, JiraIssue } from '../jiraClient';
 
 interface JiraImportModalProps {
@@ -24,7 +23,8 @@ interface JiraImportModalProps {
 }
 
 const JiraImportModal: React.FC<JiraImportModalProps> = ({ isOpen, onClose }) => {
-  const { addProject, addTask, addSprint } = useProjectData();
+  const { addProject, addTask, addSprint, currentUser, organizationUsers } = useProjectData();
+  const defaultUser = currentUser || organizationUsers[0];
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +102,7 @@ const JiraImportModal: React.FC<JiraImportModalProps> = ({ isOpen, onClose }) =>
               description: `Imported from Jira ${selectedProject.key}`,
               status: 'In Progress',
               progress: 0,
-              members: [USERS[0].id], // Default to current user
+              members: [defaultUser?.id || ''], // Default to current user
               dueDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString(),
               tags: ['Jira Import'],
               color: 'from-blue-600 to-cyan-500'
@@ -176,8 +176,8 @@ const JiraImportModal: React.FC<JiraImportModalProps> = ({ isOpen, onClose }) =>
                   type: isEpic ? 'epic' : typeLower.includes('bug') ? 'bug' : 'task',
                   priority: mapPriority(issue.fields.priority?.name),
                   points: 3, // Default
-                  assignee: USERS[0], // Default to current user for demo
-                  reporter: USERS[0],
+                  assignee: defaultUser, // Default to current user for demo
+                  reporter: defaultUser,
                   sprintId: mapStatus(issue.fields.status.name) !== 'done' ? sprintId : undefined,
                   tags: [{ label: 'Jira', color: 'blue' }],
                   commentsCount: 0,

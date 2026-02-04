@@ -122,6 +122,15 @@ export type TaskResolution = 'DONE' | 'WONT_FIX' | 'DUPLICATE' | 'CANNOT_REPRODU
 export type LifecycleStage = 'discovery' | 'alpha' | 'beta' | 'ga' | 'sunset';
 export type HealthStatus = 'on_track' | 'at_risk' | 'off_track';
 
+export interface TaskPermissions {
+  canEdit: boolean;        // Full edit access (reporter, admin, project owner)
+  canComment: boolean;     // Can add comments
+  canChangeStatus: boolean; // Can move task between columns
+  canDelete: boolean;      // Can delete the task
+  isReporter: boolean;     // User is the reporter
+  isAssignee: boolean;     // User is the assignee
+}
+
 // Subtask interface is deprecated in favor of flattened Task structure
 export interface Subtask {
   id: string;
@@ -178,6 +187,9 @@ export interface Task {
   labels?: string[];
   resolution?: TaskResolution;
   externalLinks?: string[];
+
+  // Permissions (from API response)
+  permissions?: TaskPermissions;
 }
 
 export interface Column {
@@ -255,4 +267,58 @@ export interface Team {
   projectIds: string[];
   avatarUrl?: string;
   organizationId?: string;
+}
+
+// ===================
+// GitHub Integration Types
+// ===================
+export interface GitHubIntegration {
+  id: string;
+  projectId: string;
+  githubUsername: string;
+  repoOwner: string;
+  repoName: string;
+  branch: string;
+  filePath: string;
+  autoSyncEnabled: boolean;
+  syncSections: string[];
+  lastSyncAt?: string;
+  lastSyncStatus?: 'success' | 'failed' | 'pending';
+  lastSyncError?: string;
+  lastCommitSha?: string;
+  connectedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GitHubRepo {
+  id: number;
+  name: string;
+  fullName: string;
+  private: boolean;
+  defaultBranch: string;
+}
+
+export interface GitHubBranch {
+  name: string;
+  protected: boolean;
+}
+
+export interface GitHubSyncLog {
+  id: string;
+  sectionId: string;
+  action: 'sync' | 'manual_push' | 'disconnect';
+  status: 'success' | 'failed';
+  commitSha?: string;
+  commitUrl?: string;
+  errorMessage?: string;
+  triggeredBy: string;
+  createdAt: string;
+}
+
+export interface GitHubSyncResult {
+  success: boolean;
+  commitSha?: string;
+  commitUrl?: string;
+  error?: string;
 }
