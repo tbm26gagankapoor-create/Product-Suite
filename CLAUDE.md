@@ -120,6 +120,30 @@ MICROSOFT_CLIENT_ID=your_id
 MICROSOFT_CLIENT_SECRET=your_secret
 ```
 
+## Database Environments
+
+Different environments use different MongoDB databases on the same cluster, mapped to git branches:
+
+| Branch | Database Name | Environment | Usage |
+|--------|---------------|-------------|-------|
+| `dev` | `infinia_dev` | Development | Local development and feature testing |
+| `staging` | `infinia_staging` | Staging | Pre-production testing and QA |
+| `main` | `infinia` | Production | Live production deployment |
+
+**Important:** When switching branches, update the `MONGODB_URI` in `backend/.env` to match:
+```bash
+# dev branch
+MONGODB_URI=mongodb+srv://...@cluster0.zxio7yo.mongodb.net/infinia_dev?retryWrites=true&w=majority
+
+# staging branch
+MONGODB_URI=mongodb+srv://...@cluster0.zxio7yo.mongodb.net/infinia_staging?retryWrites=true&w=majority
+
+# main branch (production)
+MONGODB_URI=mongodb+srv://...@cluster0.zxio7yo.mongodb.net/infinia?retryWrites=true&w=majority
+```
+
+Projects are scoped to organizations. Each project must have an `organization_id` to be visible to users in that organization.
+
 ## API Routes
 
 Base URL: `/api/v1`

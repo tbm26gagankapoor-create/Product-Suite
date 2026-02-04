@@ -70,7 +70,7 @@ router.get('/code/:code', async (req: AuthRequest, res: Response) => {
 // Create project
 router.post('/', async (req: AuthRequest, res: Response) => {
   const user = req.user;
-  const { name, description, code, owner_id, image_url, icon, icon_color, vision, prd, docs } = req.body;
+  const { name, description, code, owner_id, organization_id, image_url, icon, icon_color, vision, prd, docs } = req.body;
 
   if (!name || !code) {
     return res.status(400).json({
@@ -82,9 +82,12 @@ router.post('/', async (req: AuthRequest, res: Response) => {
   try {
     // Set owner to current user if not specified
     const actualOwnerId = owner_id || user?.id;
+    // Set organization_id from request body, or fall back to user's organization
+    const actualOrganizationId = organization_id || user?.organizationId;
     const project = await projectsService.create({
       name, description, code,
       owner_id: actualOwnerId,
+      organization_id: actualOrganizationId,
       image_url, icon, icon_color,
       vision, prd, docs
     });

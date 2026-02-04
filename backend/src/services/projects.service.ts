@@ -1,4 +1,36 @@
-import database, { generateUUID, now } from '../lib/database.js';
+import database, { generateUUID, now, PaginationOptions, PaginatedResult, DEFAULT_PAGE_SIZE } from '../lib/database.js';
+
+export interface ProjectDraftData {
+  productName: string;
+  description: string;
+  tags: string;
+  startDate: string;
+  targetDate: string;
+  ownerId: string;
+  selectedTeam: string[];
+  refinedVision: string;
+  suggestions: Array<{
+    title: string;
+    description: string;
+    type: 'feature' | 'monetization' | 'market' | 'ux';
+    selected?: boolean;
+  }>;
+  generatedDocs: Record<string, string>;
+  generatedEpics: Array<{
+    title: string;
+    description: string;
+    tasks: Array<{
+      title: string;
+      description: string;
+      type: string;
+      priority: string;
+      points: number;
+    }>;
+  }>;
+  inputMode: 'scratch' | 'import';
+  fileText?: string;
+  productImage?: string;
+}
 
 export interface Project {
   id: string;
@@ -13,6 +45,9 @@ export interface Project {
   image_url: string | null;
   icon: string | null;
   icon_color: string | null;
+  // Draft fields for saving incomplete product wizard state
+  draft_step?: number | null;
+  draft_data?: ProjectDraftData | null;
   created_at: string;
   updated_at: string;
 }
@@ -37,74 +72,178 @@ export interface CreateProjectInput {
   vision?: string;
   prd?: string;
   docs?: Record<string, string>;
+  // Draft fields for saving incomplete product wizard state
+  status?: string;
+  draft_step?: number;
+  draft_data?: ProjectDraftData;
 }
 
+// Single project stats (for backward compatibility)
 async function getProjectStats(projectId: string): Promise<{ total_tasks: number; completed_tasks: number; active_sprints: number; team_size: number }> {
-  const tasks = await database.findMany<any>('tasks', { project_id: projectId });
-  const columns = await database.getAll<any>('columns_status');
-  const doneColumn = columns.find(c => c.project_id === projectId && c.title === 'DONE');
-  const completedTasks = doneColumn
-    ? tasks.filter(t => t.column_id === doneColumn.id).length
-    : 0;
-  const activeSprints = await database.count('sprints', { project_id: projectId, status: 'active' });
-  const projectMembers = await database.findMany<any>('project_members', { project_id: projectId });
-  const teamSize = new Set(projectMembers.map(pm => pm.user_id)).size;
+  // Use aggregation for efficient counting
+  const [taskStats, activeSprints, teamSize] = await Promise.all([
+    // Get task counts using aggregation
+    database.aggregate<{ total: number; completed: number }>('tasks', [
+      { $match: { project_id: projectId } },
+      {
+        $lookup: {
+          from: 'columnsstatuses',
+          let: { columnId: '$column_id' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$id', '$$columnId'] } } }
+          ],
+          as: 'column'
+        }
+      },
+      { $unwind: { path: '$column', preserveNullAndEmptyArrays: true } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          completed: {
+            $sum: { $cond: [{ $eq: ['$column.title', 'DONE'] }, 1, 0] }
+          }
+        }
+      }
+    ]),
+    database.count('sprints', { project_id: projectId, status: 'active' }),
+    database.count('project_members', { project_id: projectId }),
+  ]);
+
+  const stats = taskStats[0] || { total: 0, completed: 0 };
 
   return {
-    total_tasks: tasks.length,
-    completed_tasks: completedTasks,
+    total_tasks: stats.total,
+    completed_tasks: stats.completed,
     active_sprints: activeSprints,
     team_size: teamSize,
   };
 }
 
+// Batch get stats for multiple projects (fixes N+1 in getAllForUser)
+async function getProjectStatsBatch(projectIds: string[]): Promise<Map<string, { total_tasks: number; completed_tasks: number; active_sprints: number; team_size: number }>> {
+  if (projectIds.length === 0) return new Map();
+
+  // Batch fetch all data in parallel
+  const [taskCountsByProject, sprintCountsByProject, memberCountsByProject, doneColumnsByProject] = await Promise.all([
+    database.countByField('tasks', 'project_id', projectIds),
+    // Count active sprints
+    database.aggregate<{ _id: string; count: number }>('sprints', [
+      { $match: { project_id: { $in: projectIds }, status: 'active' } },
+      { $group: { _id: '$project_id', count: { $sum: 1 } } }
+    ]),
+    database.countByField('project_members', 'project_id', projectIds),
+    // Get done columns for each project
+    database.findMany<any>('columns_status', {
+      project_id: { $in: projectIds },
+      title: 'DONE'
+    } as any),
+  ]);
+
+  // Build sprint counts map
+  const sprintCounts = new Map<string, number>();
+  sprintCountsByProject.forEach(s => sprintCounts.set(s._id, s.count));
+
+  // Build done column IDs set
+  const doneColumnIds = new Set(doneColumnsByProject.map(c => c.id));
+
+  // Count completed tasks (tasks in DONE columns)
+  const completedTasksByProject = await database.aggregate<{ _id: string; count: number }>('tasks', [
+    { $match: { project_id: { $in: projectIds }, column_id: { $in: [...doneColumnIds] } } },
+    { $group: { _id: '$project_id', count: { $sum: 1 } } }
+  ]);
+
+  const completedCounts = new Map<string, number>();
+  completedTasksByProject.forEach(c => completedCounts.set(c._id, c.count));
+
+  // Build result map
+  const result = new Map<string, { total_tasks: number; completed_tasks: number; active_sprints: number; team_size: number }>();
+  projectIds.forEach(id => {
+    result.set(id, {
+      total_tasks: taskCountsByProject.get(id) || 0,
+      completed_tasks: completedCounts.get(id) || 0,
+      active_sprints: sprintCounts.get(id) || 0,
+      team_size: memberCountsByProject.get(id) || 0,
+    });
+  });
+
+  return result;
+}
+
 export const projectsService = {
   async getAll(): Promise<ProjectWithStats[]> {
     const projects = await database.getAll<Project>('projects');
-    const projectsWithStats = await Promise.all(
-      projects.map(async (project) => ({
+    // Use batch stats instead of N+1 queries
+    const statsMap = await getProjectStatsBatch(projects.map(p => p.id));
+    return projects.map(project => ({
+      ...project,
+      ...(statsMap.get(project.id) || { total_tasks: 0, completed_tasks: 0, active_sprints: 0, team_size: 0 }),
+    }));
+  },
+
+  // Paginated version for large datasets
+  async getAllPaginated(
+    filters?: { organization_id?: string },
+    pagination?: PaginationOptions
+  ): Promise<PaginatedResult<ProjectWithStats>> {
+    const query: Record<string, any> = {};
+    if (filters?.organization_id) {
+      query.organization_id = filters.organization_id;
+    }
+
+    const result = await database.findManyPaginated<Project>('projects', query, {
+      page: pagination?.page || 1,
+      limit: pagination?.limit || DEFAULT_PAGE_SIZE,
+      sortBy: pagination?.sortBy || 'updated_at',
+      sortOrder: pagination?.sortOrder || 'desc',
+    });
+
+    // Batch get stats for paginated projects
+    const statsMap = await getProjectStatsBatch(result.data.map(p => p.id));
+
+    return {
+      data: result.data.map(project => ({
         ...project,
-        ...(await getProjectStats(project.id)),
-      }))
-    );
-    return projectsWithStats;
+        ...(statsMap.get(project.id) || { total_tasks: 0, completed_tasks: 0, active_sprints: 0, team_size: 0 }),
+      })),
+      pagination: result.pagination,
+    };
   },
 
   async getAllForUser(userId: string, isAdmin: boolean, organizationId?: string | null): Promise<ProjectWithStats[]> {
-    let allProjects = await database.getAll<Project>('projects');
-
-    // Filter by organization if provided
+    // Build query to filter at database level
+    const query: Record<string, any> = {};
     if (organizationId) {
-      allProjects = allProjects.filter(project => project.organization_id === organizationId);
+      query.organization_id = organizationId;
     }
 
-    // Admins can see all projects in the organization
+    // Get projects filtered by organization at DB level
+    const allProjects = Object.keys(query).length > 0
+      ? await database.findMany<Project>('projects', query)
+      : await database.getAll<Project>('projects');
+
+    let accessibleProjects: Project[];
+
     if (isAdmin) {
-      const projectsWithStats = await Promise.all(
-        allProjects.map(async (project) => ({
-          ...project,
-          ...(await getProjectStats(project.id)),
-        }))
+      accessibleProjects = allProjects;
+    } else {
+      // Get user's memberships in a single query
+      const memberships = await database.findMany<any>('project_members', { user_id: userId });
+      const membershipProjectIds = new Set(memberships.map(pm => pm.project_id));
+
+      // Filter projects where user is owner or member
+      accessibleProjects = allProjects.filter(project =>
+        project.owner_id === userId || membershipProjectIds.has(project.id)
       );
-      return projectsWithStats;
     }
 
-    // Get all project IDs where the user is a member
-    const memberships = await database.findMany<any>('project_members', { user_id: userId });
-    const membershipProjectIds = new Set(memberships.map(pm => pm.project_id));
+    // Batch get stats (1 set of queries instead of N*4 queries)
+    const statsMap = await getProjectStatsBatch(accessibleProjects.map(p => p.id));
 
-    // Filter projects where user is owner or member
-    const accessibleProjects = allProjects.filter(project =>
-      project.owner_id === userId || membershipProjectIds.has(project.id)
-    );
-
-    const projectsWithStats = await Promise.all(
-      accessibleProjects.map(async (project) => ({
-        ...project,
-        ...(await getProjectStats(project.id)),
-      }))
-    );
-    return projectsWithStats;
+    return accessibleProjects.map(project => ({
+      ...project,
+      ...(statsMap.get(project.id) || { total_tasks: 0, completed_tasks: 0, active_sprints: 0, team_size: 0 }),
+    }));
   },
 
   // Get projects where a specific user is a member (for displaying user's projects)
@@ -157,7 +296,7 @@ export const projectsService = {
       name: input.name,
       description: input.description || null,
       code: input.code,
-      status: 'active',
+      status: input.status || 'active',
       progress_percentage: 0,
       is_favorite: false,
       owner_id: input.owner_id || null,
@@ -169,13 +308,16 @@ export const projectsService = {
       vision: input.vision || null,
       prd: input.prd || null,
       docs: input.docs || null,
+      // Draft fields
+      draft_step: input.draft_step ?? null,
+      draft_data: input.draft_data || null,
       created_at: now(),
       updated_at: now(),
     };
 
     await database.insert('projects', project);
 
-    // Create default columns
+    // Create default columns (even for drafts, so they're ready when completed)
     const columns = ['IDEA', 'TO DO', 'IN PROGRESS', 'TESTING', 'DONE'];
     const colors = ['gray', 'blue', 'yellow', 'purple', 'green'];
 
@@ -218,21 +360,27 @@ export const projectsService = {
 
   async getMembers(projectId: string) {
     const members = await database.findMany<any>('project_members', { project_id: projectId });
-    const membersWithUsers = await Promise.all(
-      members.map(async (pm) => {
-        const user = await database.findById<any>('users', pm.user_id);
+    if (members.length === 0) return [];
+
+    // Batch load all users at once instead of N queries
+    const userIds = members.map(pm => pm.user_id);
+    const usersMap = await database.findByIds<any>('users', userIds);
+
+    return members
+      .map(pm => {
+        const user = usersMap.get(pm.user_id);
+        if (!user) return null;
         return {
-          id: user?.id,
-          name: user?.name,
-          email: user?.email,
-          avatar_url: user?.avatar_url,
-          user_role: user?.role,
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          avatar_url: user.avatar_url,
+          user_role: user.role,
           project_role: pm.role,
           joined_at: pm.joined_at,
         };
       })
-    );
-    return membersWithUsers.filter(m => m.id);
+      .filter(Boolean);
   },
 
   async addMember(projectId: string, userId: string, role: string = 'member') {

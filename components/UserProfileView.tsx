@@ -44,7 +44,7 @@ const timeAgo = (date: Date) => {
 };
 
 const UserProfileView: React.FC = () => {
-  const { myTasks, currentUser, updateCurrentUser, users } = useProjectData();
+  const { myTasks, currentUser, updateCurrentUser, users, tasks } = useProjectData();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { error: showError, success } = useToast();
 
