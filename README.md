@@ -139,7 +139,7 @@ npm run db:seed      # Seed database with sample data
 | **Backend** | Node.js 18+, Express 4, TypeScript |
 | **Database** | MongoDB 7.0 with Mongoose 9 |
 | **Authentication** | JWT + OAuth 2.0 (Google, Microsoft, GitHub) |
-| **AI Integration** | Google Gemini, Anthropic Claude |
+| **AI Integration** | SAIF AI (OpenAI-compatible API) |
 | **Email** | Resend |
 | **Security** | Helmet, CORS, Rate Limiting |
 
@@ -308,9 +308,10 @@ RESEND_API_KEY=your_resend_api_key
 
 **Frontend** (`.env.local` - optional):
 ```env
-# AI APIs (for AI features)
-VITE_GEMINI_API_KEY=your_gemini_api_key
-VITE_CLAUDE_API_KEY=your_claude_api_key
+# AI API (for AI features)
+VITE_SAIF_API_KEY=your_saif_api_key
+VITE_SAIF_API_BASE_URL=https://model.iamsaif.ai/v1
+VITE_SAIF_MODEL=openai/gpt-oss-120b
 ```
 
 **See [Environment Configuration Guide](docs/getting-started/environment-setup.md) for complete variable reference**
