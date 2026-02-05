@@ -31,8 +31,9 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
   const myTasks = allMyTasks.slice(0, 5);
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-  // Calculate Overall Workload Health - using API-filtered myTasks (excludes done)
-  const allActiveTasks = allMyTasks.filter(t => t.columnId !== 'done');
+  // Calculate Overall Workload Health - using API-filtered myTasks (excludes done and epics)
+  // Epics are containers, not work items, so exclude them from workload calculations
+  const allActiveTasks = allMyTasks.filter(t => t.columnId !== 'done' && t.type !== 'epic');
   const pointsAllocated = allActiveTasks.reduce((acc, t) => acc + (t.points || 0), 0);
   
   const todayDate = new Date();
@@ -125,31 +126,32 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
       onViewChange('project-list');
   };
 
-  // Calculate blockers across all projects
-  const blockerCount = tasks.filter(t => t.columnId === 'blocked').length;
+  // Calculate blockers across all projects (exclude epics - they are containers)
+  const blockerCount = tasks.filter(t => t.columnId === 'blocked' && t.type !== 'epic').length;
 
   const stats = [
-    { 
-      label: 'Active Sprints', 
-      value: sprints.filter(s => s.status === 'active').length.toString(), 
-      icon: Activity, 
-      color: 'text-blue-500', 
+    {
+      label: 'Active Sprints',
+      value: sprints.filter(s => s.status === 'active').length.toString(),
+      icon: Activity,
+      color: 'text-blue-500',
       bg: 'bg-blue-100 dark:bg-[#1E2330]',
-      target: 'sprints' as View 
+      target: 'sprints' as View
     },
     {
       label: 'My Tasks',
-      value: allMyTasks.length.toString(),
+      // Exclude epics from count - they are containers, not work items
+      value: allMyTasks.filter(t => t.type !== 'epic').length.toString(),
       icon: GitCommit,
       color: 'text-amber-500',
       bg: 'bg-amber-100 dark:bg-[#2A2215]',
       target: 'my-tasks' as View
     },
-    { 
-      label: 'Blockers', 
-      value: blockerCount.toString(), 
-      icon: Ban, 
-      color: 'text-red-500', 
+    {
+      label: 'Blockers',
+      value: blockerCount.toString(),
+      icon: Ban,
+      color: 'text-red-500',
       bg: 'bg-red-100 dark:bg-[#2A1515]',
       target: 'project' as View
     }

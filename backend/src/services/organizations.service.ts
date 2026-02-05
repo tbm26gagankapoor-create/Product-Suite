@@ -1,4 +1,4 @@
-import database, { generateUUID, now } from '../lib/database.js';
+import database, { now, PaginationOptions, PaginatedResult, DEFAULT_PAGE_SIZE } from '../lib/database.js';
 
 export interface Organization {
   id: string;
@@ -72,8 +72,8 @@ async function ensureUniqueSlug(baseSlug: string): Promise<string> {
 export const organizationsService = {
   async getAll(): Promise<OrganizationWithStats[]> {
     const organizations = await database.getAll<Organization>('organizations');
-    const enrichedOrgs = await Promise.all(organizations.map(org => this.enrichOrganization(org)));
-    return enrichedOrgs;
+    // Use batch enrichment instead of N+1
+    return this.enrichOrganizationsBatch(organizations);
   },
 
   async getById(id: string): Promise<OrganizationWithStats | null> {
@@ -90,13 +90,14 @@ export const organizationsService = {
 
   async getByDomain(domain: string): Promise<OrganizationWithStats[]> {
     const organizations = await database.findMany<Organization>('organizations', { domain });
-    const enrichedOrgs = await Promise.all(organizations.map(org => this.enrichOrganization(org)));
-    return enrichedOrgs;
+    return this.enrichOrganizationsBatch(organizations);
   },
 
   async enrichOrganization(org: Organization): Promise<OrganizationWithStats> {
-    const memberCount = await database.count('organization_members', { organization_id: org.id });
-    const projectCount = await database.count('projects', { organization_id: org.id });
+    const [memberCount, projectCount] = await Promise.all([
+      database.count('organization_members', { organization_id: org.id }),
+      database.count('projects', { organization_id: org.id }),
+    ]);
 
     return {
       ...org,
@@ -105,12 +106,30 @@ export const organizationsService = {
     };
   },
 
+  // Batch enrich organizations (fixes N+1)
+  async enrichOrganizationsBatch(orgs: Organization[]): Promise<OrganizationWithStats[]> {
+    if (orgs.length === 0) return [];
+
+    const orgIds = orgs.map(o => o.id);
+
+    // Batch count members and projects
+    const [memberCountsMap, projectCountsMap] = await Promise.all([
+      database.countByField('organization_members', 'organization_id', orgIds),
+      database.countByField('projects', 'organization_id', orgIds),
+    ]);
+
+    return orgs.map(org => ({
+      ...org,
+      memberCount: memberCountsMap.get(org.id) || 0,
+      projectCount: projectCountsMap.get(org.id) || 0,
+    }));
+  },
+
   async create(input: CreateOrganizationInput): Promise<OrganizationWithStats> {
     const baseSlug = input.slug || generateSlug(input.name);
     const slug = await ensureUniqueSlug(baseSlug);
 
-    const organization: Organization = {
-      id: generateUUID(),
+    const organizationData = {
       name: input.name,
       slug,
       domain: input.domain || null,
@@ -125,7 +144,8 @@ export const organizationsService = {
       updated_at: now(),
     };
 
-    await database.insert('organizations', organization);
+    // Use the returned document which has the correct MongoDB-generated _id
+    const organization = await database.insert<Organization>('organizations', organizationData);
 
     // If owner_id is provided, add them as an admin member
     if (input.owner_id) {
@@ -196,15 +216,15 @@ export const organizationsService = {
     const existing = await this.getMember(organizationId, userId);
     if (existing) return existing;
 
-    const member: OrganizationMember = {
-      id: generateUUID(),
+    const memberData = {
       organization_id: organizationId,
       user_id: userId,
       role,
       joined_at: now(),
     };
 
-    await database.insert('organization_members', member);
+    // Use the returned document which has the correct MongoDB-generated _id
+    const member = await database.insert<OrganizationMember>('organization_members', memberData);
 
     // Only set user's organization_id if they don't have one (first org they join)
     // For multi-org support, users can switch their active org from the UI
@@ -260,8 +280,7 @@ export const organizationsService = {
     });
     if (existingRequest) return existingRequest;
 
-    const request: OrganizationJoinRequest = {
-      id: generateUUID(),
+    const requestData = {
       organization_id: organizationId,
       user_id: userId,
       status: 'pending',
@@ -270,8 +289,8 @@ export const organizationsService = {
       resolved_by: null,
     };
 
-    await database.insert('organization_join_requests', request);
-    return request;
+    // Use the returned document which has the correct MongoDB-generated _id
+    return database.insert<OrganizationJoinRequest>('organization_join_requests', requestData);
   },
 
   async getJoinRequests(organizationId: string, status?: OrganizationJoinRequest['status']): Promise<OrganizationJoinRequest[]> {
@@ -306,31 +325,118 @@ export const organizationsService = {
     return updated || null;
   },
 
-  // Get organizations for a user
+  // Get organizations for a user (optimized with batch loading)
   async getUserOrganizations(userId: string): Promise<OrganizationWithStats[]> {
     const memberships = await database.findMany<OrganizationMember>('organization_members', { user_id: userId });
+    if (memberships.length === 0) return [];
+
     const orgIds = memberships.map(m => m.organization_id);
 
-    const orgs = await Promise.all(orgIds.map(id => this.getById(id)));
-    return orgs.filter((org): org is OrganizationWithStats => org !== null);
+    // Batch load all organizations at once
+    const orgsMap = await database.findByIds<Organization>('organizations', orgIds);
+    const orgs = [...orgsMap.values()];
+
+    // Batch enrich
+    return this.enrichOrganizationsBatch(orgs);
   },
 
-  // Get statistics
+  // Get user's organizations with membership details (optimized - single method instead of N+1)
+  async getUserOrganizationsWithMembership(userId: string): Promise<Array<{
+    organization: {
+      id: string;
+      name: string;
+      slug: string;
+      domain: string | null;
+      logoUrl: string | null;
+      ownerId: string | null;
+      memberCount: number;
+      projectCount: number;
+    };
+    role: string;
+    joinedAt: string;
+  }>> {
+    const memberships = await database.findMany<OrganizationMember>('organization_members', { user_id: userId });
+    if (memberships.length === 0) return [];
+
+    const orgIds = memberships.map(m => m.organization_id);
+
+    // Batch load all organizations at once
+    const orgsMap = await database.findByIds<Organization>('organizations', orgIds);
+
+    // Batch get stats
+    const [memberCountsMap, projectCountsMap] = await Promise.all([
+      database.countByField('organization_members', 'organization_id', orgIds),
+      database.countByField('projects', 'organization_id', orgIds),
+    ]);
+
+    // Build membership map for quick lookup
+    const membershipMap = new Map(memberships.map(m => [m.organization_id, m]));
+
+    return orgIds
+      .map(orgId => {
+        const org = orgsMap.get(orgId);
+        const membership = membershipMap.get(orgId);
+        if (!org || !membership) return null;
+
+        return {
+          organization: {
+            id: org.id,
+            name: org.name,
+            slug: org.slug,
+            domain: org.domain,
+            logoUrl: org.logo_url,
+            ownerId: org.owner_id,
+            memberCount: memberCountsMap.get(org.id) || 0,
+            projectCount: projectCountsMap.get(org.id) || 0,
+          },
+          role: membership.role,
+          joinedAt: membership.joined_at,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+  },
+
+  // Get members with user data (optimized with batch loading)
+  async getMembersWithUsers(organizationId: string): Promise<(OrganizationMember & { user: any })[]> {
+    const members = await database.findMany<OrganizationMember>('organization_members', { organization_id: organizationId });
+    if (members.length === 0) return [];
+
+    // Batch load all users at once
+    const userIds = members.map(m => m.user_id);
+    const usersMap = await database.findByIds<any>('users', userIds);
+
+    return members.map(member => ({
+      ...member,
+      user: usersMap.get(member.user_id) ? {
+        id: usersMap.get(member.user_id)!.id,
+        name: usersMap.get(member.user_id)!.name,
+        email: usersMap.get(member.user_id)!.email,
+        avatar_url: usersMap.get(member.user_id)!.avatar_url,
+      } : null,
+    }));
+  },
+
+  // Get statistics (optimized)
   async getStats(organizationId: string): Promise<{ memberCount: number; projectCount: number; taskCount: number; adminCount: number } | null> {
     const org = await database.findById<Organization>('organizations', organizationId);
     if (!org) return null;
 
-    const memberCount = await database.count('organization_members', { organization_id: organizationId });
-    const members = await database.findMany<OrganizationMember>('organization_members', { organization_id: organizationId });
-    const adminCount = members.filter(m => m.role === 'admin' || m.role === 'owner').length;
-    const projectCount = await database.count('projects', { organization_id: organizationId });
+    // Run all count queries in parallel
+    const [memberCount, members, projectCount, projects] = await Promise.all([
+      database.count('organization_members', { organization_id: organizationId }),
+      database.findMany<OrganizationMember>('organization_members', { organization_id: organizationId }),
+      database.count('projects', { organization_id: organizationId }),
+      database.findMany<any>('projects', { organization_id: organizationId }),
+    ]);
 
-    // Task count needs to be calculated via projects
-    const projects = await database.findMany<any>('projects', { organization_id: organizationId });
+    const adminCount = members.filter(m => m.role === 'admin' || m.role === 'owner').length;
+
+    // Count tasks efficiently using aggregation instead of N queries
     let taskCount = 0;
-    for (const project of projects) {
-      const count = await database.count('tasks', { project_id: project.id });
-      taskCount += count;
+    if (projects.length > 0) {
+      const projectIds = projects.map(p => p.id);
+      const taskCounts = await database.countByField('tasks', 'project_id', projectIds);
+      taskCount = [...taskCounts.values()].reduce((sum, count) => sum + count, 0);
     }
 
     return { memberCount, projectCount, taskCount, adminCount };

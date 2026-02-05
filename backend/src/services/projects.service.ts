@@ -1,4 +1,4 @@
-import database, { generateUUID, now, PaginationOptions, PaginatedResult, DEFAULT_PAGE_SIZE } from '../lib/database.js';
+import database, { generateUUID, now, PaginationOptions, PaginatedResult, DEFAULT_PAGE_SIZE, withTransaction, supportsTransactions } from '../lib/database.js';
 
 export interface ProjectDraftData {
   productName: string;
@@ -291,7 +291,7 @@ export const projectsService = {
       throw new Error('UNIQUE constraint failed: code already exists');
     }
 
-    const project: Project = {
+    const projectData: Project = {
       id: generateUUID(),
       name: input.name,
       description: input.description || null,
@@ -315,25 +315,48 @@ export const projectsService = {
       updated_at: now(),
     };
 
-    await database.insert('projects', project);
-
-    // Create default columns (even for drafts, so they're ready when completed)
+    // Default columns to create
     const columns = ['IDEA', 'TO DO', 'IN PROGRESS', 'TESTING', 'DONE'];
     const colors = ['gray', 'blue', 'yellow', 'purple', 'green'];
 
-    for (let index = 0; index < columns.length; index++) {
-      await database.insert('columns_status', {
-        id: generateUUID(),
-        project_id: project.id,
-        title: columns[index],
-        display_order: index,
-        color: colors[index],
-        is_default: index === 1,
-        created_at: now(),
+    // Check if transactions are supported
+    const canUseTransactions = await supportsTransactions();
+
+    if (canUseTransactions) {
+      // Use transaction for atomic project + columns creation
+      await withTransaction(async (session) => {
+        await database.insertWithSession('projects', projectData, session);
+
+        for (let index = 0; index < columns.length; index++) {
+          await database.insertWithSession('columns_status', {
+            id: generateUUID(),
+            project_id: projectData.id,
+            title: columns[index],
+            display_order: index,
+            color: colors[index],
+            is_default: index === 1,
+            created_at: now(),
+          }, session);
+        }
       });
+    } else {
+      // Fallback: non-transactional insert
+      await database.insert('projects', projectData);
+
+      for (let index = 0; index < columns.length; index++) {
+        await database.insert('columns_status', {
+          id: generateUUID(),
+          project_id: projectData.id,
+          title: columns[index],
+          display_order: index,
+          color: colors[index],
+          is_default: index === 1,
+          created_at: now(),
+        });
+      }
     }
 
-    return (await this.getById(project.id))!;
+    return (await this.getById(projectData.id))!;
   },
 
   async update(id: string, input: Partial<CreateProjectInput & { status?: string; progress_percentage?: number; is_favorite?: boolean; image_url?: string | null; icon?: string | null; icon_color?: string | null }>): Promise<ProjectWithStats | null> {
@@ -349,13 +372,28 @@ export const projectsService = {
   },
 
   async delete(id: string): Promise<boolean> {
-    // Also delete related data
-    await database.deleteMany('tasks', { project_id: id });
-    await database.deleteMany('sprints', { project_id: id });
-    await database.deleteMany('columns_status', { project_id: id });
-    await database.deleteMany('tags', { project_id: id });
-    await database.deleteMany('project_members', { project_id: id });
-    return database.delete('projects', id);
+    // Check if transactions are supported
+    const canUseTransactions = await supportsTransactions();
+
+    if (canUseTransactions) {
+      // Use transaction for atomic cascading delete
+      return withTransaction(async (session) => {
+        await database.deleteManyWithSession('tasks', { project_id: id }, session);
+        await database.deleteManyWithSession('sprints', { project_id: id }, session);
+        await database.deleteManyWithSession('columns_status', { project_id: id }, session);
+        await database.deleteManyWithSession('tags', { project_id: id }, session);
+        await database.deleteManyWithSession('project_members', { project_id: id }, session);
+        return database.deleteWithSession('projects', id, session);
+      });
+    } else {
+      // Fallback: non-transactional delete
+      await database.deleteMany('tasks', { project_id: id });
+      await database.deleteMany('sprints', { project_id: id });
+      await database.deleteMany('columns_status', { project_id: id });
+      await database.deleteMany('tags', { project_id: id });
+      await database.deleteMany('project_members', { project_id: id });
+      return database.delete('projects', id);
+    }
   },
 
   async getMembers(projectId: string) {

@@ -25,7 +25,7 @@ const Header: React.FC<HeaderProps> = ({
   missingDateCount = 0
 }) => {
   const { users, sprints, tasks } = useProjectData();
-  const tabs = ['Overview', 'PRD', 'Sprints', 'Tasks', 'Boards', 'Timeline', 'Calendar', 'Teams', 'Files'];
+  const tabs = ['Overview', 'Documents', 'Sprints', 'Tasks', 'Boards', 'Timeline', 'Calendar', 'Teams', 'Files'];
 
   // Sprint selector state
   const [isSprintDropdownOpen, setIsSprintDropdownOpen] = useState(false);
@@ -93,7 +93,7 @@ const Header: React.FC<HeaderProps> = ({
                     </div>
                  </div>
                  <div className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
-                    <span className="hover:underline cursor-pointer">Infinia Technologies</span>
+                    <span className="hover:underline cursor-pointer">Vulcan Technologies</span>
                     <span>/</span>
                     <span className="hover:underline cursor-pointer">Product</span>
                  </div>

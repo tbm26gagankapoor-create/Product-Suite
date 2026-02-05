@@ -1,22 +1,9 @@
 /**
- * Invites Service - Uses Local Backend
- * All Supabase calls have been replaced with local backend API calls
+ * Invites Service - Uses Centralized HTTP Client
  */
 
+import { httpClient, buildQueryString } from '../lib/httpClient';
 import { organizationsService } from './organizations.service';
-
-const API_BASE = '/api/v1';
-
-function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('infinia_token');
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return headers;
-}
 
 export type OrganizationRole = 'admin' | 'member';
 export type InviteStatus = 'pending' | 'accepted' | 'expired' | 'revoked';
@@ -42,74 +29,80 @@ export class InvitesService {
     role: OrganizationRole = 'member',
     invitedBy?: string
   ): Promise<OrganizationInvite> {
-    const response = await fetch(`${API_BASE}/invites`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({
-        organization_id: organizationId,
-        email,
-        role,
-        invited_by: invitedBy,
-      }),
+    return httpClient.post<OrganizationInvite>('/invites', {
+      organization_id: organizationId,
+      email,
+      role,
+      invited_by: invitedBy,
     });
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error || 'Failed to create invitation');
-    return data.data;
   }
 
   /**
    * Get all invitations for an organization
    */
-  async getByOrganization(organizationId: string): Promise<any[]> {
-    const response = await fetch(`${API_BASE}/invites?organization_id=${organizationId}`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success ? data.data || [] : [];
+  async getByOrganization(organizationId: string): Promise<OrganizationInvite[]> {
+    try {
+      const response = await httpClient.get<OrganizationInvite[]>(
+        `/invites?organization_id=${organizationId}`
+      );
+      return response || [];
+    } catch {
+      return [];
+    }
   }
 
   /**
    * Get pending invitations for an organization
    */
-  async getPendingByOrganization(organizationId: string): Promise<any[]> {
-    const response = await fetch(`${API_BASE}/invites?organization_id=${organizationId}&status=pending`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success ? data.data || [] : [];
+  async getPendingByOrganization(organizationId: string): Promise<OrganizationInvite[]> {
+    try {
+      const response = await httpClient.get<OrganizationInvite[]>(
+        `/invites?organization_id=${organizationId}&status=pending`
+      );
+      return response || [];
+    } catch {
+      return [];
+    }
   }
 
   /**
    * Get invitation by ID
    */
   async getById(id: string): Promise<OrganizationInvite | null> {
-    const response = await fetch(`${API_BASE}/invites/${id}`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success ? data.data : null;
+    try {
+      const response = await httpClient.get<OrganizationInvite>(`/invites/${id}`);
+      return response;
+    } catch {
+      return null;
+    }
   }
 
   /**
    * Get invitation by email for a specific organization
    */
   async getByEmail(organizationId: string, email: string): Promise<OrganizationInvite | null> {
-    const response = await fetch(`${API_BASE}/invites?organization_id=${organizationId}&email=${encodeURIComponent(email)}`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success && data.data?.length > 0 ? data.data[0] : null;
+    try {
+      const response = await httpClient.get<OrganizationInvite[]>(
+        `/invites?organization_id=${organizationId}&email=${encodeURIComponent(email)}`
+      );
+      return response && response.length > 0 ? response[0] : null;
+    } catch {
+      return null;
+    }
   }
 
   /**
    * Get pending invitation by email (any organization)
    */
   async getPendingByEmail(email: string): Promise<OrganizationInvite | null> {
-    const response = await fetch(`${API_BASE}/invites?email=${encodeURIComponent(email)}&status=pending`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success && data.data?.length > 0 ? data.data[0] : null;
+    try {
+      const response = await httpClient.get<OrganizationInvite[]>(
+        `/invites?email=${encodeURIComponent(email)}&status=pending`
+      );
+      return response && response.length > 0 ? response[0] : null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -142,14 +135,7 @@ export class InvitesService {
    * Update invitation status
    */
   async updateStatus(id: string, status: InviteStatus): Promise<OrganizationInvite> {
-    const response = await fetch(`${API_BASE}/invites/${id}`, {
-      method: 'PATCH',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ status }),
-    });
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error || 'Failed to update invitation');
-    return data.data;
+    return httpClient.patch<OrganizationInvite>(`/invites/${id}`, { status });
   }
 
   /**
@@ -159,37 +145,24 @@ export class InvitesService {
     const newExpiresAt = new Date();
     newExpiresAt.setDate(newExpiresAt.getDate() + 7);
 
-    const response = await fetch(`${API_BASE}/invites/${id}`, {
-      method: 'PATCH',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({
-        status: 'pending',
-        expires_at: newExpiresAt.toISOString(),
-      }),
+    return httpClient.patch<OrganizationInvite>(`/invites/${id}`, {
+      status: 'pending',
+      expires_at: newExpiresAt.toISOString(),
     });
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error || 'Failed to resend invitation');
-    return data.data;
   }
 
   /**
    * Revoke/cancel an invitation
    */
   async revoke(id: string): Promise<void> {
-    await fetch(`${API_BASE}/invites/${id}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders(),
-    });
+    await httpClient.delete(`/invites/${id}`);
   }
 
   /**
    * Clean up expired invitations
    */
   async cleanupExpired(): Promise<void> {
-    await fetch(`${API_BASE}/invites/cleanup`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-    });
+    await httpClient.post('/invites/cleanup');
   }
 
   /**

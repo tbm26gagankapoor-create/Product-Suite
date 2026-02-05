@@ -2,15 +2,17 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import * as LucideIcons from 'lucide-react';
 import {
-  Folder, ChevronsRight, FileText, Calendar, Search, Bell, HelpCircle, Sun, Moon,
+  Folder, FileText, Calendar, Search, Bell, HelpCircle, Sun, Moon,
   PanelLeft, LogOut, LayoutGrid, Lightbulb, ListTodo, Settings2, Briefcase, Sparkles, X, Maximize2, Zap,
   CheckSquare, Users, Package, ArrowRight, UserCog
 } from 'lucide-react';
 import ProductIcon from './ProductIcon';
+import { VulcanIcon } from './VulcanLogo';
 import { View } from '../App';
 import { useTheme } from '../context/ThemeContext';
 import { useProjectData } from '../context/ProjectDataContext';
 import { useConfig } from '../context/ConfigContext';
+import { notificationsApi } from '../services/api';
 
 // Helper to get Lucide icon by name
 const getIconByName = (iconName: string, size: number = 20): React.ReactNode => {
@@ -60,6 +62,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onLogout, 
   const [isOrgSwitcherOpen, setIsOrgSwitcherOpen] = useState(false);
   const [switchingOrg, setSwitchingOrg] = useState(false);
   const orgSwitcherRef = useRef<HTMLDivElement>(null);
+
+  // Notifications State
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   // Global Search Results
   const searchResults = useMemo((): SearchResult[] => {
@@ -174,6 +179,23 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onLogout, 
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Load unread notification count
+  useEffect(() => {
+    const loadUnreadCount = async () => {
+      try {
+        const response = await notificationsApi.getUnreadCount();
+        setUnreadNotificationCount(response.count);
+      } catch (error) {
+        console.error('Failed to load unread notification count:', error);
+      }
+    };
+
+    loadUnreadCount();
+    // Refresh count every 60 seconds
+    const interval = setInterval(loadUnreadCount, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   const renderIcon = (itemName: string, size = 18) => {
     switch (itemName) {
       case 'Home': return <LayoutGrid size={size} strokeWidth={2} />;
@@ -231,11 +253,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onLogout, 
           onClick={() => onViewChange('home')}
         >
            <div className="w-9 h-9 bg-white dark:bg-black rounded-xl flex items-center justify-center text-black dark:text-white shadow-sm border border-gray-200 dark:border-white/10 group-hover:scale-105 transition-transform duration-300 flex-shrink-0">
-             <ChevronsRight size={18} strokeWidth={3} />
+             <VulcanIcon size={20} color="currentColor" />
            </div>
 
            <div className={`flex flex-col justify-center transition-all duration-300 overflow-hidden ${isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100 w-auto'}`}>
-               <span className="font-bold text-[15px] text-gray-900 dark:text-white leading-none tracking-tight">INFINIA</span>
+               <span className="font-bold text-[15px] text-gray-900 dark:text-white leading-none tracking-tight">VULCAN</span>
                <span className="text-[10px] text-gray-400 font-bold tracking-[0.2em] leading-none mt-1 uppercase">Product Suite</span>
            </div>
         </div>
@@ -403,6 +425,27 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onLogout, 
            <div className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
              Workspace
            </div>
+           {/* Notifications */}
+           <a
+             href="#"
+             onClick={(e) => { e.preventDefault(); onViewChange('notifications'); }}
+             className={`flex items-center gap-3 px-3 py-2 rounded-lg text-[14px] font-medium transition-all duration-200 border ${
+               currentView === 'notifications'
+                 ? 'text-gray-900 dark:text-white bg-white dark:bg-[#1F2128] shadow-sm border-gray-200 dark:border-[#2D2F36]'
+                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#1F2128]/50 border-transparent'
+             }`}
+           >
+              <span className={`relative ${currentView === 'notifications' ? 'text-blue-600 dark:text-blue-400' : ''}`}>
+                <Bell size={18} />
+              </span>
+              <span className="flex-1">Notifications</span>
+              {unreadNotificationCount > 0 && (
+                <span className="min-w-[20px] h-5 px-1.5 flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full">
+                  {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                </span>
+              )}
+              {currentView === 'notifications' && !unreadNotificationCount && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400"></div>}
+           </a>
            {/* Documents Placeholder */}
            <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-[14px] font-medium text-gray-400 cursor-not-allowed border border-transparent opacity-60 hover:bg-transparent" title="Coming Soon">
               <FileText size={18} />

@@ -406,7 +406,7 @@ const SettingsView: React.FC = () => {
                   <div className="flex items-center gap-6">
                     <div className="relative">
                       <img
-                        src={currentUser?.avatarUrl || 'https://api.dicebear.com/7.x/avataaars/svg?seed=User'}
+                        src={currentUser?.avatarUrl || 'https://avatar.iran.liara.run/public'}
                         alt={currentUser?.name || 'User'}
                         className="w-24 h-24 rounded-2xl object-cover ring-4 ring-gray-100 dark:ring-[#1F2128]"
                       />
@@ -707,7 +707,7 @@ const SettingsView: React.FC = () => {
                               </h3>
                               <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1.5 mt-1">
                                 <Globe size={14} />
-                                infinia.app/{currentOrganization.slug}
+                                vulcan.app/{currentOrganization.slug}
                               </p>
                               <div className="flex items-center gap-4 mt-3">
                                 <span className="text-sm text-gray-500 dark:text-gray-400">
@@ -902,7 +902,7 @@ const SettingsView: React.FC = () => {
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
                               <img
-                                src={member.user?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${member.user?.name || 'User'}`}
+                                src={member.user?.avatarUrl || `https://avatar.iran.liara.run/public`}
                                 alt={member.user?.name}
                                 className="w-10 h-10 rounded-full object-cover ring-2 ring-gray-100 dark:ring-[#1F2128]"
                               />
@@ -1050,7 +1050,7 @@ const SettingsView: React.FC = () => {
               <div>
                 <h1 className="text-2xl font-bold text-[#172B4D] dark:text-white">Appearance</h1>
                 <p className="text-gray-500 dark:text-gray-400 mt-1">
-                  Customize how Infinia looks for you
+                  Customize how Vulcan looks for you
                 </p>
               </div>
 

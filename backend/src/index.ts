@@ -129,7 +129,7 @@ async function startServer() {
   Network: http://0.0.0.0:${config.port}
   API:     http://localhost:${config.port}/api/v1
   Health:  http://localhost:${config.port}/api/v1/health
-  Database: MongoDB
+  Database: MongoDB (${config.database.name})
   Environment: ${config.nodeEnv}
 ====================================
 

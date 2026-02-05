@@ -15,11 +15,12 @@ import {
   Linkedin,
   Plus,
   Activity,
-  Camera,
   Layers,
   ChevronRight,
   Save,
-  X
+  X,
+  Camera,
+  Upload
 } from 'lucide-react';
 import { useProjectData } from '../context/ProjectDataContext';
 import { User, Team, Project } from '../types';
@@ -46,11 +47,15 @@ const timeAgo = (date: Date) => {
 const UserProfileView: React.FC = () => {
   const { myTasks, currentUser, updateCurrentUser, users, tasks } = useProjectData();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const { error: showError, success } = useToast();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'activity' | 'projects' | 'settings'>('overview');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
 
   // Local State for Edit Form - initialized with defaults
   const [editForm, setEditForm] = useState<User>({
@@ -70,6 +75,15 @@ const UserProfileView: React.FC = () => {
           setEditForm({ ...currentUser });
       }
   }, [currentUser]);
+
+  // Cleanup camera when modal closes
+  useEffect(() => {
+      if (!isEditModalOpen && cameraStream) {
+          cameraStream.getTracks().forEach(track => track.stop());
+          setCameraStream(null);
+          setIsCameraOpen(false);
+      }
+  }, [isEditModalOpen, cameraStream]);
 
   // Fetch user's teams and projects from API
   useEffect(() => {
@@ -183,6 +197,47 @@ const UserProfileView: React.FC = () => {
     }
   };
 
+  const openCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: 400, height: 400 }
+      });
+      setCameraStream(stream);
+      setIsCameraOpen(true);
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      }, 100);
+    } catch (err) {
+      showError('Camera Error', 'Unable to access camera. Please check permissions.');
+    }
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = 400;
+      canvas.height = 400;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, 400, 400);
+        const imageData = canvas.toDataURL('image/jpeg', 0.9);
+        setEditForm(prev => ({ ...prev, avatarUrl: imageData }));
+        closeCamera();
+      }
+    }
+  };
+
+  const closeCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+    setIsCameraOpen(false);
+  };
+
   return (
     <div className="flex-1 overflow-y-auto bg-[#F8F9FC] dark:bg-[#0B0C0E] custom-scrollbar h-full transition-colors duration-200">
       
@@ -192,9 +247,9 @@ const UserProfileView: React.FC = () => {
             <div className="flex flex-col md:flex-row items-start gap-8 mb-8">
                 {/* Avatar */}
                 <div className="relative group cursor-pointer" onClick={() => setIsEditModalOpen(true)}>
-                    <img 
-                        src={currentUser.avatarUrl} 
-                        alt={currentUser.name} 
+                    <img
+                        src={currentUser.avatarUrl}
+                        alt={currentUser.name}
                         className="w-32 h-32 rounded-full border-4 border-gray-50 dark:border-[#1F2128] shadow-lg object-cover group-hover:opacity-90 transition-opacity"
                     />
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -524,27 +579,70 @@ const UserProfileView: React.FC = () => {
                     </button>
                 </div>
                 <div className="p-6 space-y-4">
-                    {/* Hidden Input */}
-                    <input 
-                        type="file" 
-                        ref={fileInputRef} 
-                        className="hidden" 
+                    {/* Hidden Input & Canvas */}
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        className="hidden"
                         accept="image/*"
                         onChange={handleFileChange}
                     />
+                    <canvas ref={canvasRef} className="hidden" />
 
-                    <div className="flex items-center gap-4 mb-4">
-                        <div className="relative group cursor-pointer" onClick={handleAvatarClick}>
-                            <img src={editForm.avatarUrl} className="w-16 h-16 rounded-full object-cover" />
-                            <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Camera size={16} className="text-white" />
+                    {/* Camera View */}
+                    {isCameraOpen ? (
+                        <div className="space-y-4">
+                            <div className="relative rounded-xl overflow-hidden bg-black aspect-square max-w-[280px] mx-auto">
+                                <video
+                                    ref={videoRef}
+                                    autoPlay
+                                    playsInline
+                                    muted
+                                    className="w-full h-full object-cover"
+                                />
+                            </div>
+                            <div className="flex justify-center gap-3">
+                                <button
+                                    onClick={closeCamera}
+                                    className="px-4 py-2 text-sm font-bold text-gray-500 hover:text-gray-700 dark:hover:text-white border border-gray-200 dark:border-[#2D2F36] rounded-lg"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={capturePhoto}
+                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-lg hover:bg-blue-700 flex items-center gap-2"
+                                >
+                                    <Camera size={16} /> Capture
+                                </button>
                             </div>
                         </div>
-                        <div>
-                            <button onClick={handleAvatarClick} className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline">Change Avatar</button>
-                            <p className="text-xs text-gray-500 mt-1">Recommended: 400x400px</p>
+                    ) : (
+                        <div className="flex items-center gap-4 mb-4">
+                            <div className="relative group cursor-pointer" onClick={handleAvatarClick}>
+                                <img src={editForm.avatarUrl} className="w-16 h-16 rounded-full object-cover" />
+                                <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <Camera size={16} className="text-white" />
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <p className="text-xs text-gray-500">Recommended: 400x400px</p>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={handleAvatarClick}
+                                        className="px-3 py-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-500/30 transition-colors flex items-center gap-1.5"
+                                    >
+                                        <Upload size={14} /> Upload File
+                                    </button>
+                                    <button
+                                        onClick={openCamera}
+                                        className="px-3 py-1.5 text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1F2128] rounded-lg border border-gray-200 dark:border-[#2D2F36] transition-colors flex items-center gap-1.5"
+                                    >
+                                        <Camera size={14} /> Use Camera
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                    </div>
+                    )}
                     
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1.5">

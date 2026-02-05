@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  ChevronsRight,
   Sun,
   Moon,
   Mail,
@@ -58,9 +57,11 @@ const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onBack }) => {
 
         {/* Top: Logo */}
         <div className="relative z-10 flex items-center gap-3">
-          <ChevronsRight className="text-white" size={32} strokeWidth={2.5} />
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-white">
+            <path d="M3 4L12 20L21 4" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
           <div className="flex flex-col justify-center">
-            <span className="font-bold text-xl text-white leading-none tracking-[0.1em]">INFINIA</span>
+            <span className="font-bold text-xl text-white leading-none tracking-[0.1em]">VULCAN</span>
             <span className="text-[10px] text-gray-400 font-bold tracking-[0.25em] leading-none mt-1">TECHNOLOGIES</span>
           </div>
         </div>
@@ -68,20 +69,20 @@ const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onBack }) => {
         {/* Center: Hero Content */}
         <div className="relative z-10 max-w-2xl">
           <h1 className="text-5xl xl:text-7xl font-bold text-white tracking-tight mb-2">
-            INFINIA
+            VULCAN
           </h1>
           <h1 className="text-5xl xl:text-7xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-gray-200 to-gray-600 tracking-tight mb-8">
-            PRODUCTS
+            PRODUCT SUITE
           </h1>
 
           <p className="text-lg text-gray-400 leading-relaxed max-w-xl mb-10">
-            From foundational tech to bold innovations, Infinia fuels the systems that shape tomorrow. Manage your projects, sprints, and roadmaps in one unified ecosystem.
+            Your complete command center for product excellence. Orchestrate ideas, sprints, and roadmaps with precision—turning vision into reality, one milestone at a time.
           </p>
         </div>
 
         {/* Bottom: Footer Info */}
         <div className="relative z-10 flex items-center justify-between text-xs text-gray-500 font-medium">
-          <span>&copy; 2024 Infinia Inc.</span>
+          <span>&copy; 2024 Vulcan Inc.</span>
         </div>
       </div>
 
@@ -89,8 +90,10 @@ const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onBack }) => {
       <div className="w-full lg:w-[45%] bg-white dark:bg-[#0B0C0E] flex flex-col relative z-10 transition-colors duration-500">
         <div className="flex items-center justify-between p-6 lg:p-8 absolute top-0 left-0 w-full z-20">
           <div className="lg:hidden flex items-center gap-2">
-            <ChevronsRight className="text-[#172B4D] dark:text-white" size={24} />
-            <span className="font-bold text-lg text-[#172B4D] dark:text-white tracking-widest">INFINIA</span>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-[#172B4D] dark:text-white">
+              <path d="M3 4L12 20L21 4" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <span className="font-bold text-lg text-[#172B4D] dark:text-white tracking-widest">VULCAN</span>
           </div>
           <div className="ml-auto">
             <button

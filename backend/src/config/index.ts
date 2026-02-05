@@ -7,6 +7,28 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Get environment-specific database name
+function getDatabaseName(): string {
+  // Allow explicit override via MONGODB_DATABASE
+  if (process.env.MONGODB_DATABASE) {
+    return process.env.MONGODB_DATABASE;
+  }
+
+  // Default to environment-based naming
+  const env = process.env.NODE_ENV || 'development';
+  switch (env) {
+    case 'production':
+      return 'infinia';
+    case 'staging':
+      return 'infinia_staging';
+    case 'test':
+      return 'infinia_test';
+    case 'development':
+    default:
+      return 'infinia_dev';
+  }
+}
+
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -15,6 +37,8 @@ export const config = {
 
   database: {
     path: process.env.DATABASE_PATH || path.join(__dirname, '../../data/infinia.db'),
+    mongoUri: process.env.MONGODB_URI || 'mongodb://localhost:27017',
+    name: getDatabaseName(),
   },
 
   jwt: {

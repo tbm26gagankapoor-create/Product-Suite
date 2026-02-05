@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useProjectData } from '../context/ProjectDataContext';
 import { aiClient, SAIF_API_KEY } from '../lib/ai';
-import { Task, Sprint, Project } from '../types';
+import { Task, Sprint, Project, User } from '../types';
 import CreateTaskModal, { CreateTaskData } from './CreateTaskModal';
 
 interface CopilotModalProps {
@@ -234,34 +234,123 @@ export const CopilotModal: React.FC<CopilotModalProps> = ({ isOpen, onClose, ini
       return;
     }
 
-    const projectsList = projects.map(p =>
-      `- ${p.name} (Key: ${p.key}, Status: ${p.status})`
-    ).join('\n');
+    // Build rich product context for strategic planning
+    const projectsWithContext = projects.map(p => {
+      const projectTasks = tasks.filter(t => t.projectId === p.id);
+      const projectEpics = projectTasks.filter(t => t.type === 'epic');
+      // Count only work items (exclude epics which are containers)
+      const projectWorkItems = projectTasks.filter(t => t.type !== 'epic');
+      const projectSprints = sprints.filter(s => s.projectId === p.id);
 
+      return `
+## ${p.name} (${p.key})
+- **Status**: ${p.status}
+- **Lifecycle Stage**: ${p.lifecycleStage || 'Not set'}
+- **Vision**: ${p.vision || 'No vision defined'}
+- **PRD Summary**: ${p.prd ? p.prd.substring(0, 300) + '...' : 'No PRD defined'}
+- **Target Release**: ${p.targetReleaseDate || 'Not set'}
+- **Total Work Items**: ${projectWorkItems.length} (epics are containers, not counted as work items)
+- **Active Epics**: ${projectEpics.length > 0 ? projectEpics.map(e => `[${e.id}] ${e.title}`).join(', ') : 'None'}
+- **Sprints**: ${projectSprints.length} (${projectSprints.filter(s => s.status === 'active').length} active)
+      `.trim();
+    }).join('\n\n');
+
+    // Group work items by epic for roadmap context
+    const epicsWithTasks = tasks.filter(t => t.type === 'epic').map(epic => {
+      // Only count actual work items (Feature, Task, Bug, Story) - not nested epics
+      const epicWorkItems = tasks.filter(t => t.parentEpicId === epic.id && t.type !== 'epic');
+      const completedItems = epicWorkItems.filter(t => t.columnId === 'done');
+      const inProgressItems = epicWorkItems.filter(t => t.columnId === 'inprogress');
+      const todoItems = epicWorkItems.filter(t => t.columnId === 'todo' || t.columnId === 'backlog');
+
+      return `
+### Epic: [${epic.id}] ${epic.title} (Container)
+- Product Theme: ${epic.productTheme || 'None'}
+- Impact Score: ${epic.impactScore || 'N/A'}
+- Customer Value: ${epic.customerValue || 'N/A'}
+- Progress: ${completedItems.length}/${epicWorkItems.length} work items completed (${inProgressItems.length} in progress, ${todoItems.length} todo)
+- Child Work Items: ${epicWorkItems.slice(0, 5).map(t => `[${t.id}] ${t.title} (${t.type})`).join(', ')}${epicWorkItems.length > 5 ? ` ...and ${epicWorkItems.length - 5} more` : ''}
+      `.trim();
+    }).join('\n\n');
+
+    // Task dependencies for sequencing
+    const tasksWithDependencies = tasks
+      .filter(t => (t.blockedBy && t.blockedBy.length > 0) || (t.blocks && t.blocks.length > 0))
+      .map(t => {
+        const blockedByTitles = t.blockedBy?.map(id => tasks.find(bt => bt.id === id)?.title || id).join(', ') || '';
+        const blocksTitles = t.blocks?.map(id => tasks.find(bt => bt.id === id)?.title || id).join(', ') || '';
+        return `- [${t.id}] ${t.title}${blockedByTitles ? ` (blocked by: ${blockedByTitles})` : ''}${blocksTitles ? ` (blocks: ${blocksTitles})` : ''}`;
+      }).join('\n');
+
+    // Product themes distribution
+    const tasksByTheme = tasks.reduce((acc, t) => {
+      if (t.productTheme) {
+        acc[t.productTheme] = (acc[t.productTheme] || 0) + 1;
+      }
+      return acc;
+    }, {} as Record<string, number>);
+
+    const themesList = Object.entries(tasksByTheme)
+      .map(([theme, count]) => `- ${theme}: ${count} tasks`)
+      .join('\n') || 'No themes defined';
+
+    // Active sprints with context
     const activeSprintsList = sprints
       .filter(s => s.status === 'active')
-      .map(s => `- Sprint: ${s.name} (Goal: ${s.goal || 'None'})`)
+      .map(s => {
+        const sprintTasks = tasks.filter(t => t.sprintId === s.id);
+        const project = projects.find(p => p.id === s.projectId);
+        return `- **${s.name}** (${project?.name || 'Unknown Project'})\n  Goal: ${s.goal || 'None'}\n  Tasks: ${sprintTasks.length} (${sprintTasks.filter(t => t.columnId === 'done').length} done)`;
+      })
       .join('\n') || 'No active sprints';
 
-    const taskSnapshot = tasks.slice(0, 30).map(t => {
+    // Backlog tasks ready for sprint (not in a sprint, not blocked, has story points)
+    // IMPORTANT: Exclude epics - they are containers, not work items
+    const readyForSprint = tasks.filter(t =>
+      t.type !== 'epic' &&
+      !t.sprintId &&
+      t.columnId !== 'blocked' &&
+      t.columnId !== 'done' &&
+      (!t.blockedBy || t.blockedBy.length === 0) &&
+      t.points && t.points > 0
+    );
+
+    const backlogSnapshot = readyForSprint.slice(0, 20).map(t => {
       const projName = projects.find(p => p.id === t.projectId)?.name || 'Unknown';
-      return `- [${t.id}] ${t.title} (Status: ${t.columnId}, Priority: ${t.priority}, Project: ${projName})`;
+      const epicName = t.parentEpicId ? tasks.find(e => e.id === t.parentEpicId)?.title : null;
+      return `- [${t.id}] ${t.title}\n  Project: ${projName} | Type: ${t.type} | Priority: ${t.priority} | Points: ${t.points}${epicName ? ` | Epic: ${epicName}` : ''}${t.productTheme ? ` | Theme: ${t.productTheme}` : ''}`;
     }).join('\n');
 
     const blockedTasks = tasks.filter(t => t.columnId === 'blocked');
-    const highPriorityTasks = tasks.filter(t => t.priority === 'HIGH' || t.priority === 'CRITICAL');
 
     const contextStr = `
-WORKSPACE DATA:
-Current User: ${currentUser?.name || 'Unknown'}
-Total Projects: ${projects.length}
-Projects: ${projectsList}
-Active Sprints: ${activeSprintsList}
-Total Tasks: ${tasks.length}
-Blocked Tasks: ${blockedTasks.length}
-High Priority Tasks: ${highPriorityTasks.length}
-Recent Tasks (30):
-${taskSnapshot}
+PRODUCT ROADMAP & WORKSPACE CONTEXT:
+
+## Products & Strategic Goals
+${projectsWithContext}
+
+## Active Epics & Roadmap
+${epicsWithTasks || 'No active epics'}
+
+## Product Themes
+${themesList}
+
+## Task Dependencies
+${tasksWithDependencies || 'No task dependencies defined'}
+
+## Current Sprints
+${activeSprintsList}
+
+## Backlog Tasks Ready for Sprint Planning (${readyForSprint.length} work items)
+${backlogSnapshot}
+
+## Workspace Stats
+- Current User: ${currentUser?.name || 'Unknown'}
+- Total Projects: ${projects.length}
+- Total Work Items: ${tasks.filter(t => t.type !== 'epic').length} (excludes epics - they are containers)
+- Total Epics: ${tasks.filter(t => t.type === 'epic').length} (containers only, not added to sprints)
+- Blocked Work Items: ${blockedTasks.filter(t => t.type !== 'epic').length}
+- Work Items Ready for Sprint: ${readyForSprint.length}
     `;
 
     const historyLines = messages.slice(-6).map(m =>
@@ -272,7 +361,7 @@ ${taskSnapshot}
 AVAILABLE TOOLS (respond with JSON when using):
 
 1. create_task: Create a new task
-   { "tool": "create_task", "args": { "title": "string", "type": "task|bug|story", "priority": "LOW|MEDIUM|HIGH|CRITICAL", "points": number, "description": "string" } }
+   { "tool": "create_task", "args": { "title": "string", "type": "task|bug|story", "priority": "LOW|MEDIUM|HIGH", "points": number, "description": "string" } }
 
 2. show_blockers: Show all blocked tasks
    { "tool": "show_blockers" }
@@ -283,13 +372,40 @@ AVAILABLE TOOLS (respond with JSON when using):
 4. create_epic: Create an epic with tasks
    { "tool": "create_epic", "args": { "title": "string", "description": "string", "tasks": [{ "title": "string", "type": "task", "points": n }] } }
 
-5. plan_sprint: Create a sprint plan
-   { "tool": "plan_sprint", "args": { "name": "string", "goal": "string", "duration": "2 weeks", "tasks": ["task ids or titles"] } }
+5. plan_sprint: Create a strategic sprint plan based on product roadmap
+   { "tool": "plan_sprint", "args": { "name": "string", "goal": "string", "duration": "2 weeks", "tasks": ["task ids or titles"], "projectId": "string" } }
+
+SPRINT PLANNING STRATEGY:
+When planning a sprint, you MUST consider the product roadmap and strategic goals, NOT just task priority:
+
+**CRITICAL RULES:**
+- ❌ **NEVER include epics in sprint plans** - Epics are containers, NOT work items
+- ✅ **ONLY include**: Feature, Task, Bug, Story types in sprints
+- When counting work items or points, EXCLUDE epics from your calculations
+
+**Planning Guidelines:**
+1. **Product Vision Alignment**: Select work items (Feature, Task, Bug, Story) that align with the product's vision, PRD, and lifecycle stage
+2. **Epic-Based Grouping**: Group related work items FROM THE SAME EPIC to show progress on that epic. The epic itself is NOT added to the sprint, but its child work items are.
+3. **Product Themes**: Balance work across product themes relevant to current goals
+4. **Task Dependencies**: Respect work item sequencing - include blocking items before blocked items
+5. **Ready Backlog**: Use the "Backlog Tasks Ready for Sprint Planning" section (already estimated, unblocked, and epics are excluded)
+6. **Customer Value**: Consider impact scores and customer value, not just priority labels
+7. **Sprint Goal**: Create a coherent sprint goal that represents a meaningful product increment
+
+EXAMPLE - GOOD Sprint Plan:
+Sprint Goal: "Complete user authentication foundation for MVP launch"
+Tasks: [DIG-47, DIG-46, DIG-41] - All authentication-related Features/Tasks/Stories from the "User Authentication" epic
+(Note: The epic itself is NOT in the sprint, only its child work items)
+
+EXAMPLE - BAD Sprint Plan:
+Sprint Goal: "Work on high priority items"
+Tasks: Random high-priority items from different epics/themes with no coherent story, or includes epic items
 
 INSTRUCTIONS:
-- For questions, answer directly using WORKSPACE DATA
+- For questions, answer directly using PRODUCT ROADMAP & WORKSPACE CONTEXT
+- For sprint planning, analyze epics, themes, and product goals FIRST before selecting tasks
 - For actions (create, show, summarize), return the appropriate tool JSON
-- Be concise but helpful
+- Be strategic and consider the bigger product picture
 - Output ONLY valid JSON when using tools, nothing else before or after
     `;
 
@@ -454,7 +570,7 @@ INSTRUCTIONS:
                         <Sparkles size={18} />
                     </div>
                     <div>
-                      <span className="font-bold text-[#172B4D] dark:text-white text-sm">Infinia Copilot</span>
+                      <span className="font-bold text-[#172B4D] dark:text-white text-sm">Vulcan Copilot</span>
                       <div className="flex items-center gap-1.5">
                         <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
                         <span className="text-[10px] text-gray-400">AI Ready</span>
@@ -606,8 +722,8 @@ INSTRUCTIONS:
                                             <div className="flex items-center gap-2 mt-1">
                                                 <span className="text-[10px] font-mono bg-gray-100 dark:bg-[#1F2128] px-1.5 py-0.5 rounded text-gray-500">{item.id}</span>
                                                 <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                                                  item.priority === 'CRITICAL' ? 'bg-red-100 text-red-600' :
                                                   item.priority === 'HIGH' ? 'bg-orange-100 text-orange-600' :
+                                                  item.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-600' :
                                                   'bg-gray-100 text-gray-600'
                                                 }`}>{item.priority}</span>
                                             </div>
@@ -707,40 +823,274 @@ INSTRUCTIONS:
                 )}
 
                 {/* Sprint Draft View */}
-                {canvasContent.type === 'sprint_draft' && canvasContent.data && (
-                    <div className="flex-1 p-6 overflow-y-auto custom-scrollbar animate-in slide-in-from-right-4 duration-300">
-                        <div className="max-w-2xl mx-auto">
-                            <div className="p-5 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-100 dark:border-green-900/30 mb-6">
-                                <div className="flex items-start gap-3">
-                                    <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg text-green-600 dark:text-green-400">
-                                        <Target size={20} />
-                                    </div>
-                                    <div>
-                                        <h3 className="font-bold text-[#172B4D] dark:text-white text-lg">{canvasContent.data.name}</h3>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{canvasContent.data.goal}</p>
-                                        <div className="flex items-center gap-3 mt-2">
-                                            <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-0.5 rounded">{canvasContent.data.duration || '2 weeks'}</span>
+                {canvasContent.type === 'sprint_draft' && canvasContent.data && (() => {
+                    // Parse and match tasks with actual task objects
+                    const taskStrings = canvasContent.data.tasks || [];
+                    const matchedTasks = taskStrings.map((taskStr: string) => {
+                        // Try to extract task ID (e.g., "INF-123" or "DIG-47")
+                        const idMatch = taskStr.match(/([A-Z]+-\d+)/);
+                        if (idMatch) {
+                            const taskId = idMatch[1];
+                            const foundTask = tasks.find(t => t.id === taskId);
+                            if (foundTask) return foundTask;
+                        }
+                        // Try to match by title
+                        const foundByTitle = tasks.find(t => t.title.toLowerCase().includes(taskStr.toLowerCase()) || taskStr.toLowerCase().includes(t.title.toLowerCase()));
+                        if (foundByTitle) return foundByTitle;
+                        // Return as plain text if no match
+                        return { id: taskStr, title: taskStr, type: 'task' as const, priority: 'MEDIUM' as const };
+                    });
+
+                    // Calculate sprint stats
+                    const totalPoints = matchedTasks.reduce((sum, t) => sum + (t.points || 0), 0);
+                    const taskCount = matchedTasks.length;
+                    const tasksByType = matchedTasks.reduce((acc, t) => {
+                        acc[t.type] = (acc[t.type] || 0) + 1;
+                        return acc;
+                    }, {} as Record<string, number>);
+                    const tasksByPriority = matchedTasks.reduce((acc, t) => {
+                        acc[t.priority] = (acc[t.priority] || 0) + 1;
+                        return acc;
+                    }, {} as Record<string, number>);
+
+                    // Get unique assignees
+                    const assigneeMap = new Map<string, User>();
+                    matchedTasks.forEach((t: any) => {
+                        if (t.assignee && t.assignee.id) {
+                            assigneeMap.set(t.assignee.id, t.assignee as User);
+                        }
+                    });
+                    const uniqueAssignees: User[] = Array.from(assigneeMap.values());
+
+                    // Calculate date range (default to 2 weeks from today)
+                    const startDate = new Date();
+                    const endDate = new Date(startDate);
+                    const durationMatch = (canvasContent.data.duration || '2 weeks').match(/(\d+)\s*(week|day)/i);
+                    if (durationMatch) {
+                        const value = parseInt(durationMatch[1]);
+                        const unit = durationMatch[2].toLowerCase();
+                        endDate.setDate(endDate.getDate() + (unit === 'week' ? value * 7 : value));
+                    } else {
+                        endDate.setDate(endDate.getDate() + 14);
+                    }
+
+                    const formatDate = (date: Date) => {
+                        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                    };
+
+                    const getTypeIcon = (type: string) => {
+                        switch (type) {
+                            case 'epic': return { icon: Briefcase, color: 'text-purple-500' };
+                            case 'feature': return { icon: Lightbulb, color: 'text-pink-500' };
+                            case 'bug': return { icon: Bug, color: 'text-red-500' };
+                            case 'story': return { icon: FileText, color: 'text-emerald-500' };
+                            default: return { icon: CheckCircle2, color: 'text-blue-500' };
+                        }
+                    };
+
+                    return (
+                        <div className="flex-1 p-6 overflow-y-auto custom-scrollbar animate-in slide-in-from-right-4 duration-300">
+                            <div className="max-w-2xl mx-auto">
+                                {/* Sprint Header */}
+                                <div className="p-5 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-100 dark:border-green-900/30 mb-6">
+                                    <div className="flex items-start gap-3">
+                                        <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg text-green-600 dark:text-green-400">
+                                            <Target size={20} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <h3 className="font-bold text-[#172B4D] dark:text-white text-lg">{canvasContent.data.name}</h3>
+                                            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{canvasContent.data.goal}</p>
+
+                                            {/* Sprint Metadata */}
+                                            <div className="flex items-center gap-3 mt-3 flex-wrap">
+                                                <div className="flex items-center gap-1.5 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2.5 py-1 rounded-md">
+                                                    <Calendar size={12} />
+                                                    <span>{formatDate(startDate)} - {formatDate(endDate)}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2.5 py-1 rounded-md">
+                                                    <ListTodo size={12} />
+                                                    <span>{taskCount} {taskCount === 1 ? 'task' : 'tasks'}</span>
+                                                </div>
+                                                {totalPoints > 0 && (
+                                                    <div className="flex items-center gap-1.5 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2.5 py-1 rounded-md">
+                                                        <TrendingUp size={12} />
+                                                        <span>{totalPoints} points</span>
+                                                    </div>
+                                                )}
+                                                {uniqueAssignees.length > 0 && (
+                                                    <div className="flex items-center gap-1.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2.5 py-1 rounded-md">
+                                                        <Users size={12} />
+                                                        <span>{uniqueAssignees.length} {uniqueAssignees.length === 1 ? 'member' : 'members'}</span>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            <h4 className="font-semibold text-[#172B4D] dark:text-white mb-3 text-sm">Planned Tasks</h4>
-                            <div className="space-y-2">
-                                {(canvasContent.data.tasks || []).map((task: string, i: number) => (
-                                    <div key={i} className="flex items-center gap-3 p-3 bg-white dark:bg-[#15171E] rounded-lg border border-gray-200 dark:border-[#1F2128]">
-                                        <input type="checkbox" className="rounded border-gray-300" defaultChecked />
-                                        <span className="flex-1 text-sm text-gray-700 dark:text-gray-300">{task}</span>
+                                {/* Sprint Statistics */}
+                                <div className="grid grid-cols-2 gap-3 mb-6">
+                                    {/* Task Type Breakdown */}
+                                    <div className="p-4 bg-white dark:bg-[#15171E] rounded-xl border border-gray-200 dark:border-[#1F2128]">
+                                        <h5 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Task Types</h5>
+                                        <div className="space-y-2">
+                                            {Object.entries(tasksByType).map(([type, count]) => {
+                                                const { icon: Icon, color } = getTypeIcon(type);
+                                                return (
+                                                    <div key={type} className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <Icon size={14} className={color} />
+                                                            <span className="text-xs text-gray-600 dark:text-gray-300 capitalize">{type}</span>
+                                                        </div>
+                                                        <span className="text-xs font-semibold text-gray-900 dark:text-white">{count}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
-                                ))}
-                            </div>
 
-                            <button className="w-full mt-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-semibold text-sm hover:shadow-lg hover:shadow-green-500/30 transition-all">
-                                Start Sprint
-                            </button>
+                                    {/* Priority Breakdown */}
+                                    <div className="p-4 bg-white dark:bg-[#15171E] rounded-xl border border-gray-200 dark:border-[#1F2128]">
+                                        <h5 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Priority</h5>
+                                        <div className="space-y-2">
+                                            {Object.entries(tasksByPriority).map(([priority, count]) => {
+                                                const priorityColors = {
+                                                    CRITICAL: 'text-red-600 dark:text-red-400',
+                                                    HIGH: 'text-orange-600 dark:text-orange-400',
+                                                    MEDIUM: 'text-yellow-600 dark:text-yellow-400',
+                                                    LOW: 'text-gray-600 dark:text-gray-400'
+                                                };
+                                                return (
+                                                    <div key={priority} className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <Flag size={14} className={priorityColors[priority as keyof typeof priorityColors] || 'text-gray-600'} />
+                                                            <span className="text-xs text-gray-600 dark:text-gray-300">{priority}</span>
+                                                        </div>
+                                                        <span className="text-xs font-semibold text-gray-900 dark:text-white">{count}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Team Members */}
+                                {uniqueAssignees.length > 0 && (
+                                    <div className="mb-6">
+                                        <h5 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Team Members</h5>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            {uniqueAssignees.slice(0, 8).map((assignee, idx) => (
+                                                <div key={idx} className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-[#15171E] rounded-lg border border-gray-200 dark:border-[#1F2128]">
+                                                    {assignee.avatarUrl ? (
+                                                        <img src={assignee.avatarUrl} alt={assignee.name} className="w-5 h-5 rounded-full" />
+                                                    ) : (
+                                                        <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-400 to-indigo-600 flex items-center justify-center text-white text-[8px] font-bold">
+                                                            {assignee.name.charAt(0)}
+                                                        </div>
+                                                    )}
+                                                    <span className="text-xs text-gray-700 dark:text-gray-300">{assignee.name}</span>
+                                                </div>
+                                            ))}
+                                            {uniqueAssignees.length > 8 && (
+                                                <span className="text-xs text-gray-400">+{uniqueAssignees.length - 8} more</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Planned Tasks */}
+                                <h4 className="font-semibold text-[#172B4D] dark:text-white mb-3 text-sm flex items-center gap-2">
+                                    <ListTodo size={14} />
+                                    Planned Tasks ({taskCount})
+                                </h4>
+                                <div className="space-y-2 mb-6">
+                                    {matchedTasks.map((task: any, i: number) => {
+                                        const { icon: Icon, color } = getTypeIcon(task.type);
+                                        const isFullTask = task.columnId !== undefined;
+
+                                        return (
+                                            <div key={i} className="flex items-center gap-3 p-3 bg-white dark:bg-[#15171E] rounded-lg border border-gray-200 dark:border-[#1F2128] hover:border-green-300 dark:hover:border-green-500/50 hover:shadow-md transition-all group">
+                                                <input
+                                                    type="checkbox"
+                                                    className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                                    defaultChecked
+                                                />
+
+                                                {/* Task Type Icon */}
+                                                <div className={`p-1.5 rounded-lg bg-gray-50 dark:bg-[#1F2128] ${color}`}>
+                                                    <Icon size={14} />
+                                                </div>
+
+                                                {/* Task Info */}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[10px] font-mono bg-gray-100 dark:bg-[#1F2128] px-1.5 py-0.5 rounded text-gray-500">
+                                                            {isFullTask ? task.id : `Task ${i + 1}`}
+                                                        </span>
+                                                        <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{task.title}</span>
+                                                    </div>
+                                                    {isFullTask && (
+                                                        <div className="flex items-center gap-2 mt-1">
+                                                            {task.priority && (
+                                                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
+                                                                    task.priority === 'CRITICAL' ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' :
+                                                                    task.priority === 'HIGH' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400' :
+                                                                    task.priority === 'MEDIUM' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400' :
+                                                                    'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
+                                                                }`}>
+                                                                    {task.priority}
+                                                                </span>
+                                                            )}
+                                                            {task.columnId && (
+                                                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-[#1F2128] text-gray-500 capitalize">
+                                                                    {task.columnId.replace('-', ' ')}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Points & Assignee */}
+                                                <div className="flex items-center gap-2">
+                                                    {task.points !== undefined && task.points > 0 && (
+                                                        <div className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded text-[10px] font-semibold">
+                                                            {task.points} pts
+                                                        </div>
+                                                    )}
+                                                    {task.assignee && (
+                                                        <div className="relative group/avatar">
+                                                            {task.assignee.avatarUrl ? (
+                                                                <img
+                                                                    src={task.assignee.avatarUrl}
+                                                                    alt={task.assignee.name}
+                                                                    className="w-6 h-6 rounded-full border-2 border-white dark:border-[#15171E]"
+                                                                    title={task.assignee.name}
+                                                                />
+                                                            ) : (
+                                                                <div
+                                                                    className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-indigo-600 flex items-center justify-center text-white text-[9px] font-bold border-2 border-white dark:border-[#15171E]"
+                                                                    title={task.assignee.name}
+                                                                >
+                                                                    {task.assignee.name.charAt(0)}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                {/* Action Button */}
+                                <button className="w-full py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-semibold text-sm hover:shadow-lg hover:shadow-green-500/30 transition-all flex items-center justify-center gap-2">
+                                    <Target size={16} />
+                                    Start Sprint
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                )}
+                    );
+                })()}
 
             </div>
         </div>

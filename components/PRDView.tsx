@@ -27,9 +27,12 @@ import {
     AlertCircle
 } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
-import { Project, User as UserType, DocVersion } from '../types';
+import { Project, User as UserType, DocVersion, DocumentComment } from '../types';
 import { useProjectData } from '../context/ProjectDataContext';
 import { useConfig } from '../context/ConfigContext';
+import MentionInput from './MentionInput';
+import MentionText from './MentionText';
+import SelectionCommentPopover from './SelectionCommentPopover';
 
 // Helper to get icon component by name
 const getIconComponentByName = (iconName: string): any => {
@@ -37,22 +40,12 @@ const getIconComponentByName = (iconName: string): any => {
 };
 import { aiClient } from '../lib/ai';
 import { documentsService } from '../services/documents.service';
-import { githubApi } from '../services/api';
+import { githubApi, documentCommentsApi } from '../services/api';
 import GitHubIntegrationSettings from './GitHubIntegrationSettings';
 import type { GitHubIntegration } from '../types';
 
 interface PRDViewProps {
     project?: Project;
-}
-
-// Local interface for comments
-interface DocComment {
-    id: string;
-    sectionId: string;
-    text: string;
-    user: UserType;
-    timestamp: Date;
-    resolved: boolean;
 }
 
 interface Section {
@@ -115,15 +108,30 @@ const PRDView: React.FC<PRDViewProps> = ({ project }) => {
 
     // History is derived from the project prop to ensure persistence
     const history: DocVersion[] = project?.docHistory || [];
-    
-    const [comments, setComments] = useState<DocComment[]>([]);
-    
+
+    // Comments state - now persisted via API
+    const [comments, setComments] = useState<DocumentComment[]>([]);
+    const [isLoadingComments, setIsLoadingComments] = useState(false);
+    const [showResolved, setShowResolved] = useState(false);
+    const [replyingToId, setReplyingToId] = useState<string | null>(null);
+    const [replyText, setReplyText] = useState('');
+
+    // Inline text selection state (Google Docs style)
+    const [selectionPopover, setSelectionPopover] = useState<{
+        visible: boolean;
+        text: string;
+        position: { x: number; y: number };
+    }>({ visible: false, text: '', position: { x: 0, y: 0 } });
+    const [activeInlineComment, setActiveInlineComment] = useState<DocumentComment | null>(null);
+
     // UI Toggles
     const [showHistory, setShowHistory] = useState(false);
     const [showComments, setShowComments] = useState(false);
     const [isAddingSection, setIsAddingSection] = useState(false);
     const [newSectionName, setNewSectionName] = useState('');
     const [newCommentText, setNewCommentText] = useState('');
+    const [newCommentMentions, setNewCommentMentions] = useState<string[]>([]);
+    const [replyMentions, setReplyMentions] = useState<string[]>([]);
     
     // Save Modal State
     const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
@@ -185,6 +193,23 @@ const PRDView: React.FC<PRDViewProps> = ({ project }) => {
     useEffect(() => {
         setHasUnsavedChanges(false);
     }, [activeSection]);
+
+    // Load comments from API when project or section changes
+    useEffect(() => {
+        const loadComments = async () => {
+            if (!project?.id || !activeSection) return;
+            setIsLoadingComments(true);
+            try {
+                const fetchedComments = await documentCommentsApi.getBySection(project.id, activeSection);
+                setComments(fetchedComments);
+            } catch (error) {
+                console.error('Failed to load comments:', error);
+            } finally {
+                setIsLoadingComments(false);
+            }
+        };
+        loadComments();
+    }, [project?.id, activeSection]);
 
     // Load GitHub integration status
     const loadGitHubIntegration = useCallback(async () => {
@@ -491,18 +516,66 @@ const PRDView: React.FC<PRDViewProps> = ({ project }) => {
         setIsAddingSection(false);
     };
 
-    const handlePostComment = () => {
-        if (!newCommentText.trim()) return;
-        const newComment: DocComment = {
-            id: `c-${Date.now()}`,
-            sectionId: activeSection,
-            text: newCommentText,
-            user: currentUser,
-            timestamp: new Date(),
-            resolved: false
-        };
-        setComments(prev => [...prev, newComment]);
-        setNewCommentText('');
+    const handlePostComment = async (parentCommentId?: string) => {
+        const textToPost = parentCommentId ? replyText : newCommentText;
+        const mentionsToPost = parentCommentId ? replyMentions : newCommentMentions;
+        if (!textToPost.trim() || !project?.id) return;
+
+        try {
+            const newComment = await documentCommentsApi.create(project.id, {
+                section_id: activeSection,
+                text: textToPost,
+                mentions: mentionsToPost,
+                parent_comment_id: parentCommentId,
+            });
+
+            if (parentCommentId) {
+                // Add reply to parent comment
+                setComments(prev => prev.map(c => {
+                    if (c.id === parentCommentId) {
+                        return { ...c, replies: [...(c.replies || []), newComment] };
+                    }
+                    return c;
+                }));
+                setReplyingToId(null);
+                setReplyText('');
+                setReplyMentions([]);
+            } else {
+                // Add new root comment
+                setComments(prev => [newComment, ...prev]);
+                setNewCommentText('');
+                setNewCommentMentions([]);
+            }
+        } catch (error) {
+            console.error('Failed to post comment:', error);
+        }
+    };
+
+    const handleResolveComment = async (commentId: string) => {
+        try {
+            const updated = await documentCommentsApi.resolve(commentId);
+            setComments(prev => prev.map(c => c.id === commentId ? updated : c));
+        } catch (error) {
+            console.error('Failed to resolve comment:', error);
+        }
+    };
+
+    const handleUnresolveComment = async (commentId: string) => {
+        try {
+            const updated = await documentCommentsApi.unresolve(commentId);
+            setComments(prev => prev.map(c => c.id === commentId ? updated : c));
+        } catch (error) {
+            console.error('Failed to unresolve comment:', error);
+        }
+    };
+
+    const handleDeleteComment = async (commentId: string) => {
+        try {
+            await documentCommentsApi.delete(commentId);
+            setComments(prev => prev.filter(c => c.id !== commentId));
+        } catch (error) {
+            console.error('Failed to delete comment:', error);
+        }
     };
 
     const handleRestore = async (version: DocVersion) => {
@@ -511,14 +584,174 @@ const PRDView: React.FC<PRDViewProps> = ({ project }) => {
         if (contentRef.current) {
             contentRef.current.innerHTML = version.content;
         }
-        
+
         // Save this restored state as a new version to maintain history and update DB
         const dateStr = new Date(version.timestamp).toLocaleString();
         await saveVersion(version.content, `Restored from ${dateStr}`);
-        
+
         // Close history panel to show the restored doc
         setShowHistory(false);
     };
+
+    // --- Inline Text Selection Handlers ---
+    const handleTextSelection = useCallback(() => {
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed || !contentRef.current) {
+            setSelectionPopover({ visible: false, text: '', position: { x: 0, y: 0 } });
+            return;
+        }
+
+        const selectedText = selection.toString().trim();
+        if (!selectedText || selectedText.length < 2) {
+            setSelectionPopover({ visible: false, text: '', position: { x: 0, y: 0 } });
+            return;
+        }
+
+        // Check if selection is within the content area
+        const range = selection.getRangeAt(0);
+        if (!contentRef.current.contains(range.commonAncestorContainer)) {
+            setSelectionPopover({ visible: false, text: '', position: { x: 0, y: 0 } });
+            return;
+        }
+
+        // Get the position of the selection
+        const rect = range.getBoundingClientRect();
+        const position = {
+            x: rect.left + rect.width / 2,
+            y: rect.top,
+        };
+
+        setSelectionPopover({
+            visible: true,
+            text: selectedText,
+            position,
+        });
+    }, []);
+
+    // Handle mouseup on content area to detect selection
+    const handleContentMouseUp = useCallback((e: React.MouseEvent) => {
+        // Delay to allow selection to be properly set
+        setTimeout(() => {
+            handleTextSelection();
+        }, 10);
+    }, [handleTextSelection]);
+
+    // Add inline comment with text selection
+    const handleAddInlineComment = async (text: string, selectedText: string, selectionId: string, mentions?: string[]) => {
+        if (!project?.id) return;
+
+        try {
+            const newComment = await documentCommentsApi.create(project.id, {
+                section_id: activeSection,
+                text,
+                mentions,
+                selected_text: selectedText,
+                selection_id: selectionId,
+            });
+
+            // Add to comments list
+            setComments(prev => [newComment, ...prev]);
+
+            // Wrap the selected text with a highlight span
+            wrapSelectionWithHighlight(selectionId);
+
+            // Clear the selection
+            window.getSelection()?.removeAllRanges();
+            setSelectionPopover({ visible: false, text: '', position: { x: 0, y: 0 } });
+
+            // Open comments panel
+            setShowComments(true);
+            setShowHistory(false);
+        } catch (error) {
+            console.error('Failed to add inline comment:', error);
+        }
+    };
+
+    // Wrap selected text with highlight span
+    const wrapSelectionWithHighlight = (selectionId: string) => {
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed) return;
+
+        const range = selection.getRangeAt(0);
+
+        // Create highlight span
+        const highlightSpan = document.createElement('span');
+        highlightSpan.className = 'inline-comment-highlight bg-yellow-200/50 dark:bg-yellow-500/20 border-b-2 border-yellow-400 dark:border-yellow-500/50 cursor-pointer hover:bg-yellow-200/70 dark:hover:bg-yellow-500/30 transition-colors';
+        highlightSpan.setAttribute('data-selection-id', selectionId);
+        highlightSpan.onclick = (e) => {
+            e.stopPropagation();
+            const comment = comments.find(c => c.selectionId === selectionId);
+            if (comment) {
+                setActiveInlineComment(comment);
+                setShowComments(true);
+                setShowHistory(false);
+            }
+        };
+
+        // Wrap the selection
+        try {
+            range.surroundContents(highlightSpan);
+            // Update local docs to persist the highlight
+            if (contentRef.current) {
+                const newContent = contentRef.current.innerHTML;
+                setLocalDocs(prev => ({ ...prev, [activeSection]: newContent }));
+                setHasUnsavedChanges(true);
+            }
+        } catch (error) {
+            // Can fail if selection spans multiple elements
+            console.error('Could not wrap selection:', error);
+        }
+    };
+
+    // Apply highlights for existing inline comments when content loads
+    const applyExistingHighlights = useCallback(() => {
+        if (!contentRef.current) return;
+
+        const inlineComments = comments.filter(c => c.selectedText && c.selectionId && !c.parentCommentId && !c.isResolved);
+
+        inlineComments.forEach(comment => {
+            // Check if highlight already exists
+            const existingHighlight = contentRef.current?.querySelector(`[data-selection-id="${comment.selectionId}"]`);
+            if (existingHighlight) {
+                // Re-attach click handler
+                existingHighlight.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    setActiveInlineComment(comment);
+                    setShowComments(true);
+                    setShowHistory(false);
+                });
+            }
+        });
+    }, [comments]);
+
+    // Apply highlights when comments change
+    useEffect(() => {
+        applyExistingHighlights();
+    }, [applyExistingHighlights]);
+
+    // Handle clicking on inline highlight
+    const handleHighlightClick = useCallback((e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        const selectionId = target.getAttribute('data-selection-id');
+        if (selectionId) {
+            const comment = comments.find(c => c.selectionId === selectionId);
+            if (comment) {
+                setActiveInlineComment(comment);
+                setShowComments(true);
+                setShowHistory(false);
+            }
+        }
+    }, [comments]);
+
+    // Set up click listener for highlights
+    useEffect(() => {
+        if (contentRef.current) {
+            contentRef.current.addEventListener('click', handleHighlightClick);
+            return () => {
+                contentRef.current?.removeEventListener('click', handleHighlightClick);
+            };
+        }
+    }, [handleHighlightClick]);
 
     // Get content to display
     const currentDocContent = localDocs[activeSection] || `
@@ -529,8 +762,14 @@ const PRDView: React.FC<PRDViewProps> = ({ project }) => {
     `;
 
     const activeItem = sections.find(i => i.id === activeSection);
-    const sectionComments = comments.filter(c => c.sectionId === activeSection && !c.resolved);
+    const unresolvedComments = comments.filter(c => !c.isResolved && !c.parentCommentId);
+    const resolvedComments = comments.filter(c => c.isResolved && !c.parentCommentId);
+    const inlineComments = unresolvedComments.filter(c => c.selectedText && c.selectionId);
+    const sectionComments = unresolvedComments.filter(c => !c.selectedText);
     const sectionHistory = history.filter(h => h.sectionId === activeSection);
+
+    // Get all users from context for @mentions
+    const { users: allUsers } = useProjectData();
 
     return (
         <div className="flex h-full bg-white dark:bg-[#0B0C0E] text-[#172B4D] dark:text-gray-100 overflow-hidden relative transition-colors duration-200">
@@ -680,14 +919,19 @@ const PRDView: React.FC<PRDViewProps> = ({ project }) => {
                                         <Clock size={14} />
                                         <span>History</span>
                                     </button>
-                                    <button 
+                                    <button
                                         onClick={() => { setShowComments(!showComments); setShowHistory(false); }}
                                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${showComments ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-[#1F2128]'}`}
                                     >
                                         <MessageSquare size={14} />
                                         <span>Comments</span>
-                                        {sectionComments.length > 0 && (
-                                            <span className="bg-blue-600 text-white text-[9px] px-1.5 rounded-full">{sectionComments.length}</span>
+                                        {unresolvedComments.length > 0 && (
+                                            <span className="flex items-center gap-0.5">
+                                                <span className="bg-blue-600 text-white text-[9px] px-1.5 rounded-full">{unresolvedComments.length}</span>
+                                                {inlineComments.length > 0 && (
+                                                    <span className="bg-yellow-500 text-white text-[9px] px-1.5 rounded-full" title="Inline comments">{inlineComments.length}</span>
+                                                )}
+                                            </span>
                                         )}
                                     </button>
                                     <div className="h-4 w-px bg-gray-200 dark:bg-[#2D2F36] mx-1"></div>
@@ -760,14 +1004,26 @@ const PRDView: React.FC<PRDViewProps> = ({ project }) => {
                                         <Sparkles size={12} /> Updating...
                                     </div>
                                 )}
-                                <div 
+                                <div
                                     ref={contentRef}
                                     contentEditable
                                     suppressContentEditableWarning
                                     onBlur={handleContentBlur}
+                                    onMouseUp={handleContentMouseUp}
                                     className={`prose prose-lg prose-slate dark:prose-invert max-w-none focus:outline-none min-h-[400px] selection:bg-blue-100 dark:selection:bg-blue-900/30 ${isGenerating ? 'opacity-50' : 'opacity-100'} transition-opacity`}
-                                    dangerouslySetInnerHTML={{ __html: currentDocContent }} 
+                                    dangerouslySetInnerHTML={{ __html: currentDocContent }}
                                 />
+
+                                {/* Selection Comment Popover */}
+                                {selectionPopover.visible && (
+                                    <SelectionCommentPopover
+                                        selectedText={selectionPopover.text}
+                                        position={selectionPopover.position}
+                                        onAddComment={handleAddInlineComment}
+                                        onClose={() => setSelectionPopover({ visible: false, text: '', position: { x: 0, y: 0 } })}
+                                        users={allUsers}
+                                    />
+                                )}
                             </div>
                         </div>
                     </div>
@@ -812,17 +1068,133 @@ const PRDView: React.FC<PRDViewProps> = ({ project }) => {
 
                                 {showComments && (
                                     <>
-                                        {sectionComments.length > 0 ? (
-                                            sectionComments.map(comment => (
-                                                <div key={comment.id} className="p-3 bg-white dark:bg-[#1E2028] border border-gray-200 dark:border-[#2D2F36] rounded-xl shadow-sm">
-                                                    <div className="flex items-start gap-3 mb-2">
-                                                        <img src={comment.user.avatarUrl} className="w-6 h-6 rounded-full mt-1" />
-                                                        <div>
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-xs font-bold text-[#172B4D] dark:text-gray-200">{comment.user.name}</span>
-                                                                <span className="text-[10px] text-gray-400">{timeAgo(new Date(comment.timestamp))}</span>
+                                        {isLoadingComments ? (
+                                            <div className="text-center py-8">
+                                                <Loader2 size={20} className="animate-spin text-blue-500 mx-auto" />
+                                                <p className="text-gray-400 text-xs mt-2">Loading comments...</p>
+                                            </div>
+                                        ) : unresolvedComments.length > 0 ? (
+                                            unresolvedComments.map(comment => (
+                                                <div
+                                                    key={comment.id}
+                                                    className={`p-3 bg-white dark:bg-[#1E2028] border rounded-xl shadow-sm cursor-pointer transition-all ${
+                                                        activeInlineComment?.id === comment.id
+                                                            ? 'border-yellow-400 dark:border-yellow-500/50 ring-2 ring-yellow-200 dark:ring-yellow-500/20'
+                                                            : 'border-gray-200 dark:border-[#2D2F36] hover:border-gray-300 dark:hover:border-[#3D3F46]'
+                                                    }`}
+                                                    onClick={() => {
+                                                        if (comment.selectionId) {
+                                                            // Scroll to and highlight the inline comment in the document
+                                                            const highlight = contentRef.current?.querySelector(`[data-selection-id="${comment.selectionId}"]`);
+                                                            if (highlight) {
+                                                                highlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                                highlight.classList.add('ring-2', 'ring-yellow-400');
+                                                                setTimeout(() => {
+                                                                    highlight.classList.remove('ring-2', 'ring-yellow-400');
+                                                                }, 2000);
+                                                            }
+                                                            setActiveInlineComment(comment);
+                                                        }
+                                                    }}
+                                                >
+                                                    {/* Selected text preview for inline comments */}
+                                                    {comment.selectedText && (
+                                                        <div className="mb-2 px-2 py-1 bg-yellow-50 dark:bg-yellow-500/10 border-l-2 border-yellow-400 dark:border-yellow-500/50 rounded-r">
+                                                            <p className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1 italic">
+                                                                "{comment.selectedText.length > 60 ? comment.selectedText.substring(0, 60) + '...' : comment.selectedText}"
+                                                            </p>
+                                                        </div>
+                                                    )}
+                                                    <div className="flex items-start gap-3">
+                                                        <img src={comment.userAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.userName || 'User')}&background=random`} className="w-6 h-6 rounded-full mt-1" />
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-xs font-bold text-[#172B4D] dark:text-gray-200">{comment.userName || 'Unknown'}</span>
+                                                                    <span className="text-[10px] text-gray-400">{timeAgo(new Date(comment.createdAt))}</span>
+                                                                    {comment.isEdited && <span className="text-[9px] text-gray-400">(edited)</span>}
+                                                                </div>
+                                                                <div className="flex items-center gap-1">
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); handleResolveComment(comment.id); }}
+                                                                        className="p-1 text-gray-400 hover:text-green-600 dark:hover:text-green-400 transition-colors"
+                                                                        title="Resolve comment"
+                                                                    >
+                                                                        <Check size={12} />
+                                                                    </button>
+                                                                    {comment.userId === currentUser.id && (
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); handleDeleteComment(comment.id); }}
+                                                                            className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                                                                            title="Delete comment"
+                                                                        >
+                                                                            <Trash2 size={12} />
+                                                                        </button>
+                                                                    )}
+                                                                </div>
                                                             </div>
-                                                            <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 leading-relaxed">{comment.text}</p>
+                                                            <div className="text-xs text-gray-600 dark:text-gray-300 mt-1 leading-relaxed">
+                                                                <MentionText text={comment.text} users={allUsers} />
+                                                            </div>
+
+                                                            {/* Reply button */}
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); setReplyingToId(replyingToId === comment.id ? null : comment.id); }}
+                                                                className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline mt-2"
+                                                            >
+                                                                Reply
+                                                            </button>
+
+                                                            {/* Replies */}
+                                                            {comment.replies && comment.replies.length > 0 && (
+                                                                <div className="mt-3 pl-4 border-l-2 border-gray-200 dark:border-[#2D2F36] space-y-3">
+                                                                    {comment.replies.map(reply => (
+                                                                        <div key={reply.id} className="flex items-start gap-2">
+                                                                            <img src={reply.userAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(reply.userName || 'User')}&background=random`} className="w-5 h-5 rounded-full mt-0.5" />
+                                                                            <div className="flex-1">
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <span className="text-[10px] font-bold text-[#172B4D] dark:text-gray-200">{reply.userName || 'Unknown'}</span>
+                                                                                    <span className="text-[9px] text-gray-400">{timeAgo(new Date(reply.createdAt))}</span>
+                                                                                </div>
+                                                                                <div className="text-[11px] text-gray-600 dark:text-gray-300 mt-0.5">
+                                                                                    <MentionText text={reply.text} users={allUsers} />
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+
+                                                            {/* Reply input */}
+                                                            {replyingToId === comment.id && (
+                                                                <div className="mt-3 pl-4 border-l-2 border-blue-300 dark:border-blue-500/30">
+                                                                    <MentionInput
+                                                                        value={replyText}
+                                                                        onChange={setReplyText}
+                                                                        onMentionsChange={setReplyMentions}
+                                                                        onSubmit={() => handlePostComment(comment.id)}
+                                                                        placeholder="Write a reply... Use @ to mention"
+                                                                        users={allUsers}
+                                                                        rows={2}
+                                                                        className="text-[11px]"
+                                                                    />
+                                                                    <div className="flex items-center gap-2 mt-2">
+                                                                        <button
+                                                                            onClick={() => handlePostComment(comment.id)}
+                                                                            disabled={!replyText.trim()}
+                                                                            className="px-2 py-1 bg-blue-600 text-white rounded text-[10px] font-bold disabled:opacity-50 hover:bg-blue-700 transition-colors"
+                                                                        >
+                                                                            Reply
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => { setReplyingToId(null); setReplyText(''); }}
+                                                                            className="px-2 py-1 text-gray-500 text-[10px] hover:text-gray-700 dark:hover:text-gray-300"
+                                                                        >
+                                                                            Cancel
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -830,19 +1202,65 @@ const PRDView: React.FC<PRDViewProps> = ({ project }) => {
                                         ) : (
                                             <div className="text-center py-8 text-gray-400 text-xs">No comments yet.</div>
                                         )}
-                                        
+
+                                        {/* Resolved comments section */}
+                                        {resolvedComments.length > 0 && (
+                                            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-[#2D2F36]">
+                                                <button
+                                                    onClick={() => setShowResolved(!showResolved)}
+                                                    className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mb-2"
+                                                >
+                                                    <ChevronRight size={14} className={`transition-transform ${showResolved ? 'rotate-90' : ''}`} />
+                                                    <span>{resolvedComments.length} resolved</span>
+                                                </button>
+                                                {showResolved && (
+                                                    <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
+                                                        {resolvedComments.map(comment => (
+                                                            <div key={comment.id} className="p-3 bg-gray-50 dark:bg-[#1E2028]/50 border border-gray-200 dark:border-[#2D2F36] rounded-xl opacity-60">
+                                                                <div className="flex items-start gap-3">
+                                                                    <img src={comment.userAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.userName || 'User')}&background=random`} className="w-5 h-5 rounded-full mt-1" />
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="flex items-center justify-between gap-2">
+                                                                            <span className="text-[10px] font-bold text-gray-500">{comment.userName || 'Unknown'}</span>
+                                                                            <button
+                                                                                onClick={() => handleUnresolveComment(comment.id)}
+                                                                                className="text-[9px] text-blue-600 dark:text-blue-400 hover:underline"
+                                                                            >
+                                                                                Reopen
+                                                                            </button>
+                                                                        </div>
+                                                                        <div className="text-[10px] text-gray-400 mt-1 line-through">
+                                                                            <MentionText text={comment.text} users={allUsers} />
+                                                                        </div>
+                                                                        {comment.resolvedByName && (
+                                                                            <p className="text-[9px] text-green-600 dark:text-green-400 mt-1">
+                                                                                Resolved by {comment.resolvedByName}
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* New comment input */}
                                         <div className="mt-4 pt-4 border-t border-gray-200 dark:border-[#2D2F36]">
-                                            <textarea 
+                                            <MentionInput
                                                 value={newCommentText}
-                                                onChange={(e) => setNewCommentText(e.target.value)}
-                                                placeholder="Add a comment..."
-                                                className="w-full bg-white dark:bg-[#1E2028] border border-gray-200 dark:border-[#2D2F36] rounded-lg p-2 text-xs focus:outline-none focus:border-blue-500 dark:text-white resize-none mb-2"
+                                                onChange={setNewCommentText}
+                                                onMentionsChange={setNewCommentMentions}
+                                                onSubmit={() => handlePostComment()}
+                                                placeholder="Add a comment... Use @ to mention"
+                                                users={allUsers}
                                                 rows={3}
                                             />
-                                            <button 
-                                                onClick={handlePostComment}
+                                            <button
+                                                onClick={() => handlePostComment()}
                                                 disabled={!newCommentText.trim()}
-                                                className="w-full py-1.5 bg-blue-600 text-white rounded-md text-xs font-bold disabled:opacity-50 hover:bg-blue-700 transition-colors"
+                                                className="w-full mt-2 py-1.5 bg-blue-600 text-white rounded-md text-xs font-bold disabled:opacity-50 hover:bg-blue-700 transition-colors"
                                             >
                                                 Post Comment
                                             </button>

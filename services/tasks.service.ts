@@ -1,12 +1,10 @@
 /**
- * Tasks Service - Uses Local Backend
- * All Supabase calls have been replaced with local backend API calls
+ * Tasks Service - Uses Centralized HTTP Client
  */
 
-import { api } from '../lib/api';
 import { Task } from '../types';
-
-const API_BASE = '/api/v1';
+import { httpClient, buildQueryString } from '../lib/httpClient';
+import { mapTask, mapTasks, mapTaskToBackend, mapUsers } from '../lib/mappers';
 
 // Task Link types
 export interface TaskLink {
@@ -42,17 +40,6 @@ export interface AvailableTask {
   priority: string;
 }
 
-function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('infinia_token');
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return headers;
-}
-
 export interface TaskFilters {
   projectId?: string;
   sprintId?: string | null;
@@ -69,66 +56,84 @@ export interface TaskFilters {
 
 export class TasksService {
   // Get all tasks
-  async getAll(filters?: TaskFilters, pagination?: { page?: number; limit?: number }): Promise<{ data: any[]; count: number }> {
-    const users = await api.getUsers();
-    const tasks = await api.getTasks(users);
+  async getAll(
+    filters?: TaskFilters,
+    pagination?: { page?: number; limit?: number }
+  ): Promise<{ data: Task[]; count: number }> {
+    try {
+      // First get users for mapping
+      const usersResponse = await httpClient.get<any[]>('/users');
+      const users = mapUsers(usersResponse || []);
 
-    let filtered = tasks;
+      // Build query
+      const query = buildQueryString({
+        project_id: filters?.projectId,
+        sprint_id: filters?.sprintId,
+        assignee_id: filters?.assigneeId,
+        reporter_id: filters?.reporterId,
+        type: Array.isArray(filters?.type) ? filters.type.join(',') : filters?.type,
+        priority: Array.isArray(filters?.priority) ? filters.priority.join(',') : filters?.priority,
+        search: filters?.search,
+        page: pagination?.page,
+        limit: pagination?.limit,
+      });
 
-    if (filters?.projectId) {
-      filtered = filtered.filter(t => t.projectId === filters.projectId);
+      const response = await httpClient.get<any[]>(`/tasks${query}`);
+      const tasks = mapTasks(response || [], users);
+      return { data: tasks, count: tasks.length };
+    } catch {
+      return { data: [], count: 0 };
     }
-    if (filters?.sprintId !== undefined) {
-      filtered = filters.sprintId === null
-        ? filtered.filter(t => !t.sprintId)
-        : filtered.filter(t => t.sprintId === filters.sprintId);
-    }
-    if (filters?.assigneeId) {
-      filtered = filtered.filter(t => t.assignee?.id === filters.assigneeId);
-    }
-    if (filters?.type) {
-      const types = Array.isArray(filters.type) ? filters.type : [filters.type];
-      filtered = filtered.filter(t => types.includes(t.type));
-    }
-
-    return { data: filtered, count: filtered.length };
   }
 
   // Get all tasks with relations
-  async getAllWithRelations(filters?: TaskFilters): Promise<any[]> {
+  async getAllWithRelations(filters?: TaskFilters): Promise<Task[]> {
     const { data } = await this.getAll(filters);
     return data;
   }
 
   // Get task by ID
   async getById(id: string): Promise<any | null> {
-    const response = await fetch(`${API_BASE}/tasks/${id}`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success ? data.data : null;
+    try {
+      const response = await httpClient.get<any>(`/tasks/${id}`);
+      return response;
+    } catch {
+      return null;
+    }
   }
 
   // Create task
   async create(task: Partial<Task>): Promise<Task> {
-    return api.createTask(task as Task);
+    const backendData = mapTaskToBackend(task);
+    const response = await httpClient.post<any>('/tasks', backendData);
+
+    // Get users for proper mapping
+    const usersResponse = await httpClient.get<any[]>('/users');
+    const users = mapUsers(usersResponse || []);
+
+    return mapTask(response, users);
   }
 
   // Update task
   async update(id: string, updates: Partial<Task>): Promise<Task> {
-    const task = await this.getById(id);
-    if (!task) throw new Error('Task not found');
-    return api.updateTask({ ...task, ...updates, uuid: id });
+    const backendUpdates = mapTaskToBackend(updates);
+    const response = await httpClient.patch<any>(`/tasks/${id}`, backendUpdates);
+
+    // Get users for proper mapping
+    const usersResponse = await httpClient.get<any[]>('/users');
+    const users = mapUsers(usersResponse || []);
+
+    return mapTask(response, users);
   }
 
   // Delete task
   async delete(id: string): Promise<void> {
-    await api.deleteTask(id);
+    await httpClient.delete(`/tasks/${id}`);
   }
 
   // Move task to column
   async moveToColumn(taskId: string, columnId: string): Promise<Task> {
-    return this.update(taskId, { columnId });
+    return this.update(taskId, { columnId } as Partial<Task>);
   }
 
   // Get project statistics
@@ -144,10 +149,10 @@ export class TasksService {
       byStatus: {} as Record<string, number>,
       byType: {} as Record<string, number>,
       byPriority: {} as Record<string, number>,
-      byAssigneeMap: new Map<string, { user: any; count: number }>()
+      byAssigneeMap: new Map<string, { user: any; count: number }>(),
     };
 
-    tasks.forEach((t: any) => {
+    tasks.forEach((t: Task) => {
       stats.byStatus[t.columnId] = (stats.byStatus[t.columnId] || 0) + 1;
       stats.byType[t.type] = (stats.byType[t.type] || 0) + 1;
       stats.byPriority[t.priority] = (stats.byPriority[t.priority] || 0) + 1;
@@ -164,7 +169,7 @@ export class TasksService {
       byStatus: stats.byStatus,
       byType: stats.byType,
       byPriority: stats.byPriority,
-      byAssignee: Array.from(stats.byAssigneeMap.values())
+      byAssignee: Array.from(stats.byAssigneeMap.values()),
     };
   }
 
@@ -179,49 +184,37 @@ export class TasksService {
 
   // Get all task links (blocked by and blocks)
   async getTaskLinks(taskId: string): Promise<{ blockedBy: TaskLink[]; blocks: TaskLink[] }> {
-    const response = await fetch(`${API_BASE}/tasks/${taskId}/links`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success ? data.data : { blockedBy: [], blocks: [] };
+    try {
+      const response = await httpClient.get<{ blockedBy: TaskLink[]; blocks: TaskLink[] }>(
+        `/tasks/${taskId}/links`
+      );
+      return response || { blockedBy: [], blocks: [] };
+    } catch {
+      return { blockedBy: [], blocks: [] };
+    }
   }
 
   // Add a blocking task (this task is blocked by blockingTaskId)
   async addBlockingTask(taskId: string, blockingTaskId: string): Promise<TaskLink> {
-    const response = await fetch(`${API_BASE}/tasks/${taskId}/links`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({
-        blocking_task_id: blockingTaskId,
-        link_type: 'blocks',
-      }),
+    return httpClient.post<TaskLink>(`/tasks/${taskId}/links`, {
+      blocking_task_id: blockingTaskId,
+      link_type: 'blocks',
     });
-    const data = await response.json();
-    if (!data.success) {
-      throw new Error(data.error?.message || 'Failed to add blocking task');
-    }
-    return data.data;
   }
 
   // Remove a task link
   async removeTaskLink(taskId: string, linkId: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/tasks/${taskId}/links/${linkId}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    if (!data.success) {
-      throw new Error(data.error?.message || 'Failed to remove link');
-    }
+    await httpClient.delete(`/tasks/${taskId}/links/${linkId}`);
   }
 
   // Get tasks available for linking
   async getAvailableLinksForTask(taskId: string): Promise<AvailableTask[]> {
-    const response = await fetch(`${API_BASE}/tasks/${taskId}/available-links`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success ? data.data : [];
+    try {
+      const response = await httpClient.get<AvailableTask[]>(`/tasks/${taskId}/available-links`);
+      return response || [];
+    } catch {
+      return [];
+    }
   }
 }
 

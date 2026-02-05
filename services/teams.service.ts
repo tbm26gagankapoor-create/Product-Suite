@@ -1,155 +1,125 @@
 /**
- * Teams Service - Uses Local Backend
- * All Supabase calls have been replaced with local backend API calls
+ * Teams Service - Uses Centralized HTTP Client
  */
 
-import { api } from '../lib/api';
 import { Team } from '../types';
-
-const API_BASE = '/api/v1';
-
-function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('infinia_token');
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return headers;
-}
+import { httpClient } from '../lib/httpClient';
+import { mapTeam, mapTeams, mapTeamToBackend } from '../lib/mappers';
 
 export class TeamsService {
   // Get all teams
-  async getAll(params?: { page?: number; limit?: number }, organizationId?: string): Promise<{ data: any[]; count: number }> {
-    const response = await fetch(`${API_BASE}/teams`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    const teams = data.success ? data.data || [] : [];
-    return { data: teams, count: teams.length };
+  async getAll(params?: {
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: Team[]; count: number }> {
+    try {
+      const response = await httpClient.get<any[]>('/teams');
+      const teams = mapTeams(response);
+      return { data: teams, count: teams.length };
+    } catch {
+      return { data: [], count: 0 };
+    }
   }
 
   // Get all teams for current organization
-  async getAllForCurrentOrg(params?: { page?: number; limit?: number }): Promise<{ data: any[]; count: number }> {
+  async getAllForCurrentOrg(params?: {
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: Team[]; count: number }> {
     return this.getAll(params);
   }
 
   // Get all teams with details
-  async getAllWithDetails(): Promise<any[]> {
+  async getAllWithDetails(): Promise<Team[]> {
     const { data } = await this.getAll();
     return data;
   }
 
   // Get team by ID
-  async getById(id: string): Promise<any | null> {
-    const response = await fetch(`${API_BASE}/teams/${id}`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success ? data.data : null;
+  async getById(id: string): Promise<Team | null> {
+    try {
+      const response = await httpClient.get<any>(`/teams/${id}`);
+      return mapTeam(response);
+    } catch {
+      return null;
+    }
   }
 
   // Create new team
   async create(team: Partial<Team>, memberIds?: string[]): Promise<Team> {
-    const response = await fetch(`${API_BASE}/teams`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ ...team, member_ids: memberIds }),
-    });
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error || 'Failed to create team');
-    return data.data;
+    const backendData = {
+      ...mapTeamToBackend(team),
+      member_ids: memberIds,
+    };
+    const response = await httpClient.post<any>('/teams', backendData);
+    return mapTeam(response);
   }
 
   // Update team
   async update(id: string, updates: Partial<Team>): Promise<Team> {
-    const response = await fetch(`${API_BASE}/teams/${id}`, {
-      method: 'PATCH',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(updates),
-    });
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error || 'Failed to update team');
-    return data.data;
+    const backendUpdates = mapTeamToBackend(updates);
+    const response = await httpClient.patch<any>(`/teams/${id}`, backendUpdates);
+    return mapTeam(response);
   }
 
   // Delete team
   async delete(id: string): Promise<void> {
-    await fetch(`${API_BASE}/teams/${id}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders(),
-    });
+    await httpClient.delete(`/teams/${id}`);
   }
 
   // Add member to team
   async addMember(teamId: string, userId: string): Promise<void> {
-    await fetch(`${API_BASE}/teams/${teamId}/members`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ user_id: userId }),
-    });
+    await httpClient.post(`/teams/${teamId}/members`, { user_id: userId });
   }
 
   // Remove member from team
   async removeMember(teamId: string, userId: string): Promise<void> {
-    await fetch(`${API_BASE}/teams/${teamId}/members/${userId}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders(),
-    });
+    await httpClient.delete(`/teams/${teamId}/members/${userId}`);
   }
 
   // Get team members
   async getMembers(teamId: string): Promise<any[]> {
-    const response = await fetch(`${API_BASE}/teams/${teamId}/members`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success ? data.data || [] : [];
+    try {
+      const response = await httpClient.get<any[]>(`/teams/${teamId}/members`);
+      return response;
+    } catch {
+      return [];
+    }
   }
 
   // Set team members (replace all)
   async setMembers(teamId: string, userIds: string[]): Promise<void> {
-    await fetch(`${API_BASE}/teams/${teamId}/members`, {
-      method: 'PUT',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ user_ids: userIds }),
-    });
+    await httpClient.put(`/teams/${teamId}/members`, { user_ids: userIds });
   }
 
   // Add project to team
   async addProject(teamId: string, projectId: string): Promise<void> {
-    await fetch(`${API_BASE}/teams/${teamId}/projects`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ project_id: projectId }),
-    });
+    await httpClient.post(`/teams/${teamId}/projects`, { project_id: projectId });
   }
 
   // Remove project from team
   async removeProject(teamId: string, projectId: string): Promise<void> {
-    await fetch(`${API_BASE}/teams/${teamId}/projects/${projectId}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders(),
-    });
+    await httpClient.delete(`/teams/${teamId}/projects/${projectId}`);
   }
 
   // Get teams for a specific user
-  async getTeamsForUser(userId: string): Promise<any[]> {
-    const response = await fetch(`${API_BASE}/users/${userId}/teams`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success ? data.data || [] : [];
+  async getTeamsForUser(userId: string): Promise<Team[]> {
+    try {
+      const response = await httpClient.get<any[]>(`/users/${userId}/teams`);
+      return mapTeams(response);
+    } catch {
+      return [];
+    }
   }
 
   // Get teams for a specific project
-  async getTeamsForProject(projectId: string): Promise<any[]> {
-    const response = await fetch(`${API_BASE}/projects/${projectId}/teams`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success ? data.data || [] : [];
+  async getTeamsForProject(projectId: string): Promise<Team[]> {
+    try {
+      const response = await httpClient.get<any[]>(`/projects/${projectId}/teams`);
+      return mapTeams(response);
+    } catch {
+      return [];
+    }
   }
 }
 

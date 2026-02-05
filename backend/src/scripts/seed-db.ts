@@ -21,11 +21,11 @@ const timestamp = new Date().toISOString();
 
 const database = {
   users: [
-    { id: 'user-001', name: 'Alice Smith', email: 'alice@infinia.com', password_hash: defaultPassword, avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alice', role: 'Product Owner', created_at: timestamp, updated_at: timestamp },
-    { id: 'user-002', name: 'Bob Johnson', email: 'bob@infinia.com', password_hash: defaultPassword, avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Bob', role: 'Frontend Lead', created_at: timestamp, updated_at: timestamp },
-    { id: 'user-003', name: 'Charlie Davis', email: 'charlie@infinia.com', password_hash: defaultPassword, avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Charlie', role: 'UI/UX Designer', created_at: timestamp, updated_at: timestamp },
-    { id: 'user-004', name: 'Dave Wilson', email: 'dave@infinia.com', password_hash: defaultPassword, avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Dave', role: 'Backend Lead', created_at: timestamp, updated_at: timestamp },
-    { id: 'user-005', name: 'Eve Brown', email: 'eve@infinia.com', password_hash: defaultPassword, avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Eve', role: 'QA Engineer', created_at: timestamp, updated_at: timestamp },
+    { id: 'user-001', name: 'Alice Smith', email: 'alice@infinia.com', password_hash: defaultPassword, avatar_url: 'https://avatar.iran.liara.run/public', role: 'Product Owner', created_at: timestamp, updated_at: timestamp },
+    { id: 'user-002', name: 'Bob Johnson', email: 'bob@infinia.com', password_hash: defaultPassword, avatar_url: 'https://avatar.iran.liara.run/public', role: 'Frontend Lead', created_at: timestamp, updated_at: timestamp },
+    { id: 'user-003', name: 'Charlie Davis', email: 'charlie@infinia.com', password_hash: defaultPassword, avatar_url: 'https://avatar.iran.liara.run/public', role: 'UI/UX Designer', created_at: timestamp, updated_at: timestamp },
+    { id: 'user-004', name: 'Dave Wilson', email: 'dave@infinia.com', password_hash: defaultPassword, avatar_url: 'https://avatar.iran.liara.run/public', role: 'Backend Lead', created_at: timestamp, updated_at: timestamp },
+    { id: 'user-005', name: 'Eve Brown', email: 'eve@infinia.com', password_hash: defaultPassword, avatar_url: 'https://avatar.iran.liara.run/public', role: 'QA Engineer', created_at: timestamp, updated_at: timestamp },
   ],
 
   projects: [

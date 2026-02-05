@@ -1,148 +1,77 @@
 /**
- * Local Backend API Service
+ * Local Backend API Service - Uses Centralized HTTP Client
  * Calls the local Express backend with JWT authentication
  */
 
-const API_BASE = '/api/v1';
-
-function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('infinia_token');
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return headers;
-}
-
-async function handleResponse<T>(response: Response): Promise<T> {
-  const data = await response.json();
-  if (!response.ok || !data.success) {
-    throw new Error(data.error || 'API request failed');
-  }
-  return data.data as T;
-}
+import { httpClient } from '../lib/httpClient';
+import { mapProject, mapProjectToBackend } from '../lib/mappers';
 
 export const localApi = {
   // Projects
   async getProjects() {
-    const response = await fetch(`${API_BASE}/projects`, {
-      headers: getAuthHeaders(),
-    });
-    return handleResponse<any[]>(response);
+    return httpClient.get<any[]>('/projects');
   },
 
   async getProject(id: string) {
-    const response = await fetch(`${API_BASE}/projects/${id}`, {
-      headers: getAuthHeaders(),
-    });
-    return handleResponse<any>(response);
+    return httpClient.get<any>(`/projects/${id}`);
   },
 
   async createProject(project: any) {
-    const response = await fetch(`${API_BASE}/projects`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({
-        name: project.name,
-        code: project.key || project.code,
-        description: project.description,
-        owner_id: project.ownerId,
-      }),
-    });
-    return handleResponse<any>(response);
+    const backendData = {
+      name: project.name,
+      code: project.key || project.code,
+      description: project.description,
+      owner_id: project.ownerId,
+    };
+    return httpClient.post<any>('/projects', backendData);
   },
 
   async updateProject(id: string, updates: any) {
-    const response = await fetch(`${API_BASE}/projects/${id}`, {
-      method: 'PATCH',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(updates),
-    });
-    return handleResponse<any>(response);
+    return httpClient.patch<any>(`/projects/${id}`, updates);
   },
 
   async deleteProject(id: string) {
-    const response = await fetch(`${API_BASE}/projects/${id}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders(),
-    });
-    return handleResponse<any>(response);
+    return httpClient.delete(`/projects/${id}`);
   },
 
   // Tasks
   async getTasks(filters?: Record<string, string>) {
-    const params = new URLSearchParams(filters);
-    const response = await fetch(`${API_BASE}/tasks?${params}`, {
-      headers: getAuthHeaders(),
-    });
-    return handleResponse<any[]>(response);
+    const params = filters ? new URLSearchParams(filters).toString() : '';
+    return httpClient.get<any[]>(`/tasks${params ? `?${params}` : ''}`);
   },
 
   async getTask(id: string) {
-    const response = await fetch(`${API_BASE}/tasks/${id}`, {
-      headers: getAuthHeaders(),
-    });
-    return handleResponse<any>(response);
+    return httpClient.get<any>(`/tasks/${id}`);
   },
 
   async createTask(task: any) {
-    const response = await fetch(`${API_BASE}/tasks`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(task),
-    });
-    return handleResponse<any>(response);
+    return httpClient.post<any>('/tasks', task);
   },
 
   async updateTask(id: string, updates: any) {
-    const response = await fetch(`${API_BASE}/tasks/${id}`, {
-      method: 'PATCH',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(updates),
-    });
-    return handleResponse<any>(response);
+    return httpClient.patch<any>(`/tasks/${id}`, updates);
   },
 
   async deleteTask(id: string) {
-    const response = await fetch(`${API_BASE}/tasks/${id}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders(),
-    });
-    return handleResponse<any>(response);
+    return httpClient.delete(`/tasks/${id}`);
   },
 
   // Sprints
   async getSprints(projectId?: string) {
     const params = projectId ? `?project_id=${projectId}` : '';
-    const response = await fetch(`${API_BASE}/sprints${params}`, {
-      headers: getAuthHeaders(),
-    });
-    return handleResponse<any[]>(response);
+    return httpClient.get<any[]>(`/sprints${params}`);
   },
 
   async createSprint(sprint: any) {
-    const response = await fetch(`${API_BASE}/sprints`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(sprint),
-    });
-    return handleResponse<any>(response);
+    return httpClient.post<any>('/sprints', sprint);
   },
 
   // Users
   async getUsers() {
-    const response = await fetch(`${API_BASE}/users`, {
-      headers: getAuthHeaders(),
-    });
-    return handleResponse<any[]>(response);
+    return httpClient.get<any[]>('/users');
   },
 
   async getCurrentUser() {
-    const response = await fetch(`${API_BASE}/auth/me`, {
-      headers: getAuthHeaders(),
-    });
-    return handleResponse<any>(response);
+    return httpClient.get<any>('/auth/me');
   },
 };

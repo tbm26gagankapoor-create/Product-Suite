@@ -14,6 +14,7 @@ import ResetPasswordView from './components/ResetPasswordView';
 import OAuthCallback from './components/OAuthCallback';
 import UserProfileView from './components/UserProfileView';
 import UserManagementView from './components/UserManagementView';
+import NotificationsView from './components/NotificationsView';
 import OrganizationOnboarding from './components/OrganizationOnboarding';
 import InviteAcceptPage from './components/InviteAcceptPage';
 import { AppLoadingScreen, DataLoadingScreen, ConnectionErrorScreen } from './components/LoadingScreens';
@@ -21,10 +22,11 @@ import { ThemeProvider } from './context/ThemeContext';
 import { ProjectDataProvider, useProjectData } from './context/ProjectDataContext';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { ConfigProvider } from './context/ConfigContext';
+import { ErrorProvider } from './context/ErrorContext';
 import { api } from './lib/api';
 import { organizationsService } from './services/organizations.service';
 
-export type View = 'home' | 'project' | 'project-list' | 'settings' | 'teams' | 'my-tasks' | 'sprints' | 'profile' | 'users';
+export type View = 'home' | 'project' | 'project-list' | 'settings' | 'teams' | 'my-tasks' | 'sprints' | 'profile' | 'users' | 'notifications';
 export type AuthView = 'login' | 'forgot-password' | 'reset-password' | 'oauth-callback';
 
 const AppContent: React.FC = () => {
@@ -114,6 +116,9 @@ const AppContent: React.FC = () => {
       // Wait until context finishes loading before checking organization status
       if (isLoading) return;
 
+      // Skip if there's a pending invite - let the invite flow handle organization assignment
+      if (inviteId) return;
+
       if (isAuthenticated && currentUser && !currentOrganization) {
         // Check if there are organizations matching user's email domain
         if (currentUser.email) {
@@ -127,7 +132,7 @@ const AppContent: React.FC = () => {
     if (!isAuthChecking) {
       checkOnboarding();
     }
-  }, [isAuthenticated, isAuthChecking, currentUser, currentOrganization, onboardingCompleted, isLoading]);
+  }, [isAuthenticated, isAuthChecking, currentUser, currentOrganization, onboardingCompleted, isLoading, inviteId]);
 
   const handleProjectSelect = (projectId: string) => {
       setActiveProjectId(projectId);
@@ -147,9 +152,10 @@ const AppContent: React.FC = () => {
           case 'sprints': return <SprintsView onProjectSelect={handleProjectSelect} />;
           case 'settings': return <SettingsView />;
           case 'teams': return <TeamsView />;
-          case 'my-tasks': return <MyTasksView />;
+          case 'my-tasks': return <MyTasksView onProjectSelect={handleProjectSelect} />;
           case 'profile': return <UserProfileView />;
           case 'users': return <UserManagementView />;
+          case 'notifications': return <NotificationsView />;
           default: return <Home onViewChange={(view) => setCurrentView(view)} />;
       }
   }
@@ -172,8 +178,9 @@ const AppContent: React.FC = () => {
           setInviteId(null);
         }}
         onAcceptSuccess={(organizationId) => {
-          // Clear the invite ID and refresh
+          // Clear the invite ID, mark onboarding as completed, and refresh
           setInviteId(null);
+          setOnboardingCompleted(true); // Prevent onboarding modal from showing after invite acceptance
           window.history.replaceState({}, document.title, '/');
           refreshData();
         }}
@@ -283,11 +290,11 @@ const AppContent: React.FC = () => {
                 const newOrg = await organizationsService.createWithAdmin(result.organizationName, currentUser.id);
                 // Update user's organization_id in the backend and localStorage
                 await api.updateUser(currentUser.id, { organizationId: newOrg.id });
-                const storedUser = localStorage.getItem('infinia_user');
+                const storedUser = localStorage.getItem('vulcan_user');
                 if (storedUser) {
                   const userData = JSON.parse(storedUser);
                   userData.organization_id = newOrg.id;
-                  localStorage.setItem('infinia_user', JSON.stringify(userData));
+                  localStorage.setItem('vulcan_user', JSON.stringify(userData));
                 }
                 success('Organization Created', `${result.organizationName} has been created successfully!`);
               } catch (e) {
@@ -340,13 +347,15 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <ThemeProvider>
-      <ToastProvider>
-        <ConfigProvider>
-          <ProjectDataProvider>
-            <AppContent />
-          </ProjectDataProvider>
-        </ConfigProvider>
-      </ToastProvider>
+      <ErrorProvider>
+        <ToastProvider>
+          <ConfigProvider>
+            <ProjectDataProvider>
+              <AppContent />
+            </ProjectDataProvider>
+          </ConfigProvider>
+        </ToastProvider>
+      </ErrorProvider>
     </ThemeProvider>
   );
 };

@@ -76,7 +76,7 @@ const ProjectView: React.FC<ProjectViewProps> = ({ activeProject }) => {
                   onProjectUpdate={handleProjectUpdate} 
                   projectTasks={projectTasks} 
                />;
-      case 'PRD':
+      case 'Documents':
         return <PRDView project={activeProject} />;
       case 'Sprints':
         return <PlanningView projectId={activeProject.id} />;

@@ -15,14 +15,52 @@ export interface ActivityLog {
 export interface ActivityLogWithUser extends ActivityLog {
   user_name: string | null;
   user_avatar: string | null;
+  entity_name: string | null;
+}
+
+async function getEntityName(entityType: string, entityId: string): Promise<string | null> {
+  try {
+    switch (entityType) {
+      case 'task': {
+        const task = await database.findById<any>('tasks', entityId);
+        return task?.title || null;
+      }
+      case 'project': {
+        const project = await database.findById<any>('projects', entityId);
+        return project?.name || null;
+      }
+      case 'sprint': {
+        const sprint = await database.findById<any>('sprints', entityId);
+        return sprint?.name || null;
+      }
+      case 'comment': {
+        const comment = await database.findById<any>('comments', entityId);
+        if (comment?.task_id) {
+          const task = await database.findById<any>('tasks', comment.task_id);
+          return task?.title || 'a comment';
+        }
+        return 'a comment';
+      }
+      case 'document': {
+        // For document comments, try to get the PRD/document title from the project
+        return 'PRD Document';
+      }
+      default:
+        return null;
+    }
+  } catch {
+    return null;
+  }
 }
 
 async function enrichActivity(activity: ActivityLog): Promise<ActivityLogWithUser> {
   const user = activity.user_id ? await database.findById<any>('users', activity.user_id) : null;
+  const entityName = await getEntityName(activity.entity_type, activity.entity_id);
   return {
     ...activity,
     user_name: user?.name || null,
     user_avatar: user?.avatar_url || null,
+    entity_name: entityName,
   };
 }
 

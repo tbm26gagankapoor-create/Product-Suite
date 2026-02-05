@@ -40,8 +40,8 @@ export interface TeamWithMembers extends Team {
 export const teamsService = {
   async getAll(): Promise<TeamWithMembers[]> {
     const teams = await database.getAll<Team>('teams');
-    const enrichedTeams = await Promise.all(teams.map(team => this.enrichTeam(team)));
-    return enrichedTeams;
+    // Use batch enrichment instead of N+1
+    return this.enrichTeamsBatch(teams);
   },
 
   async getById(id: string): Promise<TeamWithMembers | null> {
@@ -51,14 +51,35 @@ export const teamsService = {
   },
 
   async enrichTeam(team: Team): Promise<TeamWithMembers> {
-    const teamMembers = await database.findMany<TeamMember>('team_members', { team_id: team.id });
-    const teamProjects = await database.findMany<TeamProject>('team_projects', { team_id: team.id });
+    const [teamMembers, teamProjects] = await Promise.all([
+      database.findMany<TeamMember>('team_members', { team_id: team.id }),
+      database.findMany<TeamProject>('team_projects', { team_id: team.id }),
+    ]);
 
     return {
       ...team,
       members: teamMembers.map(tm => tm.user_id),
       projectIds: teamProjects.map(tp => tp.project_id),
     };
+  },
+
+  // Batch enrich teams (fixes N+1)
+  async enrichTeamsBatch(teams: Team[]): Promise<TeamWithMembers[]> {
+    if (teams.length === 0) return [];
+
+    const teamIds = teams.map(t => t.id);
+
+    // Batch load members and projects for all teams
+    const [membersMap, projectsMap] = await Promise.all([
+      database.findManyByField<TeamMember>('team_members', 'team_id', teamIds),
+      database.findManyByField<TeamProject>('team_projects', 'team_id', teamIds),
+    ]);
+
+    return teams.map(team => ({
+      ...team,
+      members: (membersMap.get(team.id) || []).map(tm => tm.user_id),
+      projectIds: (projectsMap.get(team.id) || []).map(tp => tp.project_id),
+    }));
   },
 
   async create(input: CreateTeamInput): Promise<TeamWithMembers> {
@@ -195,21 +216,33 @@ export const teamsService = {
     return deleted > 0;
   },
 
-  // Get teams for a user
+  // Get teams for a user (optimized with batch loading)
   async getTeamsForUser(userId: string): Promise<TeamWithMembers[]> {
     const teamMembers = await database.findMany<TeamMember>('team_members', { user_id: userId });
+    if (teamMembers.length === 0) return [];
+
     const teamIds = teamMembers.map(tm => tm.team_id);
 
-    const teams = await Promise.all(teamIds.map(id => this.getById(id)));
-    return teams.filter((team): team is TeamWithMembers => team !== null);
+    // Batch load all teams at once
+    const teamsMap = await database.findByIds<Team>('teams', teamIds);
+    const teams = [...teamsMap.values()];
+
+    // Batch enrich
+    return this.enrichTeamsBatch(teams);
   },
 
-  // Get teams for a project
+  // Get teams for a project (optimized with batch loading)
   async getTeamsForProject(projectId: string): Promise<TeamWithMembers[]> {
     const teamProjects = await database.findMany<TeamProject>('team_projects', { project_id: projectId });
+    if (teamProjects.length === 0) return [];
+
     const teamIds = teamProjects.map(tp => tp.team_id);
 
-    const teams = await Promise.all(teamIds.map(id => this.getById(id)));
-    return teams.filter((team): team is TeamWithMembers => team !== null);
+    // Batch load all teams at once
+    const teamsMap = await database.findByIds<Team>('teams', teamIds);
+    const teams = [...teamsMap.values()];
+
+    // Batch enrich
+    return this.enrichTeamsBatch(teams);
   },
 };

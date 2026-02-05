@@ -1,4 +1,4 @@
-import database, { generateUUID, now } from '../lib/database.js';
+import database, { generateUUID, now, PaginationOptions, PaginatedResult, DEFAULT_PAGE_SIZE } from '../lib/database.js';
 
 export interface Sprint {
   id: string;
@@ -28,102 +28,165 @@ export interface CreateSprintInput {
   end_date: string;
 }
 
+// Single sprint stats (for backward compatibility)
 async function getSprintStats(sprintId: string): Promise<{ total_tasks: number; completed_tasks: number; total_points: number; completed_points: number }> {
-  const tasks = await database.findMany<any>('tasks', { sprint_id: sprintId });
-  const columns = await database.getAll<any>('columns_status');
-
-  let completedTasks = 0;
-  let completedPoints = 0;
-
-  tasks.forEach(task => {
-    const column = columns.find(c => c.id === task.column_id);
-    if (column?.title === 'DONE') {
-      completedTasks++;
-      completedPoints += task.points || 0;
+  // Use aggregation for efficient stats
+  const stats = await database.aggregate<any>('tasks', [
+    { $match: { sprint_id: sprintId } },
+    {
+      $lookup: {
+        from: 'columnsstatuses',
+        let: { columnId: '$column_id' },
+        pipeline: [
+          { $match: { $expr: { $eq: ['$id', '$$columnId'] } } }
+        ],
+        as: 'column'
+      }
+    },
+    { $unwind: { path: '$column', preserveNullAndEmptyArrays: true } },
+    {
+      $group: {
+        _id: null,
+        total_tasks: { $sum: 1 },
+        completed_tasks: {
+          $sum: { $cond: [{ $eq: ['$column.title', 'DONE'] }, 1, 0] }
+        },
+        total_points: { $sum: { $ifNull: ['$points', 0] } },
+        completed_points: {
+          $sum: {
+            $cond: [
+              { $eq: ['$column.title', 'DONE'] },
+              { $ifNull: ['$points', 0] },
+              0
+            ]
+          }
+        }
+      }
     }
+  ]);
+
+  return stats[0] || { total_tasks: 0, completed_tasks: 0, total_points: 0, completed_points: 0 };
+}
+
+// Batch get stats for multiple sprints (fixes N+1)
+async function getSprintStatsBatch(sprintIds: string[]): Promise<Map<string, { total_tasks: number; completed_tasks: number; total_points: number; completed_points: number }>> {
+  if (sprintIds.length === 0) return new Map();
+
+  // Get all done columns first
+  const doneColumns = await database.findMany<any>('columns_status', { title: 'DONE' });
+  const doneColumnIds = new Set(doneColumns.map(c => c.id));
+
+  // Aggregate task stats grouped by sprint
+  const stats = await database.aggregate<any>('tasks', [
+    { $match: { sprint_id: { $in: sprintIds } } },
+    {
+      $group: {
+        _id: '$sprint_id',
+        total_tasks: { $sum: 1 },
+        completed_tasks: {
+          $sum: { $cond: [{ $in: ['$column_id', [...doneColumnIds]] }, 1, 0] }
+        },
+        total_points: { $sum: { $ifNull: ['$points', 0] } },
+        completed_points: {
+          $sum: {
+            $cond: [
+              { $in: ['$column_id', [...doneColumnIds]] },
+              { $ifNull: ['$points', 0] },
+              0
+            ]
+          }
+        }
+      }
+    }
+  ]);
+
+  const result = new Map<string, { total_tasks: number; completed_tasks: number; total_points: number; completed_points: number }>();
+
+  // Initialize all sprints with zero stats
+  sprintIds.forEach(id => {
+    result.set(id, { total_tasks: 0, completed_tasks: 0, total_points: 0, completed_points: 0 });
   });
 
-  return {
-    total_tasks: tasks.length,
-    completed_tasks: completedTasks,
-    total_points: tasks.reduce((sum, t) => sum + (t.points || 0), 0),
-    completed_points: completedPoints,
-  };
+  // Fill in actual stats
+  stats.forEach(s => {
+    result.set(s._id, {
+      total_tasks: s.total_tasks,
+      completed_tasks: s.completed_tasks,
+      total_points: s.total_points,
+      completed_points: s.completed_points,
+    });
+  });
+
+  return result;
 }
 
 export const sprintsService = {
   async getAll(projectId?: string): Promise<SprintWithStats[]> {
-    let sprints: Sprint[];
-    if (projectId) {
-      sprints = await database.findMany<Sprint>('sprints', { project_id: projectId });
-    } else {
-      sprints = await database.getAll<Sprint>('sprints');
-    }
+    const query = projectId ? { project_id: projectId } : {};
+    const sprints = Object.keys(query).length > 0
+      ? await database.findMany<Sprint>('sprints', query)
+      : await database.getAll<Sprint>('sprints');
 
-    const sprintsWithStats = await Promise.all(
-      sprints.map(async (sprint) => ({
+    // Use batch stats instead of N+1
+    const statsMap = await getSprintStatsBatch(sprints.map(s => s.id));
+
+    return sprints
+      .map(sprint => ({
         ...sprint,
-        ...(await getSprintStats(sprint.id)),
+        ...(statsMap.get(sprint.id) || { total_tasks: 0, completed_tasks: 0, total_points: 0, completed_points: 0 }),
       }))
-    );
-
-    return sprintsWithStats.sort((a, b) =>
-      new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
-    );
+      .sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
   },
 
   async getAllForUser(userId: string, isAdmin: boolean, projectId?: string, organizationId?: string | null): Promise<SprintWithStats[]> {
-    // Get all projects and filter by organization first
-    let allProjects = await database.getAll<any>('projects');
+    // Build project query with organization filter
+    const projectQuery: Record<string, any> = {};
     if (organizationId) {
-      allProjects = allProjects.filter(p => p.organization_id === organizationId);
+      projectQuery.organization_id = organizationId;
     }
+
+    // Get projects at DB level with filter
+    const allProjects = Object.keys(projectQuery).length > 0
+      ? await database.findMany<any>('projects', projectQuery)
+      : await database.getAll<any>('projects');
+
     const orgProjectIds = new Set(allProjects.map(p => p.id));
 
+    let accessibleProjectIds: Set<string>;
+
     if (isAdmin) {
-      let sprints = await database.getAll<Sprint>('sprints');
-      // Filter to only sprints from organization's projects
-      sprints = sprints.filter(s => orgProjectIds.has(s.project_id));
-      if (projectId) {
-        sprints = sprints.filter(s => s.project_id === projectId);
-      }
-      const sprintsWithStats = await Promise.all(
-        sprints.map(async (sprint) => ({
-          ...sprint,
-          ...(await getSprintStats(sprint.id)),
-        }))
-      );
-      return sprintsWithStats.sort((a, b) =>
-        new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
-      );
+      accessibleProjectIds = orgProjectIds;
+    } else {
+      // Get user's memberships
+      const memberships = await database.findMany<any>('project_members', { user_id: userId });
+      accessibleProjectIds = new Set(memberships.map(pm => pm.project_id));
+
+      // Add projects where user is owner
+      allProjects.filter(p => p.owner_id === userId).forEach(p => accessibleProjectIds.add(p.id));
+
+      // Intersect with org projects
+      accessibleProjectIds = new Set([...accessibleProjectIds].filter(id => orgProjectIds.has(id)));
     }
 
-    // Get all project IDs the user has access to
-    const memberships = await database.findMany<any>('project_members', { user_id: userId });
-    const membershipProjectIds = new Set(memberships.map(pm => pm.project_id));
-
-    // Also include projects where user is owner
-    allProjects.filter(p => p.owner_id === userId).forEach(p => membershipProjectIds.add(p.id));
-
-    let sprints = await database.getAll<Sprint>('sprints');
-
-    // Filter by accessible projects AND organization
-    sprints = sprints.filter(s => membershipProjectIds.has(s.project_id) && orgProjectIds.has(s.project_id));
-
+    // Build sprint query
+    const sprintQuery: Record<string, any> = {
+      project_id: { $in: [...accessibleProjectIds] }
+    };
     if (projectId) {
-      sprints = sprints.filter(s => s.project_id === projectId);
+      sprintQuery.project_id = projectId;
     }
 
-    const sprintsWithStats = await Promise.all(
-      sprints.map(async (sprint) => ({
-        ...sprint,
-        ...(await getSprintStats(sprint.id)),
-      }))
-    );
+    const sprints = await database.findMany<Sprint>('sprints', sprintQuery);
 
-    return sprintsWithStats.sort((a, b) =>
-      new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
-    );
+    // Use batch stats
+    const statsMap = await getSprintStatsBatch(sprints.map(s => s.id));
+
+    return sprints
+      .map(sprint => ({
+        ...sprint,
+        ...(statsMap.get(sprint.id) || { total_tasks: 0, completed_tasks: 0, total_points: 0, completed_points: 0 }),
+      }))
+      .sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
   },
 
   async userHasAccess(sprintId: string, userId: string, isAdmin: boolean): Promise<boolean> {

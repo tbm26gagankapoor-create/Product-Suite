@@ -1,23 +1,10 @@
 /**
- * Sprints Service - Uses Local Backend
- * All Supabase calls have been replaced with local backend API calls
+ * Sprints Service - Uses Centralized HTTP Client
  */
 
-import { api } from '../lib/api';
 import { Sprint } from '../types';
-
-const API_BASE = '/api/v1';
-
-function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('infinia_token');
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return headers;
-}
+import { httpClient, buildQueryString } from '../lib/httpClient';
+import { mapSprint, mapSprints, mapSprintToBackend } from '../lib/mappers';
 
 export interface SprintFilters {
   projectId?: string;
@@ -27,94 +14,85 @@ export interface SprintFilters {
 
 export class SprintsService {
   // Get all sprints with optional filters
-  async getAll(filters?: SprintFilters, pagination?: { page?: number; limit?: number }): Promise<{ data: any[]; count: number }> {
-    const sprints = await api.getSprints();
-    let filtered = sprints;
+  async getAll(
+    filters?: SprintFilters,
+    pagination?: { page?: number; limit?: number }
+  ): Promise<{ data: Sprint[]; count: number }> {
+    try {
+      const query = buildQueryString({
+        project_id: filters?.projectId,
+        status: Array.isArray(filters?.status) ? filters.status.join(',') : filters?.status,
+        search: filters?.search,
+        page: pagination?.page,
+        limit: pagination?.limit,
+      });
 
-    if (filters?.projectId) {
-      filtered = filtered.filter(s => s.projectId === filters.projectId);
+      const response = await httpClient.get<any[]>(`/sprints${query}`);
+      const sprints = mapSprints(response);
+      return { data: sprints, count: sprints.length };
+    } catch {
+      return { data: [], count: 0 };
     }
-    if (filters?.status) {
-      const statuses = Array.isArray(filters.status) ? filters.status : [filters.status];
-      filtered = filtered.filter(s => statuses.includes(s.status));
-    }
-    if (filters?.search) {
-      const search = filters.search.toLowerCase();
-      filtered = filtered.filter(s => s.name.toLowerCase().includes(search));
-    }
-
-    return { data: filtered, count: filtered.length };
   }
 
   // Get sprints for a specific project
-  async getByProject(projectId: string): Promise<any[]> {
+  async getByProject(projectId: string): Promise<Sprint[]> {
     const { data } = await this.getAll({ projectId });
     return data;
   }
 
   // Get sprint by ID
-  async getById(id: string): Promise<any | null> {
-    const response = await fetch(`${API_BASE}/sprints/${id}`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success ? data.data : null;
+  async getById(id: string): Promise<Sprint | null> {
+    try {
+      const response = await httpClient.get<any>(`/sprints/${id}`);
+      return mapSprint(response);
+    } catch {
+      return null;
+    }
   }
 
   // Get active sprint for a project
-  async getActiveSprint(projectId: string): Promise<any | null> {
-    const response = await fetch(`${API_BASE}/sprints/project/${projectId}/active`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success ? data.data : null;
+  async getActiveSprint(projectId: string): Promise<Sprint | null> {
+    try {
+      const response = await httpClient.get<any>(`/sprints/project/${projectId}/active`);
+      return mapSprint(response);
+    } catch {
+      return null;
+    }
   }
 
   // Create new sprint
   async create(sprint: Partial<Sprint>): Promise<Sprint> {
-    return api.createSprint(sprint as Sprint);
+    const backendData = mapSprintToBackend(sprint);
+    const response = await httpClient.post<any>('/sprints', backendData);
+    return mapSprint(response);
   }
 
   // Update sprint
-  async update(id: string, updates: Partial<Sprint>): Promise<any> {
-    const response = await fetch(`${API_BASE}/sprints/${id}`, {
-      method: 'PATCH',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(updates),
-    });
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error || 'Failed to update sprint');
-    return data.data;
+  async update(id: string, updates: Partial<Sprint>): Promise<Sprint> {
+    const backendUpdates = mapSprintToBackend(updates);
+    const response = await httpClient.patch<any>(`/sprints/${id}`, backendUpdates);
+    return mapSprint(response);
   }
 
   // Delete sprint
   async delete(id: string, moveTasksToBacklog: boolean = true): Promise<void> {
-    await fetch(`${API_BASE}/sprints/${id}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders(),
-    });
+    await httpClient.delete(`/sprints/${id}`);
   }
 
   // Start sprint
-  async startSprint(id: string): Promise<any> {
-    const response = await fetch(`${API_BASE}/sprints/${id}/start`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error || 'Failed to start sprint');
-    return data.data;
+  async startSprint(id: string): Promise<Sprint> {
+    const response = await httpClient.post<any>(`/sprints/${id}/start`);
+    return mapSprint(response);
   }
 
   // Complete sprint
-  async completeSprint(id: string, moveIncompleteTo: string | 'backlog' = 'backlog'): Promise<any> {
-    const response = await fetch(`${API_BASE}/sprints/${id}/complete`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error || 'Failed to complete sprint');
-    return data.data;
+  async completeSprint(
+    id: string,
+    moveIncompleteTo: string | 'backlog' = 'backlog'
+  ): Promise<Sprint> {
+    const response = await httpClient.post<any>(`/sprints/${id}/complete`);
+    return mapSprint(response);
   }
 
   // Get sprint statistics
@@ -136,62 +114,58 @@ export class SprintsService {
         completedPoints: 0,
         tasksByStatus: {},
         tasksByType: {},
-        velocity: 0
+        velocity: 0,
       };
     }
 
+    // Sprint stats can be extended when backend supports it
     return {
-      totalTasks: sprint.total_tasks || 0,
-      completedTasks: sprint.completed_tasks || 0,
-      totalPoints: sprint.total_points || 0,
-      completedPoints: sprint.completed_points || 0,
+      totalTasks: (sprint as any).total_tasks || 0,
+      completedTasks: (sprint as any).completed_tasks || 0,
+      totalPoints: (sprint as any).total_points || 0,
+      completedPoints: (sprint as any).completed_points || 0,
       tasksByStatus: {},
       tasksByType: {},
-      velocity: sprint.completed_points || 0
+      velocity: (sprint as any).completed_points || 0,
     };
   }
 
   // Get tasks in sprint
   async getTasks(sprintId: string): Promise<any[]> {
-    const users = await api.getUsers();
-    const tasks = await api.getTasks(users);
-    return tasks.filter(t => t.sprintId === sprintId);
+    try {
+      const response = await httpClient.get<any[]>(`/tasks?sprint_id=${sprintId}`);
+      return response || [];
+    } catch {
+      return [];
+    }
   }
 
   // Add task to sprint
   async addTask(sprintId: string, taskId: string): Promise<void> {
-    await fetch(`${API_BASE}/tasks/${taskId}`, {
-      method: 'PATCH',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ sprint_id: sprintId }),
-    });
+    await httpClient.patch(`/tasks/${taskId}`, { sprint_id: sprintId });
   }
 
   // Remove task from sprint
   async removeTask(sprintId: string, taskId: string): Promise<void> {
-    await fetch(`${API_BASE}/tasks/${taskId}`, {
-      method: 'PATCH',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ sprint_id: null }),
-    });
+    await httpClient.patch(`/tasks/${taskId}`, { sprint_id: null });
   }
 
   // Bulk add tasks
   async addTasks(sprintId: string, taskIds: string[]): Promise<void> {
-    for (const taskId of taskIds) {
-      await this.addTask(sprintId, taskId);
-    }
+    await Promise.all(taskIds.map((taskId) => this.addTask(sprintId, taskId)));
   }
 
   // Get burndown chart data
-  async getBurndownData(sprintId: string): Promise<{ date: string; remaining: number; ideal: number }[]> {
+  async getBurndownData(
+    sprintId: string
+  ): Promise<{ date: string; remaining: number; ideal: number }[]> {
     const sprint = await this.getById(sprintId);
     if (!sprint) return [];
 
-    const startDate = new Date(sprint.start_date || sprint.startDate);
-    const endDate = new Date(sprint.end_date || sprint.endDate);
+    const startDate = new Date(sprint.startDate);
+    const endDate = new Date(sprint.endDate);
     const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-    const totalPoints = sprint.total_points || 0;
+    const totalPoints = (sprint as any).total_points || 0;
 
     const data = [];
     const pointsPerDay = totalPoints / totalDays;
@@ -200,12 +174,12 @@ export class SprintsService {
       const d = new Date(startDate);
       d.setDate(d.getDate() + i);
       const dateStr = d.toISOString().split('T')[0];
-      const ideal = Math.max(0, totalPoints - (pointsPerDay * i));
+      const ideal = Math.max(0, totalPoints - pointsPerDay * i);
 
       data.push({
         date: dateStr,
         remaining: Math.round(ideal),
-        ideal: Math.round(ideal)
+        ideal: Math.round(ideal),
       });
     }
 
@@ -213,12 +187,15 @@ export class SprintsService {
   }
 
   // Get velocity history for project
-  async getVelocityHistory(projectId: string, lastN: number = 5): Promise<{ sprintId: string; sprintName: string; completedPoints: number }[]> {
+  async getVelocityHistory(
+    projectId: string,
+    lastN: number = 5
+  ): Promise<{ sprintId: string; sprintName: string; completedPoints: number }[]> {
     const { data: sprints } = await this.getAll({ projectId, status: 'completed' });
-    return sprints.slice(0, lastN).map(s => ({
+    return sprints.slice(0, lastN).map((s) => ({
       sprintId: s.id,
       sprintName: s.name,
-      completedPoints: s.completed_points || 0
+      completedPoints: (s as any).completed_points || 0,
     }));
   }
 }

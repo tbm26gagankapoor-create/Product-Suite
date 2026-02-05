@@ -163,21 +163,23 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
   res.json({
     success: true,
-    data: notifications.map(n => ({
-      id: n.id,
-      type: n.type,
-      title: n.title,
-      message: n.message,
-      action_url: n.action_url,
-      metadata: n.metadata,
-      read: n.read,
-      created_at: n.created_at,
-    })),
-    pagination: {
-      page,
-      limit,
-      total,
-      hasMore,
+    data: {
+      data: notifications.map(n => ({
+        id: n.id,
+        type: n.type,
+        title: n.title,
+        message: n.message,
+        action_url: n.action_url,
+        metadata: n.metadata,
+        read: n.read,
+        created_at: n.created_at,
+      })),
+      pagination: {
+        page,
+        limit,
+        total,
+        hasMore,
+      },
     },
   });
 });

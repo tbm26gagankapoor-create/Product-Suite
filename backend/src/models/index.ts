@@ -25,13 +25,13 @@ export interface IUser extends Document {
 }
 
 const userSchema = new Schema<IUser>({
-  id: { type: String, required: true, unique: true, index: true },
+
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true, index: true },
   password_hash: String,
   avatar_url: String,
   designation: { type: String, default: 'Member' },
-  organization_id: { type: String, index: true },
+  organization_id: { type: Schema.Types.Mixed, index: true },
   oauth_provider: String,
   oauth_provider_id: String,
   location: String,
@@ -65,12 +65,12 @@ export interface IOrganization extends Document {
 }
 
 const organizationSchema = new Schema<IOrganization>({
-  id: { type: String, required: true, unique: true, index: true },
+
   name: { type: String, required: true },
   slug: { type: String, required: true, unique: true, index: true },
-  domain: String,
+  domain: { type: String, index: true }, // Index for domain-based lookup
   logo_url: String,
-  owner_id: { type: String, required: true, index: true },
+  owner_id: { type: Schema.Types.Mixed, required: true, index: true },
   settings: {
     allowDomainJoin: { type: Boolean, default: true },
     requireApproval: { type: Boolean, default: true },
@@ -93,9 +93,9 @@ export interface IOrganizationMember extends Document {
 }
 
 const organizationMemberSchema = new Schema<IOrganizationMember>({
-  id: { type: String, required: true, unique: true, index: true },
-  organization_id: { type: String, required: true, index: true },
-  user_id: { type: String, required: true, index: true },
+
+  organization_id: { type: Schema.Types.Mixed, required: true, index: true },
+  user_id: { type: Schema.Types.Mixed, required: true, index: true },
   role: { type: String, default: 'member' },
   joined_at: { type: Date, default: Date.now },
   invited_by: String,
@@ -119,8 +119,8 @@ export interface IOrganizationInvite extends Document {
 }
 
 const organizationInviteSchema = new Schema<IOrganizationInvite>({
-  id: { type: String, required: true, unique: true, index: true },
-  organization_id: { type: String, required: true, index: true },
+
+  organization_id: { type: Schema.Types.Mixed, required: true, index: true },
   email: { type: String, required: true, index: true },
   role: { type: String, default: 'member' },
   invited_by: { type: String, required: true },
@@ -138,24 +138,56 @@ export interface IOrganizationJoinRequest extends Document {
   organization_id: string;
   user_id: string;
   status: string;
-  created_at: Date;
-  reviewed_at?: Date;
-  reviewed_by?: string;
+  requested_at: Date;
+  resolved_at?: Date;
+  resolved_by?: string;
 }
 
 const organizationJoinRequestSchema = new Schema<IOrganizationJoinRequest>({
-  id: { type: String, required: true, unique: true, index: true },
-  organization_id: { type: String, required: true, index: true },
-  user_id: { type: String, required: true, index: true },
+
+  organization_id: { type: Schema.Types.Mixed, required: true, index: true },
+  user_id: { type: Schema.Types.Mixed, required: true, index: true },
   status: { type: String, default: 'pending' },
-  created_at: { type: Date, default: Date.now },
-  reviewed_at: Date,
-  reviewed_by: String,
+  requested_at: { type: Date, default: Date.now },
+  resolved_at: Date,
+  resolved_by: String,
 });
 
 // ===================
 // Project Model
 // ===================
+export interface IProjectDraftData {
+  productName: string;
+  description: string;
+  tags: string;
+  startDate: string;
+  targetDate: string;
+  ownerId: string;
+  selectedTeam: string[];
+  refinedVision: string;
+  suggestions: Array<{
+    title: string;
+    description: string;
+    type: 'feature' | 'monetization' | 'market' | 'ux';
+    selected?: boolean;
+  }>;
+  generatedDocs: Record<string, string>;
+  generatedEpics: Array<{
+    title: string;
+    description: string;
+    tasks: Array<{
+      title: string;
+      description: string;
+      type: string;
+      priority: string;
+      points: number;
+    }>;
+  }>;
+  inputMode: 'scratch' | 'import';
+  fileText?: string;
+  productImage?: string;
+}
+
 export interface IProject extends Document {
   id: string;
   name: string;
@@ -183,20 +215,23 @@ export interface IProject extends Document {
   priority_rank?: number;
   customer_count?: number;
   revenue_impact?: number;
+  // Draft fields for saving incomplete product wizard state
+  draft_step?: number;
+  draft_data?: IProjectDraftData;
   created_at: Date;
   updated_at: Date;
 }
 
 const projectSchema = new Schema<IProject>({
-  id: { type: String, required: true, unique: true, index: true },
+
   name: { type: String, required: true },
   description: String,
   code: { type: String, required: true, unique: true, index: true },
   status: { type: String, default: 'active' },
   progress_percentage: { type: Number, default: 0 },
   is_favorite: { type: Boolean, default: false },
-  owner_id: { type: String, index: true },
-  organization_id: { type: String, index: true },
+  owner_id: { type: Schema.Types.Mixed, index: true },
+  organization_id: { type: Schema.Types.Mixed, index: true },
   image_url: String,
   icon: String,
   icon_color: String,
@@ -214,6 +249,9 @@ const projectSchema = new Schema<IProject>({
   priority_rank: Number,
   customer_count: Number,
   revenue_impact: Number,
+  // Draft fields for saving incomplete product wizard state
+  draft_step: Number,
+  draft_data: Schema.Types.Mixed,
   created_at: { type: Date, default: Date.now },
   updated_at: { type: Date, default: Date.now },
 });
@@ -230,9 +268,9 @@ export interface IProjectMember extends Document {
 }
 
 const projectMemberSchema = new Schema<IProjectMember>({
-  id: { type: String, required: true, unique: true, index: true },
-  project_id: { type: String, required: true, index: true },
-  user_id: { type: String, required: true, index: true },
+
+  project_id: { type: Schema.Types.Mixed, required: true },
+  user_id: { type: Schema.Types.Mixed, required: true },
   role: { type: String, default: 'member' },
   joined_at: { type: Date, default: Date.now },
 });
@@ -253,14 +291,18 @@ export interface IColumnStatus extends Document {
 }
 
 const columnStatusSchema = new Schema<IColumnStatus>({
-  id: { type: String, required: true, unique: true, index: true },
-  project_id: { type: String, required: true, index: true },
+  // Note: 'id' is not stored - MongoDB's _id is used and transformed to 'id' by the database layer
+  project_id: { type: Schema.Types.Mixed, required: true },
   title: { type: String, required: true },
   display_order: { type: Number, default: 0 },
   color: { type: String, default: 'gray' },
   is_default: { type: Boolean, default: false },
   created_at: { type: Date, default: Date.now },
 });
+
+// Index for finding DONE columns quickly
+columnStatusSchema.index({ project_id: 1, title: 1 });
+columnStatusSchema.index({ title: 1 }); // For batch DONE column lookup
 
 // ===================
 // Sprint Model
@@ -278,8 +320,8 @@ export interface ISprint extends Document {
 }
 
 const sprintSchema = new Schema<ISprint>({
-  id: { type: String, required: true, unique: true, index: true },
-  project_id: { type: String, required: true, index: true },
+
+  project_id: { type: Schema.Types.Mixed, required: true },
   name: { type: String, required: true },
   goal: String,
   start_date: { type: Date, required: true },
@@ -288,6 +330,10 @@ const sprintSchema = new Schema<ISprint>({
   created_at: { type: Date, default: Date.now },
   updated_at: { type: Date, default: Date.now },
 });
+
+// Compound indexes for common sprint queries
+sprintSchema.index({ project_id: 1, status: 1 });
+sprintSchema.index({ project_id: 1, start_date: -1 });
 
 // ===================
 // Tag Model
@@ -301,8 +347,8 @@ export interface ITag extends Document {
 }
 
 const tagSchema = new Schema<ITag>({
-  id: { type: String, required: true, unique: true, index: true },
-  project_id: { type: String, required: true, index: true },
+
+  project_id: { type: Schema.Types.Mixed, required: true, index: true },
   name: { type: String, required: true },
   color: { type: String, default: 'gray' },
   created_at: { type: Date, default: Date.now },
@@ -349,20 +395,20 @@ export interface ITask extends Document {
 }
 
 const taskSchema = new Schema<ITask>({
-  id: { type: String, required: true, unique: true, index: true },
+
   task_key: { type: String, required: true, index: true },
-  project_id: { type: String, required: true, index: true },
-  column_id: { type: String, required: true, index: true },
-  sprint_id: { type: String, index: true },
-  parent_epic_id: { type: String, index: true },
+  project_id: { type: Schema.Types.Mixed, required: true },
+  column_id: { type: Schema.Types.Mixed, required: true },
+  sprint_id: { type: Schema.Types.Mixed },
+  parent_epic_id: { type: Schema.Types.Mixed, index: true },
   title: { type: String, required: true },
   description: String,
   type: { type: String, default: 'task' },
   priority: { type: String, default: 'MEDIUM' },
   status: String,
   points: Number,
-  assignee_id: { type: String, index: true },
-  reporter_id: { type: String, index: true },
+  assignee_id: { type: Schema.Types.Mixed },
+  reporter_id: { type: Schema.Types.Mixed, index: true },
   due_date: Date,
   start_date: Date,
   actual_start_date: Date,
@@ -385,6 +431,14 @@ const taskSchema = new Schema<ITask>({
   updated_at: { type: Date, default: Date.now },
 });
 
+// Compound indexes for common query patterns
+taskSchema.index({ project_id: 1, sprint_id: 1 });
+taskSchema.index({ project_id: 1, column_id: 1 });
+taskSchema.index({ project_id: 1, updated_at: -1 });
+taskSchema.index({ project_id: 1, created_at: -1 });
+taskSchema.index({ assignee_id: 1, updated_at: -1 });
+taskSchema.index({ sprint_id: 1, column_id: 1 });
+
 // ===================
 // Subtask Model
 // ===================
@@ -402,8 +456,8 @@ export interface ISubtask extends Document {
 }
 
 const subtaskSchema = new Schema<ISubtask>({
-  id: { type: String, required: true, unique: true, index: true },
-  task_id: { type: String, required: true, index: true },
+
+  task_id: { type: Schema.Types.Mixed, required: true, index: true },
   title: { type: String, required: true },
   type: { type: String, default: 'task' },
   status: { type: String, default: 'pending' },
@@ -411,8 +465,11 @@ const subtaskSchema = new Schema<ISubtask>({
   assignee_id: String,
   sprint_id: String,
   due_date: Date,
-  created_at: { type: Date, default: Date.now },
+  created_at: { type: Date, default: Date.now, index: true },
 });
+
+// Index for subtasks per task
+subtaskSchema.index({ task_id: 1, created_at: 1 });
 
 // ===================
 // Task Tag Model
@@ -424,8 +481,8 @@ export interface ITaskTag extends Document {
 }
 
 const taskTagSchema = new Schema<ITaskTag>({
-  id: { type: String, required: true, unique: true, index: true },
-  task_id: { type: String, required: true, index: true },
+
+  task_id: { type: Schema.Types.Mixed, required: true, index: true },
   tag_id: { type: String, required: true, index: true },
 });
 
@@ -444,13 +501,62 @@ export interface IComment extends Document {
 }
 
 const commentSchema = new Schema<IComment>({
-  id: { type: String, required: true, unique: true, index: true },
-  task_id: { type: String, required: true, index: true },
-  user_id: { type: String, required: true, index: true },
+
+  task_id: { type: Schema.Types.Mixed, required: true, index: true },
+  user_id: { type: Schema.Types.Mixed, required: true, index: true },
   text: { type: String, required: true },
+  created_at: { type: Date, default: Date.now, index: true },
+  updated_at: { type: Date, default: Date.now },
+});
+
+// Index for sorted comments per task
+commentSchema.index({ task_id: 1, created_at: -1 });
+
+// ===================
+// Document Comment Model (for PRD/Documents view)
+// ===================
+export interface IDocumentComment extends Document {
+  id: string;
+  project_id: string;
+  section_id: string;
+  user_id: string;
+  parent_comment_id?: string;  // For threaded replies
+  text: string;
+  mentions: string[];  // Array of mentioned user IDs
+  is_resolved: boolean;
+  resolved_by?: string;
+  resolved_at?: Date;
+  is_edited: boolean;
+  // Inline text selection fields (Google Docs style)
+  selected_text?: string;       // The text that was selected
+  selection_id?: string;        // Unique ID for highlighting in document
+  created_at: Date;
+  updated_at: Date;
+}
+
+const documentCommentSchema = new Schema<IDocumentComment>({
+
+  project_id: { type: Schema.Types.Mixed, required: true },
+  section_id: { type: String, required: true },
+  user_id: { type: Schema.Types.Mixed, required: true, index: true },
+  parent_comment_id: { type: String },
+  text: { type: String, required: true },
+  mentions: [String],
+  is_resolved: { type: Boolean, default: false },
+  resolved_by: String,
+  resolved_at: Date,
+  is_edited: { type: Boolean, default: false },
+  // Inline text selection fields
+  selected_text: String,
+  selection_id: { type: String, index: true },
   created_at: { type: Date, default: Date.now },
   updated_at: { type: Date, default: Date.now },
 });
+
+// Compound indexes for document comment queries
+documentCommentSchema.index({ project_id: 1, section_id: 1, created_at: -1 });
+documentCommentSchema.index({ project_id: 1, is_resolved: 1 });
+documentCommentSchema.index({ parent_comment_id: 1, created_at: 1 });
 
 // ===================
 // Attachment Model
@@ -467,9 +573,9 @@ export interface IAttachment extends Document {
 }
 
 const attachmentSchema = new Schema<IAttachment>({
-  id: { type: String, required: true, unique: true, index: true },
-  task_id: { type: String, required: true, index: true },
-  user_id: { type: String, required: true },
+
+  task_id: { type: Schema.Types.Mixed, required: true, index: true },
+  user_id: { type: Schema.Types.Mixed, required: true },
   filename: { type: String, required: true },
   file_url: { type: String, required: true },
   file_type: String,
@@ -491,10 +597,10 @@ export interface IActivityLog extends Document {
 }
 
 const activityLogSchema = new Schema<IActivityLog>({
-  id: { type: String, required: true, unique: true, index: true },
-  project_id: { type: String, index: true },
-  task_id: { type: String, index: true },
-  user_id: { type: String, required: true, index: true },
+
+  project_id: { type: Schema.Types.Mixed, index: true },
+  task_id: { type: Schema.Types.Mixed, index: true },
+  user_id: { type: Schema.Types.Mixed, required: true, index: true },
   action: { type: String, required: true },
   details: Schema.Types.Mixed,
   created_at: { type: Date, default: Date.now },
@@ -514,8 +620,8 @@ export interface IUserPreferences extends Document {
 }
 
 const userPreferencesSchema = new Schema<IUserPreferences>({
-  id: { type: String, required: true, unique: true, index: true },
-  user_id: { type: String, required: true, unique: true, index: true },
+
+  user_id: { type: Schema.Types.Mixed, required: true, unique: true, index: true },
   theme: { type: String, default: 'light' },
   notifications: Schema.Types.Mixed,
   default_project_id: String,
@@ -537,11 +643,11 @@ export interface ITeam extends Document {
 }
 
 const teamSchema = new Schema<ITeam>({
-  id: { type: String, required: true, unique: true, index: true },
+
   name: { type: String, required: true },
   description: String,
   avatar_url: String,
-  organization_id: { type: String, index: true },
+  organization_id: { type: Schema.Types.Mixed, index: true },
   created_at: { type: Date, default: Date.now },
   updated_at: { type: Date, default: Date.now },
 });
@@ -558,9 +664,9 @@ export interface ITeamMember extends Document {
 }
 
 const teamMemberSchema = new Schema<ITeamMember>({
-  id: { type: String, required: true, unique: true, index: true },
-  team_id: { type: String, required: true, index: true },
-  user_id: { type: String, required: true, index: true },
+
+  team_id: { type: Schema.Types.Mixed, required: true, index: true },
+  user_id: { type: Schema.Types.Mixed, required: true, index: true },
   role: { type: String, default: 'member' },
   joined_at: { type: Date, default: Date.now },
 });
@@ -578,9 +684,9 @@ export interface ITeamProject extends Document {
 }
 
 const teamProjectSchema = new Schema<ITeamProject>({
-  id: { type: String, required: true, unique: true, index: true },
-  team_id: { type: String, required: true, index: true },
-  project_id: { type: String, required: true, index: true },
+
+  team_id: { type: Schema.Types.Mixed, required: true },
+  project_id: { type: Schema.Types.Mixed, required: true },
   assigned_at: { type: Date, default: Date.now },
 });
 
@@ -601,7 +707,7 @@ export interface IOAuthState extends Document {
 }
 
 const oauthStateSchema = new Schema<IOAuthState>({
-  id: { type: String, required: true, unique: true, index: true },
+
   state: { type: String, required: true, unique: true, index: true },
   provider: { type: String, required: true },
   redirect_uri: String,
@@ -624,9 +730,9 @@ export interface ITaskLink extends Document {
 }
 
 const taskLinkSchema = new Schema<ITaskLink>({
-  id: { type: String, required: true, unique: true, index: true },
-  blocking_task_id: { type: String, required: true, index: true },
-  blocked_task_id: { type: String, required: true, index: true },
+
+  blocking_task_id: { type: Schema.Types.Mixed, required: true, index: true },
+  blocked_task_id: { type: Schema.Types.Mixed, required: true, index: true },
   link_type: { type: String, default: 'blocks' },
   created_by: String,
   created_at: { type: Date, default: Date.now },
@@ -652,8 +758,8 @@ export interface ITaskTypeConfig extends Document {
 }
 
 const taskTypeConfigSchema = new Schema<ITaskTypeConfig>({
-  id: { type: String, required: true, unique: true, index: true },
-  organization_id: { type: String, index: true },
+
+  organization_id: { type: Schema.Types.Mixed, index: true },
   name: { type: String, required: true },
   label: { type: String, required: true },
   icon: { type: String, required: true },
@@ -685,8 +791,8 @@ export interface IPriorityConfig extends Document {
 }
 
 const priorityConfigSchema = new Schema<IPriorityConfig>({
-  id: { type: String, required: true, unique: true, index: true },
-  organization_id: { type: String, index: true },
+
+  organization_id: { type: Schema.Types.Mixed, index: true },
   name: { type: String, required: true },
   label: { type: String, required: true },
   icon: { type: String, required: true },
@@ -720,8 +826,8 @@ export interface IStatusConfig extends Document {
 }
 
 const statusConfigSchema = new Schema<IStatusConfig>({
-  id: { type: String, required: true, unique: true, index: true },
-  organization_id: { type: String, index: true },
+
+  organization_id: { type: Schema.Types.Mixed, index: true },
   name: { type: String, required: true },
   label: { type: String, required: true },
   icon: String,
@@ -755,8 +861,8 @@ export interface IRoleConfig extends Document {
 }
 
 const roleConfigSchema = new Schema<IRoleConfig>({
-  id: { type: String, required: true, unique: true, index: true },
-  organization_id: { type: String, index: true },
+
+  organization_id: { type: Schema.Types.Mixed, index: true },
   name: { type: String, required: true },
   label: { type: String, required: true },
   color: { type: String, required: true },
@@ -790,8 +896,8 @@ export interface INavItem extends Document {
 }
 
 const navItemSchema = new Schema<INavItem>({
-  id: { type: String, required: true, unique: true, index: true },
-  organization_id: { type: String, index: true },
+
+  organization_id: { type: Schema.Types.Mixed, index: true },
   type: { type: String, required: true, enum: ['main', 'doc'] },
   name: { type: String, required: true },
   label: { type: String, required: true },
@@ -824,8 +930,8 @@ export interface IThemeColor extends Document {
 }
 
 const themeColorSchema = new Schema<IThemeColor>({
-  id: { type: String, required: true, unique: true, index: true },
-  organization_id: { type: String, index: true },
+
+  organization_id: { type: Schema.Types.Mixed, index: true },
   category: { type: String, required: true },
   name: { type: String, required: true },
   light_classes: { type: String, required: true },
@@ -879,8 +985,8 @@ export interface IUserNotificationPreferences extends Document {
 }
 
 const userNotificationPreferencesSchema = new Schema<IUserNotificationPreferences>({
-  id: { type: String, required: true, unique: true, index: true },
-  user_id: { type: String, required: true, unique: true, index: true },
+
+  user_id: { type: Schema.Types.Mixed, required: true, unique: true, index: true },
 
   // Email preferences
   email_enabled: { type: Boolean, default: true },
@@ -926,6 +1032,7 @@ export type NotificationType =
   | 'project_update'
   | 'status_change'
   | 'due_date_reminder'
+  | 'document_mentioned'
   | 'system';
 
 export interface INotification extends Document {
@@ -950,12 +1057,12 @@ export interface INotification extends Document {
 }
 
 const notificationSchema = new Schema<INotification>({
-  id: { type: String, required: true, unique: true, index: true },
-  user_id: { type: String, required: true, index: true },
+
+  user_id: { type: Schema.Types.Mixed, required: true, index: true },
   type: {
     type: String,
     required: true,
-    enum: ['task_assigned', 'task_mentioned', 'comment_added', 'comment_reply', 'sprint_reminder', 'project_update', 'status_change', 'due_date_reminder', 'system'],
+    enum: ['task_assigned', 'task_mentioned', 'comment_added', 'comment_reply', 'sprint_reminder', 'project_update', 'status_change', 'due_date_reminder', 'document_mentioned', 'system'],
   },
   title: { type: String, required: true },
   message: { type: String, required: true },
@@ -994,9 +1101,9 @@ export interface IEmailLog extends Document {
 }
 
 const emailLogSchema = new Schema<IEmailLog>({
-  id: { type: String, required: true, unique: true, index: true },
+
   to_email: { type: String, required: true, index: true },
-  to_user_id: { type: String, index: true },
+  to_user_id: { type: Schema.Types.Mixed, index: true },
   template_type: { type: String, required: true, index: true },
   subject: { type: String, required: true },
   resend_id: String,
@@ -1037,13 +1144,13 @@ export interface IGitHubIntegration extends Document {
 }
 
 const gitHubIntegrationSchema = new Schema<IGitHubIntegration>({
-  id: { type: String, required: true, unique: true, index: true },
-  project_id: { type: String, required: true, index: true },
+
+  project_id: { type: Schema.Types.Mixed, required: true },
   github_access_token: { type: String, required: true },
   github_refresh_token: String,
   github_token_expires_at: Date,
   github_username: { type: String, required: true },
-  github_user_id: { type: String, required: true },
+  github_user_id: { type: Schema.Types.Mixed, required: true },
   repo_owner: { type: String, default: '' },  // Empty until user selects/creates repo
   repo_name: { type: String, default: '' },   // Empty until user selects/creates repo
   branch: { type: String, default: 'main' },
@@ -1079,9 +1186,9 @@ export interface IGitHubSyncLog extends Document {
 }
 
 const gitHubSyncLogSchema = new Schema<IGitHubSyncLog>({
-  id: { type: String, required: true, unique: true, index: true },
+
   integration_id: { type: String, required: true, index: true },
-  project_id: { type: String, required: true, index: true },
+  project_id: { type: Schema.Types.Mixed, required: true },
   section_id: { type: String, required: true },
   action: { type: String, required: true, enum: ['sync', 'manual_push', 'disconnect'] },
   status: { type: String, required: true, enum: ['success', 'failed'] },
@@ -1089,7 +1196,7 @@ const gitHubSyncLogSchema = new Schema<IGitHubSyncLog>({
   commit_url: String,
   error_message: String,
   triggered_by: { type: String, required: true },
-  created_at: { type: Date, default: Date.now, index: true },
+  created_at: { type: Date, default: Date.now },
 });
 
 gitHubSyncLogSchema.index({ project_id: 1, created_at: -1 });
@@ -1111,6 +1218,7 @@ export const Task = mongoose.model<ITask>('Task', taskSchema);
 export const Subtask = mongoose.model<ISubtask>('Subtask', subtaskSchema);
 export const TaskTag = mongoose.model<ITaskTag>('TaskTag', taskTagSchema);
 export const Comment = mongoose.model<IComment>('Comment', commentSchema);
+export const DocumentComment = mongoose.model<IDocumentComment>('DocumentComment', documentCommentSchema);
 export const Attachment = mongoose.model<IAttachment>('Attachment', attachmentSchema);
 export const ActivityLog = mongoose.model<IActivityLog>('ActivityLog', activityLogSchema);
 export const UserPreferences = mongoose.model<IUserPreferences>('UserPreferences', userPreferencesSchema);
@@ -1148,6 +1256,7 @@ export const models: Record<string, mongoose.Model<any>> = {
   task_tags: TaskTag,
   task_links: TaskLink,
   comments: Comment,
+  document_comments: DocumentComment,
   attachments: Attachment,
   activity_log: ActivityLog,
   user_preferences: UserPreferences,

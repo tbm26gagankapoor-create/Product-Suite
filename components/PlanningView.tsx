@@ -25,7 +25,7 @@ const PlanningView: React.FC<PlanningViewProps> = ({ projectId }) => {
   const { sprints, tasks, addSprint, addTask, updateTask, generateNextId, currentUser, organizationUsers: users } = useProjectData();
 
   // --- State ---
-  const [activeTab, setActiveTab] = useState<'Ongoing' | 'Upcoming' | 'Completed'>('Ongoing');
+  const [activeTab, setActiveTab] = useState<'All' | 'Ongoing' | 'Upcoming' | 'Completed'>('All');
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [isSprintModalOpen, setIsSprintModalOpen] = useState(false);
   const [backlogInput, setBacklogInput] = useState('');
@@ -51,6 +51,7 @@ const PlanningView: React.FC<PlanningViewProps> = ({ projectId }) => {
 
   // Filter sprints based on tab
   const visibleSprints = projectSprints.filter(s => {
+      if (activeTab === 'All') return true; // Show all sprints
       if (activeTab === 'Ongoing') return s.status === 'active';
       if (activeTab === 'Upcoming') return s.status === 'planned';
       return s.status === 'completed';
@@ -221,13 +222,13 @@ const PlanningView: React.FC<PlanningViewProps> = ({ projectId }) => {
               
               {/* Tabs */}
               <div className="flex items-center gap-8 border-b border-gray-200 dark:border-[#1F2128]">
-                  {['Ongoing', 'Upcoming', 'Completed'].map(tab => (
+                  {['All', 'Ongoing', 'Upcoming', 'Completed'].map(tab => (
                       <button
                         key={tab}
                         onClick={() => setActiveTab(tab as any)}
                         className={`pb-3 text-sm font-bold transition-all relative ${
-                            activeTab === tab 
-                            ? 'text-blue-600 dark:text-blue-400' 
+                            activeTab === tab
+                            ? 'text-blue-600 dark:text-blue-400'
                             : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
                         }`}
                       >

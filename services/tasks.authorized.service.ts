@@ -1,26 +1,13 @@
 /**
- * Authorized Tasks Service - Uses Local Backend
+ * Authorized Tasks Service - Uses Centralized HTTP Client
  *
  * Extends the base TasksService with authorization checks.
  * All operations are permission-guarded.
  */
 
-import { api } from '../lib/api';
-import { tasksService, TaskFilters } from './tasks.service';
-import type { Task } from '../types';
-
-const API_BASE = '/api/v1';
-
-function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('infinia_token');
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return headers;
-}
+import { httpClient } from '../lib/httpClient';
+import { tasksService } from './tasks.service';
+import type { Task, Comment } from '../types';
 
 export class ForbiddenError extends Error {
   constructor(message: string) {
@@ -112,14 +99,7 @@ export class AuthorizedTasksService {
    * Update task assignee (requires can_assign)
    */
   async updateAssignee(taskId: string, newAssigneeId: string | null): Promise<Task> {
-    const response = await fetch(`${API_BASE}/tasks/${taskId}`, {
-      method: 'PATCH',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ assignee_id: newAssigneeId }),
-    });
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error || 'Failed to update assignee');
-    return data.data;
+    return httpClient.patch<Task>(`/tasks/${taskId}`, { assignee_id: newAssigneeId });
   }
 
   /**
@@ -134,13 +114,11 @@ export class AuthorizedTasksService {
    */
   async addComment(taskId: string, content: string): Promise<any> {
     const userId = this.getUserId();
-    const comment = {
-      id: `comment-${Date.now()}`,
-      userId,
-      text: content,
-      timestamp: new Date().toISOString(),
-    };
-    return api.createComment(taskId, comment);
+    return httpClient.post<any>('/comments', {
+      task_id: taskId,
+      user_id: userId,
+      content,
+    });
   }
 
   /**

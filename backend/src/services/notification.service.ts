@@ -142,6 +142,7 @@ function shouldSendEmail(prefs: IUserNotificationPreferences, type: Notification
     project_update: prefs.email_project_updates,
     status_change: false, // No email for status changes by default
     due_date_reminder: prefs.email_due_date_reminder,
+    document_mentioned: prefs.email_task_mentioned, // Reuse task mention preference for document mentions
     system: true, // Always send system emails
   };
 
@@ -163,6 +164,7 @@ function shouldCreateInApp(prefs: IUserNotificationPreferences, type: Notificati
     project_update: prefs.inapp_project_updates,
     status_change: prefs.inapp_status_change,
     due_date_reminder: true, // Always show in-app for due dates
+    document_mentioned: prefs.inapp_task_mentioned, // Reuse task mention preference for document mentions
     system: true, // Always show system notifications
   };
 
@@ -635,6 +637,97 @@ export const notificationService = {
           status: result.success ? 'sent' : 'failed',
           errorMessage: result.error,
           metadata: { task_id: taskId, mentioner_id: mentionerId },
+        });
+      }
+    }
+  },
+
+  /**
+   * Notify users who are @mentioned in a document comment
+   */
+  async notifyDocumentMention(
+    projectId: string,
+    sectionId: string,
+    mentionedUserIds: string[],
+    mentionerId: string,
+    context: string
+  ): Promise<void> {
+    console.log('[notifyDocumentMention] Called with:', {
+      projectId,
+      sectionId,
+      mentionedUserIds,
+      mentionerId,
+      contextPreview: context.substring(0, 50),
+    });
+
+    const [project, mentioner] = await Promise.all([
+      Project.findOne({ id: projectId }),
+      User.findOne({ id: mentionerId }),
+    ]);
+
+    if (!project || !mentioner) {
+      console.log('[notifyDocumentMention] Project or mentioner not found:', { project: !!project, mentioner: !!mentioner });
+      return;
+    }
+
+    const documentUrl = `${config.frontend.url}/projects/${project.code}?tab=Documents&section=${sectionId}`;
+    const contextPreview = truncateText(context);
+
+    for (const userId of mentionedUserIds) {
+      // Don't notify if mentioning self
+      if (userId === mentionerId) {
+        console.log('[notifyDocumentMention] Skipping self-mention for user:', userId);
+        continue;
+      }
+
+      const user = await User.findOne({ id: userId });
+      if (!user) continue;
+
+      const prefs = await this.getUserPreferences(userId);
+
+      if (shouldCreateInApp(prefs, 'document_mentioned')) {
+        console.log('[notifyDocumentMention] Creating in-app notification for user:', userId);
+        await this.createInAppNotification({
+          userId,
+          type: 'document_mentioned',
+          title: 'You were mentioned in a document',
+          message: `${mentioner.name} mentioned you in ${project.name} documentation: "${contextPreview}"`,
+          actionUrl: documentUrl,
+          metadata: {
+            project_id: projectId,
+            actor_id: mentionerId,
+            actor_name: mentioner.name,
+          },
+        });
+        console.log('[notifyDocumentMention] Notification created successfully for user:', userId);
+      } else {
+        console.log('[notifyDocumentMention] In-app notifications disabled for user:', userId);
+      }
+
+      // For email, reuse the mention email template
+      if (shouldSendEmail(prefs, 'document_mentioned') && !isQuietHours(prefs)) {
+        const emailParams: SendMentionEmailParams = {
+          toEmail: user.email,
+          recipientName: user.name,
+          mentionerName: mentioner.name,
+          context: contextPreview,
+          taskTitle: `${project.name} - Documentation`,
+          taskKey: sectionId,
+          projectName: project.name,
+          taskUrl: documentUrl,
+        };
+
+        const result = await emailService.sendMentionEmail(emailParams);
+
+        await logEmail({
+          toEmail: user.email,
+          toUserId: userId,
+          templateType: 'document-mention',
+          subject: `${mentioner.name} mentioned you in ${project.name} documentation`,
+          resendId: result.resendId,
+          status: result.success ? 'sent' : 'failed',
+          errorMessage: result.error,
+          metadata: { project_id: projectId, section_id: sectionId, mentioner_id: mentionerId },
         });
       }
     }

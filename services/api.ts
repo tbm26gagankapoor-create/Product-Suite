@@ -1,4 +1,4 @@
-// API Client for Infinia Products Backend
+// API Client for Vulcan Products Backend
 const API_BASE = '/api/v1';
 
 interface ApiResponse<T> {
@@ -10,7 +10,7 @@ interface ApiResponse<T> {
 
 // Helper to get auth headers
 function getAuthHeaders(): Record<string, string> {
-  const token = localStorage.getItem('infinia_token');
+  const token = localStorage.getItem('vulcan_token');
   if (token) {
     return { Authorization: `Bearer ${token}` };
   }
@@ -216,10 +216,147 @@ export const commentsApi = {
 };
 
 // ============================================
+// DOCUMENT COMMENTS API
+// ============================================
+import type { DocumentComment } from '../types';
+
+export const documentCommentsApi = {
+  getBySection: (projectId: string, sectionId: string) =>
+    request<DocumentComment[]>(`/projects/${projectId}/document-comments?section_id=${encodeURIComponent(sectionId)}`),
+  getByProject: (projectId: string, includeResolved = true) =>
+    request<DocumentComment[]>(`/projects/${projectId}/document-comments?include_resolved=${includeResolved}`),
+  getUnresolvedCount: (projectId: string, sectionId?: string) => {
+    const params = sectionId ? `?section_id=${encodeURIComponent(sectionId)}` : '';
+    return request<{ count: number }>(`/projects/${projectId}/document-comments/count${params}`);
+  },
+  // Get inline comments (comments with text selection) for highlighting
+  getInlineComments: (projectId: string, sectionId: string) =>
+    request<DocumentComment[]>(`/projects/${projectId}/document-comments/inline?section_id=${encodeURIComponent(sectionId)}`),
+  getById: (id: string) => request<DocumentComment>(`/document-comments/${id}`),
+  create: (projectId: string, data: {
+    section_id: string;
+    text: string;
+    mentions?: string[];
+    parent_comment_id?: string;
+    // Inline text selection fields
+    selected_text?: string;
+    selection_id?: string;
+  }) =>
+    request<DocumentComment>(`/projects/${projectId}/document-comments`, { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: { text: string; mentions?: string[] }) =>
+    request<DocumentComment>(`/document-comments/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id: string) =>
+    request<void>(`/document-comments/${id}`, { method: 'DELETE' }),
+  resolve: (id: string) =>
+    request<DocumentComment>(`/document-comments/${id}/resolve`, { method: 'POST' }),
+  unresolve: (id: string) =>
+    request<DocumentComment>(`/document-comments/${id}/unresolve`, { method: 'POST' }),
+};
+
+// ============================================
 // HEALTH CHECK
 // ============================================
 export const healthApi = {
   check: () => request<{ status: string; timestamp: string; database: string }>('/health'),
+};
+
+// ============================================
+// NOTIFICATIONS API
+// ============================================
+export type NotificationType =
+  | 'task_assigned'
+  | 'task_mentioned'
+  | 'comment_added'
+  | 'comment_reply'
+  | 'sprint_reminder'
+  | 'project_update'
+  | 'status_change'
+  | 'due_date_reminder'
+  | 'document_mentioned'
+  | 'system';
+
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  action_url?: string;
+  metadata?: {
+    task_id?: string;
+    project_id?: string;
+    sprint_id?: string;
+    comment_id?: string;
+    actor_id?: string;
+    actor_name?: string;
+  };
+  read: boolean;
+  created_at: string;
+}
+
+export interface NotificationPreferences {
+  id: string;
+  user_id: string;
+  email_enabled: boolean;
+  email_digest_frequency: 'instant' | 'daily' | 'weekly' | 'none';
+  email_task_assigned: boolean;
+  email_task_mentioned: boolean;
+  email_comment_added: boolean;
+  email_comment_reply: boolean;
+  email_sprint_reminder: boolean;
+  email_project_updates: boolean;
+  email_due_date_reminder: boolean;
+  inapp_enabled: boolean;
+  inapp_task_assigned: boolean;
+  inapp_task_mentioned: boolean;
+  inapp_comment_added: boolean;
+  inapp_comment_reply: boolean;
+  inapp_sprint_reminder: boolean;
+  inapp_project_updates: boolean;
+  inapp_status_change: boolean;
+  quiet_hours_enabled: boolean;
+  quiet_hours_start: string;
+  quiet_hours_end: string;
+  quiet_hours_timezone: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export const notificationsApi = {
+  // Get notifications (paginated)
+  getAll: (params?: { page?: number; limit?: number; unread_only?: boolean }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.append('page', params.page.toString());
+    if (params?.limit) searchParams.append('limit', params.limit.toString());
+    if (params?.unread_only !== undefined) searchParams.append('unread_only', params.unread_only.toString());
+    const queryString = searchParams.toString();
+    return request<{
+      data: Notification[];
+      pagination: { page: number; limit: number; total: number; hasMore: boolean };
+    }>(`/notifications${queryString ? `?${queryString}` : ''}`);
+  },
+
+  // Get unread count
+  getUnreadCount: () =>
+    request<{ count: number }>('/notifications/unread-count'),
+
+  // Mark notification as read
+  markAsRead: (id: string) =>
+    request<void>(`/notifications/${id}/read`, { method: 'PATCH' }),
+
+  // Mark all as read
+  markAllAsRead: () =>
+    request<void>('/notifications/mark-all-read', { method: 'POST' }),
+
+  // Get notification preferences
+  getPreferences: () =>
+    request<NotificationPreferences>('/notifications/preferences'),
+
+  // Update notification preferences
+  updatePreferences: (data: Partial<NotificationPreferences>) =>
+    request<NotificationPreferences>('/notifications/preferences', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
 };
 
 // ============================================
@@ -326,7 +463,7 @@ export const githubApi = {
   connectGitHub: (projectId: string) => {
     // This redirects to the OAuth flow
     // Include token in query param since browser redirects don't send Authorization header
-    const token = localStorage.getItem('infinia_token');
+    const token = localStorage.getItem('vulcan_token');
     const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
     window.location.href = `/api/v1/auth/github/connect/${projectId}${tokenParam}`;
   },
@@ -428,7 +565,9 @@ export default {
   tags: tagsApi,
   columns: columnsApi,
   comments: commentsApi,
+  documentComments: documentCommentsApi,
   health: healthApi,
+  notifications: notificationsApi,
   config: configApi,
   github: githubApi,
 };

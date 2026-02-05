@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ChevronsRight,
   AlertCircle,
   CheckCircle,
   Loader2,
@@ -98,7 +97,9 @@ const InviteAcceptPage: React.FC<InviteAcceptPageProps> = ({
         <div className="flex flex-col items-center gap-6">
           <div className="relative">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/25 animate-pulse">
-              <ChevronsRight className="w-8 h-8 text-white" strokeWidth={2.5} />
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-white">
+                <path d="M3 4L12 20L21 4" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
             </div>
             <div className="absolute inset-0 -m-1">
               <div className="w-[72px] h-[72px] rounded-2xl border-2 border-transparent border-t-blue-500/50 animate-spin" style={{ animationDuration: '1.5s' }} />
@@ -106,7 +107,7 @@ const InviteAcceptPage: React.FC<InviteAcceptPageProps> = ({
           </div>
           <div className="text-center">
             <h1 className="text-xl font-bold text-[#172B4D] dark:text-white tracking-tight">
-              Infinia
+              Vulcan
             </h1>
             <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
               Loading invitation...
@@ -298,8 +299,10 @@ const InviteAcceptPage: React.FC<InviteAcceptPageProps> = ({
         {/* Footer */}
         <div className="text-center mt-6">
           <div className="flex items-center justify-center gap-2 text-gray-400 dark:text-gray-500">
-            <ChevronsRight size={16} />
-            <span className="text-sm font-medium">Infinia</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 4L12 20L21 4" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <span className="text-sm font-medium">Vulcan</span>
           </div>
         </div>
       </div>

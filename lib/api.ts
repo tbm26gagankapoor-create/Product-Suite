@@ -10,7 +10,7 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
 
 // --- Auth Headers ---
 function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('infinia_token');
+  const token = localStorage.getItem('vulcan_token');
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
   };
@@ -34,7 +34,7 @@ const mapUserFromDB = (data: any): User => ({
   id: data.id,
   name: data.name || 'User',
   designation: data.designation || 'Member',
-  avatarUrl: data.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.name || 'User')}`,
+  avatarUrl: data.avatar_url || `https://avatar.iran.liara.run/public`,
   isAdmin: data.designation === 'Admin',
   email: data.email,
   organizationId: data.organization_id,
@@ -198,8 +198,8 @@ export const api = {
         return { data: null, error: new Error(data.error || 'Registration failed') };
       }
       // Store token
-      localStorage.setItem('infinia_token', data.data.token);
-      localStorage.setItem('infinia_user', JSON.stringify(data.data.user));
+      localStorage.setItem('vulcan_token', data.data.token);
+      localStorage.setItem('vulcan_user', JSON.stringify(data.data.user));
       return { data: { user: data.data.user }, error: null };
     },
 
@@ -214,21 +214,21 @@ export const api = {
         return { data: null, error: new Error(data.error || 'Login failed') };
       }
       // Store token
-      localStorage.setItem('infinia_token', data.data.token);
-      localStorage.setItem('infinia_user', JSON.stringify(data.data.user));
+      localStorage.setItem('vulcan_token', data.data.token);
+      localStorage.setItem('vulcan_user', JSON.stringify(data.data.user));
       return { data: { user: data.data.user, session: { access_token: data.data.token } }, error: null };
     },
 
     async signOut() {
-      localStorage.removeItem('infinia_token');
-      localStorage.removeItem('infinia_user');
-      localStorage.removeItem('infinia_session_user');
+      localStorage.removeItem('vulcan_token');
+      localStorage.removeItem('vulcan_user');
+      localStorage.removeItem('vulcan_session_user');
       return { error: null };
     },
 
     async getSession() {
-      const token = localStorage.getItem('infinia_token');
-      const userStr = localStorage.getItem('infinia_user');
+      const token = localStorage.getItem('vulcan_token');
+      const userStr = localStorage.getItem('vulcan_user');
       if (!token || !userStr) {
         return { data: { session: null }, error: null };
       }

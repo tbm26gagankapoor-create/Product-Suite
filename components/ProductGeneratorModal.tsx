@@ -56,6 +56,15 @@ try {
     console.warn("Failed to initialize PDF worker", e);
 }
 
+// Log AI configuration for debugging
+const envVars = (import.meta as any).env || {};
+console.log('[AI Config] Environment check:', {
+  hasApiKey: !!envVars.VITE_SAIF_API_KEY,
+  apiKeyPrefix: envVars.VITE_SAIF_API_KEY?.substring(0, 10) || 'NOT SET',
+  baseUrl: envVars.VITE_SAIF_API_BASE_URL || 'https://model.iamsaif.ai/v1',
+  defaultModel: envVars.VITE_SAIF_MODEL || 'openai/gpt-oss-120b'
+});
+
 // Types
 interface Suggestion {
   id: string;
@@ -314,8 +323,18 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
   // Helper for exponential backoff retry
   const generateWithRetry = async (params: any, retries = 5, delay = 2000): Promise<any> => {
     try {
-      return await aiClient.models.generateContent(params);
+      console.log('[AI] Calling model:', params.model || 'default');
+      const result = await aiClient.models.generateContent(params);
+      console.log('[AI] Response received, length:', result.text?.length || 0);
+      return result;
     } catch (error: any) {
+      console.error('[AI] Generation error:', {
+        message: error.message,
+        status: error.status,
+        model: params.model,
+        retries: retries
+      });
+
       const isRateLimit = error.status === 429 ||
                           (error.message && typeof error.message === 'string' && (
                               error.message.includes('429') ||
@@ -334,7 +353,10 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
            throw new Error("AI Service is busy or you have exceeded your quota. Please try again later.");
         }
       }
-      throw error;
+
+      // Enhanced error message for debugging
+      const errorDetails = `${error.message || 'Unknown error'}${error.status ? ` (Status: ${error.status})` : ''}`;
+      throw new Error(`AI API Error: ${errorDetails}`);
     }
   };
 
@@ -560,29 +582,57 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
           if (inputMode === 'import') {
               const content = fileText;
               prompt = `
-                Act as a Chief Product Officer and Visionary Architect.
-                Analyze the provided document content below. Treat this text as the absolute truth source for the product.
+                Act as a Product Manager preparing a product for engineering implementation.
+                Analyze the provided document content below and transform it into an actionable product blueprint.
 
                 DOCUMENT CONTENT:
                 ${content.substring(0, 150000)}
 
-                Tasks:
-                1. Extract the product name from the document (or infer a professional one).
-                2. **Preserve and Enhance the Product Vision**:
-                   - **Do NOT summarize or shorten**. Keep ALL original details, features, and specifications.
-                   - EXPAND on the existing content with additional professional insights.
-                   - Maintain the full depth and richness of the original document.
-                   - Add structure and clarity while preserving every detail.
-                   - The 'vision' should be comprehensive and AT LEAST as detailed as the source (aim for 500+ words).
-                3. Extract the main Description or purpose as a concise elevator pitch.
-                4. Extract ALL key pillars, capabilities, and features mentioned.
-                5. Brainstorm 5 strategic suggestions to further enhance the product.
+                Your goal: Create a comprehensive, implementation-ready product plan with clear user flows.
 
-                Output the response in STRICT JSON format with the following keys:
+                Tasks:
+                1. Extract or infer the product name.
+
+                2. Write a concise elevator pitch (1-2 sentences) that explains what the product does and who it's for.
+
+                3. **Create a Detailed Product Vision** that includes:
+
+                   **Target Users & Pain Points**
+                   - Define 2-3 specific user personas (roles, not names)
+                   - List the key problems they face that this product solves
+                   - Explain why existing solutions fall short
+
+                   **Core Value Proposition**
+                   - What makes this product unique and valuable?
+                   - What is the "magic moment" when users realize the value?
+
+                   **Primary User Flows** (CRITICAL - be specific)
+                   For each major use case, describe the step-by-step user journey:
+                   - Flow 1: [Name] - Numbered steps from entry point to completion
+                   - Flow 2: [Name] - Numbered steps from entry point to completion
+                   - Flow 3: [Name] - Numbered steps from entry point to completion
+
+                   **User Stories** (Format: "As a [user], I want [action], so that [benefit]")
+                   - List 5-8 core user stories that drive the feature set
+
+                   **Key Features & Capabilities**
+                   - Preserve ALL original features from the document
+                   - Organize into MVP (Phase 1) vs Future Enhancements (Phase 2+)
+                   - For each feature, note the user story it supports
+
+                   **Success Metrics**
+                   - How will you measure if the product is successful?
+                   - What are the key KPIs to track?
+
+                   The vision should be comprehensive (500-800 words) and actionable for an engineering team.
+
+                4. **Strategic Suggestions**: Brainstorm 5 specific, high-impact suggestions to enhance the product (features, integrations, or differentiators).
+
+                Output the response in STRICT JSON format:
                 {
                   "productName": "string",
                   "description": "string (concise elevator pitch)",
-                  "vision": "string (comprehensive, detailed - preserve ALL original content and enhance)",
+                  "vision": "string (comprehensive markdown-formatted vision with sections above)",
                   "suggestions": [
                     { "title": "string", "description": "string", "type": "feature" }
                   ]
@@ -590,31 +640,75 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
               `;
           } else {
               prompt = `
-                Act as a Chief Product Officer and Visionary Architect.
-                Analyze this product concept:
+                Act as a Product Manager preparing a product for engineering implementation.
+                Transform this product concept into an actionable product blueprint with clear user flows.
+
+                PRODUCT CONCEPT:
                 - Product Name: ${productName}
-                - Raw Description: ${description || 'No specific description provided, please infer from name and tags.'}
-                - Tags: ${tags}
+                - Description: ${description || 'No specific description provided, please infer from name and tags.'}
+                - Tags/Category: ${tags}
+
+                Your goal: Create a comprehensive, implementation-ready product plan.
 
                 Tasks:
-                1. **Develop a Detailed Product Vision & Strategy**:
-                   - **Do NOT summarize**. Expand on the input ideas significantly.
-                   - Create a compelling narrative that defines the core value proposition.
-                   - Describe the Target Audience and the specific pain points solved.
-                   - Outline the User Experience and the "Magic Moment".
-                   - Articulate the Technical Innovation and Long-term Impact.
-                   - The 'vision' text should be substantial, professional, and inspiring (approx 200-300 words).
+                1. Refine the product name if needed (keep it concise and memorable).
 
-                2. **Strategic Suggestions**:
-                   - Brainstorm 5 specific, high-impact strategic suggestions (Features, Monetization models, Growth hacks, or UX differentiators).
+                2. Write a compelling elevator pitch (1-2 sentences) that explains what the product does and who it's for.
+
+                3. **Develop a Detailed Product Vision** that includes:
+
+                   **Target Users & Pain Points**
+                   - Define 2-3 specific user personas (e.g., "Small business owner", "Enterprise IT manager")
+                   - List the key problems they face that this product solves
+                   - Explain the impact of these pain points on their work/life
+
+                   **Core Value Proposition**
+                   - What makes this product unique and compelling?
+                   - What is the "magic moment" when users realize the value?
+                   - Why would users choose this over alternatives?
+
+                   **Primary User Flows** (CRITICAL - be specific and detailed)
+                   Map out 3-4 key user journeys with numbered steps:
+
+                   Example format:
+                   **Flow 1: First-Time User Onboarding**
+                   1. User lands on welcome screen and sees value proposition
+                   2. User selects their role/use case from predefined options
+                   3. System configures personalized dashboard based on selection
+                   4. User completes guided tutorial (3-4 key actions)
+                   5. User reaches "aha moment" by completing first meaningful task
+
+                   [Create similar detailed flows for other core use cases]
+
+                   **User Stories** (Format: "As a [user], I want [action], so that [benefit]")
+                   - List 6-10 core user stories that cover the main functionality
+                   - Prioritize by impact (mark as MVP or Phase 2)
+
+                   **Key Features & Capabilities**
+                   - List all core features organized by category
+                   - Clearly separate MVP features from future enhancements
+                   - For each feature, note which user story/flow it supports
+
+                   **Technical Considerations**
+                   - Key integrations or APIs needed
+                   - Data storage and security requirements
+                   - Performance or scalability considerations
+
+                   **Success Metrics**
+                   - Define 3-5 KPIs to measure product success
+                   - Include both engagement and business metrics
+
+                   The vision should be substantial (400-600 words), well-structured, and actionable for an engineering team to start building.
+
+                4. **Strategic Suggestions**: Brainstorm 5 specific, high-impact ideas to enhance the product (features, integrations, growth strategies, or UX differentiators).
 
                 Output strictly in this JSON format:
                 {
-                  "productName": "Refined Name (if appropriate)",
-                  "description": "A concise 1-sentence elevator pitch.",
-                  "vision": "The full detailed vision text...",
+                  "productName": "string (refined name if appropriate)",
+                  "description": "string (concise elevator pitch)",
+                  "vision": "string (comprehensive markdown-formatted vision with all sections above)",
                   "suggestions": [
-                    { "title": "Short Title", "description": "One sentence explanation", "type": "feature" }
+                    { "title": "string", "description": "string (one sentence)", "type": "feature" }
                   ]
                 }
               `;
@@ -1302,10 +1396,28 @@ OUTPUT ONLY VALID JSON:
           handleStepChange('planning', 'forward');
           setMessages([]);
 
-      } catch (error) {
-          console.error("Failed to generate plan", error);
+      } catch (error: any) {
+          console.error('[Epic Generation] Failed to generate plan:', error);
+          console.error('[Epic Generation] Error details:', {
+            message: error.message,
+            stack: error.stack,
+            type: error.constructor?.name
+          });
+
           handleStepChange('prd_view', 'backward');
-          showError('Planning Failed', 'Failed to generate project plan. Please try again.');
+
+          // Provide detailed error message to user
+          const errorMessage = error.message || 'Unknown error occurred';
+          const detailedMessage = `Failed to generate project plan: ${errorMessage}.
+
+Possible causes:
+• AI service connection issue
+• Invalid response from AI model
+• API rate limiting
+
+Please check the browser console for detailed logs and try again.`;
+
+          showError('Planning Failed', detailedMessage);
       }
   };
 

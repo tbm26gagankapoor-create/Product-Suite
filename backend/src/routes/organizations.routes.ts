@@ -1,39 +1,21 @@
 import { Router, Response } from 'express';
 import { organizationsService } from '../services/organizations.service.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.middleware.js';
-import database from '../lib/database.js';
+import { createOrganizationSchema, updateOrganizationSchema, addOrganizationMemberSchema, validate } from '../lib/validators.js';
 
 const router = Router();
 
-// Get organizations for the current user (requires auth)
+// Get organizations for the current user (requires auth) - optimized
 router.get('/my-organizations', authMiddleware, async (req: AuthRequest, res: Response) => {
   const userId = req.user?.id;
   if (!userId) {
     return res.status(401).json({ success: false, error: 'User not authenticated' });
   }
 
-  const organizations = await organizationsService.getUserOrganizations(userId);
+  // Get user's memberships with org data in optimized way
+  const userMemberships = await organizationsService.getUserOrganizationsWithMembership(userId);
 
-  // Get user's membership details for each org
-  const memberships = await Promise.all(organizations.map(async (org) => {
-    const member = await organizationsService.getMember(org.id, userId);
-    return {
-      organization: {
-        id: org.id,
-        name: org.name,
-        slug: org.slug,
-        domain: org.domain,
-        logoUrl: org.logo_url,
-        ownerId: org.owner_id,
-        memberCount: org.memberCount,
-        projectCount: org.projectCount,
-      },
-      role: member?.role || 'member',
-      joinedAt: member?.joined_at,
-    };
-  }));
-
-  res.json({ success: true, data: memberships });
+  res.json({ success: true, data: userMemberships });
 });
 
 // Get all organizations (with optional filters)
@@ -70,17 +52,36 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create organization
-router.post('/', async (req, res) => {
-  const { name, slug, domain, logo_url, owner_id } = req.body;
-
-  if (!name) {
+router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
+  // Validate request body
+  const validation = validate(createOrganizationSchema, req.body);
+  if (!validation.success) {
     return res.status(400).json({
       success: false,
-      error: 'Organization name is required',
+      error: validation.error,
+      details: validation.details,
     });
   }
 
-  const organization = await organizationsService.create({ name, slug, domain, logo_url, owner_id });
+  const { name, slug, domain, logo_url, owner_id, settings } = validation.data;
+  // Use provided owner_id or fall back to authenticated user
+  const effectiveOwnerId = owner_id || req.user?.id;
+
+  if (!effectiveOwnerId) {
+    return res.status(400).json({
+      success: false,
+      error: 'owner_id is required or user must be authenticated',
+    });
+  }
+
+  const organization = await organizationsService.create({
+    name,
+    slug,
+    domain,
+    logo_url,
+    owner_id: effectiveOwnerId,
+    settings
+  });
   res.status(201).json({ success: true, data: organization });
 });
 
@@ -104,33 +105,25 @@ router.delete('/:id', async (req, res) => {
 
 // --- Member Management ---
 
-// Get organization members
+// Get organization members (optimized with batch user loading)
 router.get('/:organizationId/members', async (req, res) => {
-  const members = await organizationsService.getMembers(req.params.organizationId);
-
-  // Enrich members with user data
-  const enrichedMembers = await Promise.all(members.map(async member => {
-    const user = await database.findById<any>('users', member.user_id);
-    return {
-      ...member,
-      user: user ? {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        avatar_url: user.avatar_url,
-      } : null,
-    };
-  }));
-
+  const enrichedMembers = await organizationsService.getMembersWithUsers(req.params.organizationId);
   res.json({ success: true, data: enrichedMembers });
 });
 
 // Add member to organization
 router.post('/:organizationId/members', async (req, res) => {
-  const { user_id, role } = req.body;
-  if (!user_id) {
-    return res.status(400).json({ success: false, error: 'user_id is required' });
+  // Validate request body
+  const validation = validate(addOrganizationMemberSchema, req.body);
+  if (!validation.success) {
+    return res.status(400).json({
+      success: false,
+      error: validation.error,
+      details: validation.details,
+    });
   }
+
+  const { user_id, role } = validation.data;
 
   const member = await organizationsService.addMember(req.params.organizationId, user_id, role || 'member');
   if (!member) {

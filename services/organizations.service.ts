@@ -1,22 +1,11 @@
 /**
- * Organizations Service - Uses Local Backend
+ * Organizations Service - Uses Centralized HTTP Client
  * Supports multi-organization membership and domain-based organization matching
  */
 
 import { GENERIC_EMAIL_DOMAINS, OrganizationRole } from '../types';
-
-const API_BASE = '/api/v1';
-
-function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('infinia_token');
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return headers;
-}
+import { httpClient } from '../lib/httpClient';
+import { mapOrganization } from '../lib/mappers';
 
 export interface Organization {
   id: string;
@@ -48,39 +37,35 @@ export class OrganizationsService {
    * Create a new organization
    */
   async create(data: { name: string; slug?: string; owner_id?: string }): Promise<Organization> {
-    const response = await fetch(`${API_BASE}/organizations`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(data),
-    });
-    const result = await response.json();
-    if (!result.success) throw new Error(result.error || 'Failed to create organization');
-    return result.data;
+    const response = await httpClient.post<any>('/organizations', data);
+    return mapOrganization(response);
   }
 
   /**
    * Get organization by ID
    */
   async getById(id: string): Promise<Organization | null> {
-    const response = await fetch(`${API_BASE}/organizations/${id}`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success ? data.data : null;
+    try {
+      const response = await httpClient.get<any>(`/organizations/${id}`);
+      return mapOrganization(response);
+    } catch {
+      return null;
+    }
   }
 
   /**
    * Get organization by slug
    */
   async getBySlug(slug: string): Promise<Organization | null> {
-    const response = await fetch(`${API_BASE}/organizations?slug=${slug}`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    if (data.success && data.data?.length > 0) {
-      return data.data[0];
+    try {
+      const response = await httpClient.get<any[]>(`/organizations?slug=${slug}`);
+      if (response && response.length > 0) {
+        return mapOrganization(response[0]);
+      }
+      return null;
+    } catch {
+      return null;
     }
-    return null;
   }
 
   /**
@@ -97,74 +82,56 @@ export class OrganizationsService {
    * Update organization
    */
   async update(id: string, data: Partial<Organization>): Promise<Organization> {
-    const response = await fetch(`${API_BASE}/organizations/${id}`, {
-      method: 'PATCH',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(data),
-    });
-    const result = await response.json();
-    if (!result.success) throw new Error(result.error || 'Failed to update organization');
-    return result.data;
+    const response = await httpClient.patch<any>(`/organizations/${id}`, data);
+    return mapOrganization(response);
   }
 
   /**
    * Delete organization
    */
   async delete(id: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/organizations/${id}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders(),
-    });
-    const result = await response.json();
-    if (!result.success) throw new Error(result.error || 'Failed to delete organization');
+    await httpClient.delete(`/organizations/${id}`);
   }
 
   /**
    * Get all members of an organization
    */
   async getMembers(organizationId: string): Promise<any[]> {
-    const response = await fetch(`${API_BASE}/organizations/${organizationId}/members`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success ? data.data || [] : [];
+    try {
+      const response = await httpClient.get<any[]>(`/organizations/${organizationId}/members`);
+      return response || [];
+    } catch {
+      return [];
+    }
   }
 
   /**
    * Add a member to an organization
    */
-  async addMember(organizationId: string, userId: string, role: OrganizationRole = 'member'): Promise<any> {
-    const response = await fetch(`${API_BASE}/organizations/${organizationId}/members`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ user_id: userId, role }),
-    });
-    const result = await response.json();
-    if (!result.success) throw new Error(result.error || 'Failed to add member');
-    return result.data;
+  async addMember(
+    organizationId: string,
+    userId: string,
+    role: OrganizationRole = 'member'
+  ): Promise<any> {
+    return httpClient.post(`/organizations/${organizationId}/members`, { user_id: userId, role });
   }
 
   /**
    * Remove a member from an organization
    */
   async removeMember(organizationId: string, userId: string): Promise<void> {
-    await fetch(`${API_BASE}/organizations/${organizationId}/members/${userId}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders(),
-    });
+    await httpClient.delete(`/organizations/${organizationId}/members/${userId}`);
   }
 
   /**
    * Update a member's role
    */
-  async updateMemberRole(organizationId: string, userId: string, role: OrganizationRole): Promise<any> {
-    const response = await fetch(`${API_BASE}/organizations/${organizationId}/members/${userId}`, {
-      method: 'PATCH',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ role }),
-    });
-    const result = await response.json();
-    return result.data;
+  async updateMemberRole(
+    organizationId: string,
+    userId: string,
+    role: OrganizationRole
+  ): Promise<any> {
+    return httpClient.patch(`/organizations/${organizationId}/members/${userId}`, { role });
   }
 
   /**
@@ -180,28 +147,30 @@ export class OrganizationsService {
    * Get the organization for the current user
    */
   async getCurrentOrganization(): Promise<Organization | null> {
-    const response = await fetch(`${API_BASE}/auth/me`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    if (data.success && data.data?.organization_id) {
-      return this.getById(data.data.organization_id);
+    try {
+      const data = await httpClient.get<any>('/auth/me');
+      if (data?.organization_id) {
+        return this.getById(data.organization_id);
+      }
+      return null;
+    } catch {
+      return null;
     }
-    return null;
   }
 
   /**
    * Get the organization for a specific user
    */
   async getUserOrganization(userId: string): Promise<Organization | null> {
-    const response = await fetch(`${API_BASE}/users/${userId}`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    if (data.success && data.data?.organization_id) {
-      return this.getById(data.data.organization_id);
+    try {
+      const data = await httpClient.get<any>(`/users/${userId}`);
+      if (data?.organization_id) {
+        return this.getById(data.organization_id);
+      }
+      return null;
+    } catch {
+      return null;
     }
-    return null;
   }
 
   /**
@@ -214,7 +183,6 @@ export class OrganizationsService {
       .replace(/^-|-$/g, '')
       .substring(0, 50);
 
-    // Check if slug exists
     let slug = baseSlug;
     let counter = 1;
 
@@ -250,14 +218,10 @@ export class OrganizationsService {
    */
   async getUserOrganizations(userId: string): Promise<UserOrganizationMembership[]> {
     try {
-      const response = await fetch(`${API_BASE}/users/${userId}/organizations`, {
-        headers: getAuthHeaders(),
-      });
-      const data = await response.json();
-      if (data.success && data.data) {
-        return data.data;
-      }
-      return [];
+      const response = await httpClient.get<UserOrganizationMembership[]>(
+        `/users/${userId}/organizations`
+      );
+      return response || [];
     } catch (e) {
       console.error('Error fetching user organizations:', e);
       return [];
@@ -271,20 +235,15 @@ export class OrganizationsService {
   async getOrganizationsByDomain(email: string): Promise<Organization[]> {
     const domain = email.split('@')[1]?.toLowerCase();
 
-    // Don't match on generic email domains
     if (!domain || GENERIC_EMAIL_DOMAINS.includes(domain)) {
       return [];
     }
 
     try {
-      const response = await fetch(`${API_BASE}/organizations?domain=${encodeURIComponent(domain)}`, {
-        headers: getAuthHeaders(),
-      });
-      const data = await response.json();
-      if (data.success && data.data) {
-        return data.data;
-      }
-      return [];
+      const response = await httpClient.get<any[]>(
+        `/organizations?domain=${encodeURIComponent(domain)}`
+      );
+      return (response || []).map(mapOrganization);
     } catch (e) {
       console.error('Error fetching organizations by domain:', e);
       return [];
@@ -309,17 +268,13 @@ export class OrganizationsService {
 
   /**
    * Switch active organization for a user
-   * Updates the user's current organization context
    */
   async switchOrganization(userId: string, organizationId: string): Promise<boolean> {
     try {
-      const response = await fetch(`${API_BASE}/users/${userId}/active-organization`, {
-        method: 'PATCH',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ organization_id: organizationId }),
+      await httpClient.patch(`/users/${userId}/active-organization`, {
+        organization_id: organizationId,
       });
-      const data = await response.json();
-      return data.success;
+      return true;
     } catch (e) {
       console.error('Error switching organization:', e);
       return false;
@@ -331,13 +286,10 @@ export class OrganizationsService {
    */
   async requestToJoin(organizationId: string, userId: string): Promise<boolean> {
     try {
-      const response = await fetch(`${API_BASE}/organizations/${organizationId}/join-requests`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ user_id: userId }),
+      await httpClient.post(`/organizations/${organizationId}/join-requests`, {
+        user_id: userId,
       });
-      const data = await response.json();
-      return data.success;
+      return true;
     } catch (e) {
       console.error('Error requesting to join organization:', e);
       return false;
@@ -349,11 +301,8 @@ export class OrganizationsService {
    */
   async leaveOrganization(organizationId: string, userId: string): Promise<boolean> {
     try {
-      const response = await fetch(`${API_BASE}/organizations/${organizationId}/members/${userId}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
-      });
-      return response.ok;
+      await httpClient.delete(`/organizations/${organizationId}/members/${userId}`);
+      return true;
     } catch (e) {
       console.error('Error leaving organization:', e);
       return false;
@@ -372,16 +321,11 @@ export class OrganizationsService {
     }
   ): Promise<Organization | null> {
     try {
-      const response = await fetch(`${API_BASE}/organizations/${organizationId}/settings`, {
-        method: 'PATCH',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(settings),
-      });
-      const data = await response.json();
-      if (data.success) {
-        return data.data;
-      }
-      return null;
+      const response = await httpClient.patch<any>(
+        `/organizations/${organizationId}/settings`,
+        settings
+      );
+      return mapOrganization(response);
     } catch (e) {
       console.error('Error updating organization settings:', e);
       return null;
@@ -393,16 +337,8 @@ export class OrganizationsService {
    */
   async setDomain(organizationId: string, domain: string): Promise<Organization | null> {
     try {
-      const response = await fetch(`${API_BASE}/organizations/${organizationId}`, {
-        method: 'PATCH',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ domain }),
-      });
-      const data = await response.json();
-      if (data.success) {
-        return data.data;
-      }
-      return null;
+      const response = await httpClient.patch<any>(`/organizations/${organizationId}`, { domain });
+      return mapOrganization(response);
     } catch (e) {
       console.error('Error setting organization domain:', e);
       return null;
@@ -419,14 +355,8 @@ export class OrganizationsService {
     adminCount: number;
   } | null> {
     try {
-      const response = await fetch(`${API_BASE}/organizations/${organizationId}/stats`, {
-        headers: getAuthHeaders(),
-      });
-      const data = await response.json();
-      if (data.success) {
-        return data.data;
-      }
-      return null;
+      const response = await httpClient.get<any>(`/organizations/${organizationId}/stats`);
+      return response;
     } catch (e) {
       console.error('Error fetching organization stats:', e);
       return null;

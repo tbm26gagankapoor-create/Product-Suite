@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { teamsService } from '../services/teams.service.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.middleware.js';
-import database from '../lib/database.js';
+import database from '../lib/database.js'; // Keep for org membership check
 
 const router = Router();
 

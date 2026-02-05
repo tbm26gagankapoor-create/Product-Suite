@@ -3,47 +3,63 @@ import { tasksService } from '../services/tasks.service.js';
 import { projectsService } from '../services/projects.service.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.middleware.js';
 import { notificationService } from '../services/notification.service.js';
+import { createTaskSchema, updateTaskSchema, moveTaskSchema, assignToSprintSchema, validate } from '../lib/validators.js';
 
 const router = Router();
 
 // Apply auth middleware to all routes
 router.use(authMiddleware);
 
-// Get all tasks (filtered by user's accessible projects)
+// Get all tasks (filtered by user's accessible projects) - with pagination
 router.get('/', async (req: AuthRequest, res: Response) => {
   const user = req.user;
-  const { project_id, sprint_id, assignee_id, reporter_id, user_id } = req.query;
+  const { project_id, sprint_id, assignee_id, reporter_id, user_id, page, limit } = req.query;
 
   // If no user, return empty list
   if (!user) {
-    return res.json({ success: true, data: [] });
+    return res.json({ success: true, data: [], pagination: { page: 1, limit: 50, total: 0, totalPages: 0, hasMore: false } });
   }
 
-  // Get user's accessible projects (filtered by organization)
+  // Get user's accessible project IDs (optimized - only fetch IDs, not full stats)
   const accessibleProjects = await projectsService.getAllForUser(user.id, user.isAdmin, user.organizationId);
-  const accessibleProjectIds = new Set(accessibleProjects.map(p => p.id));
+  const accessibleProjectIds = accessibleProjects.map(p => p.id);
 
-  // Get tasks with filters
-  const allTasks = await tasksService.getAll({
-    project_id: project_id as string,
-    sprint_id: sprint_id as string,
-    assignee_id: assignee_id as string,
-    reporter_id: reporter_id as string,
-    user_id: user_id as string,
-  });
+  // If filtering by project_id, verify user has access
+  if (project_id && !accessibleProjectIds.includes(project_id as string)) {
+    return res.json({ success: true, data: [], pagination: { page: 1, limit: 50, total: 0, totalPages: 0, hasMore: false } });
+  }
 
-  // Filter tasks to only those from accessible projects
-  const filteredTasks = allTasks.filter(task => accessibleProjectIds.has(task.project_id));
-
-  // Add permissions to each task
-  const tasksWithPermissions = await Promise.all(
-    filteredTasks.map(async (task) => {
-      const permissions = await tasksService.getTaskPermissions(task.id, user.id, user.isAdmin);
-      return { ...task, permissions };
-    })
+  // Get tasks with filters and pagination - queries DB directly with filters
+  const result = await tasksService.getAllPaginated(
+    {
+      project_id: project_id as string,
+      sprint_id: sprint_id as string,
+      assignee_id: assignee_id as string,
+      reporter_id: reporter_id as string,
+      user_id: user_id as string,
+      // If no specific project, filter by all accessible projects
+      project_ids: project_id ? undefined : accessibleProjectIds,
+    },
+    {
+      page: parseInt(page as string) || 1,
+      limit: Math.min(parseInt(limit as string) || 50, 200), // Cap at 200
+      sortBy: 'updated_at',
+      sortOrder: 'desc',
+    }
   );
 
-  res.json({ success: true, data: tasksWithPermissions });
+  // Batch add permissions (single query for all tasks instead of N queries)
+  const permissionsMap = await tasksService.getTaskPermissionsBatch(result.data, user.id, user.isAdmin);
+  const tasksWithPermissions = result.data.map(task => ({
+    ...task,
+    permissions: permissionsMap.get(task.id),
+  }));
+
+  res.json({
+    success: true,
+    data: tasksWithPermissions,
+    pagination: result.pagination,
+  });
 });
 
 // Get task by ID or task_key (with permissions)
@@ -66,14 +82,18 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 // Create task
 router.post('/', async (req: AuthRequest, res: Response) => {
   const user = req.user;
-  const { project_id, title, description, type, priority, points, assignee_id, reporter_id, sprint_id, column_id, due_date, start_date, parent_epic_id } = req.body;
 
-  if (!project_id || !title) {
+  // Validate request body
+  const validation = validate(createTaskSchema, req.body);
+  if (!validation.success) {
     return res.status(400).json({
       success: false,
-      error: 'project_id and title are required',
+      error: validation.error,
+      details: validation.details,
     });
   }
+
+  const { project_id, title, description, type, priority, points, assignee_id, reporter_id, sprint_id, column_id, due_date, start_date, parent_epic_id } = validation.data;
 
   const task = await tasksService.create({
     project_id,
@@ -186,15 +206,22 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 router.post('/:id/move', async (req: AuthRequest, res: Response) => {
   const user = req.user;
   const taskId = req.params.id;
-  const { column_id } = req.body;
 
   if (!user) {
     return res.status(401).json({ success: false, error: 'Authentication required' });
   }
 
-  if (!column_id) {
-    return res.status(400).json({ success: false, error: 'column_id is required' });
+  // Validate request body
+  const validation = validate(moveTaskSchema, req.body);
+  if (!validation.success) {
+    return res.status(400).json({
+      success: false,
+      error: validation.error,
+      details: validation.details,
+    });
   }
+
+  const { column_id } = validation.data;
 
   // Get permissions for this task
   const permissions = await tasksService.getTaskPermissions(taskId, user.id, user.isAdmin);

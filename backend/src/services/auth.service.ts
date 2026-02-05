@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import database, { generateUUID, now } from '../lib/database.js';
+import database, { now } from '../lib/database.js';
 import { config } from '../config/index.js';
 
 interface User {
@@ -9,7 +9,7 @@ interface User {
   email: string;
   password_hash?: string;
   avatar_url: string | null;
-  role: string | null;
+  designation: string | null;  // Maps to 'role' in frontend, 'designation' in DB
   organization_id?: string;
   created_at: string;
   updated_at: string;
@@ -57,19 +57,19 @@ export const authService = {
     // Hash password
     const passwordHash = await bcrypt.hash(data.password, 12);
 
-    // Create user
-    const user: User = {
-      id: generateUUID(),
+    // Create user data
+    const userData = {
       name: data.name,
       email: data.email.toLowerCase(),
       password_hash: passwordHash,
-      avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.name)}`,
-      role: 'Member',
+      avatar_url: `https://avatar.iran.liara.run/public`,
+      designation: 'Member',
       created_at: now(),
       updated_at: now(),
     };
 
-    await database.insert('users', user);
+    // Use the returned document which has the correct MongoDB-generated _id
+    const user = await database.insert<User>('users', userData);
 
     const token = generateToken(user);
     const { password_hash, ...userWithoutPassword } = user;
@@ -176,20 +176,20 @@ export const authService = {
     }
 
     // No existing user - create new OAuth user
-    const newUser: User = {
-      id: generateUUID(),
+    const newUserData = {
       name: data.name,
       email: normalizedEmail,
       password_hash: undefined,
-      avatar_url: data.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.name)}`,
-      role: 'Member',
+      avatar_url: data.avatarUrl || `https://avatar.iran.liara.run/public`,
+      designation: 'Member',
       oauth_provider: data.oauthProvider,
       oauth_provider_id: data.oauthProviderId,
       created_at: now(),
       updated_at: now(),
     };
 
-    await database.insert('users', newUser);
+    // Use the returned document which has the correct MongoDB-generated _id
+    const newUser = await database.insert<User>('users', newUserData);
 
     const token = generateToken(newUser);
     const { password_hash, ...userWithoutPassword } = newUser;

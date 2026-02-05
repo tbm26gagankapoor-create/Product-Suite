@@ -171,12 +171,37 @@ Base URL: `/api/v1`
 - **Sprint**: Time-boxed iterations per project
 - **Team**: Cross-project member groups
 
+### Work Item Hierarchy
+
+**IMPORTANT**: Understand the distinction between work items:
+
+```
+Epic (Container - NOT a task itself, high-level initiative)
+ ├── Feature (Actual work item)
+ ├── Task (Actual work item)
+ ├── Bug (Actual work item)
+ └── Story (Actual work item)
+```
+
+**Work Item Types:**
+- **Epic**: A container that groups related work items (features, tasks, bugs, stories). Epics are NOT tasks themselves and should NOT be added to sprints or counted in task tallies. Epics exist to organize work at a high level.
+- **Feature**: New functionality or capability. Treated as a work item that can be estimated, assigned, and added to sprints.
+- **Task**: Individual work item that can be estimated, assigned, and added to sprints.
+- **Bug**: Defect that needs to be fixed. Treated as a work item.
+- **Story**: User story that delivers value. Treated as a work item.
+
+**Sprint Planning Rules:**
+- ✅ **Include in sprints**: Feature, Task, Bug, Story
+- ❌ **Do NOT include in sprints**: Epic (add the work items within the epic instead)
+- When counting work items or calculating sprint capacity, count only: Feature, Task, Bug, Story
+- Epics are organizational containers - their child work items are what get assigned and tracked
+
 ### Key Relationships
 - Users belong to Organizations (many-to-many via OrganizationMember)
 - Projects belong to Organizations
 - Tasks belong to Projects and optionally Sprints
-- Tasks can have parent Epics (parent_epic_id)
-- Tasks can block/be blocked by other tasks
+- Work items (Feature, Task, Bug, Story) can have parent Epics (parent_epic_id)
+- Work items can block/be blocked by other work items
 
 ## Code Conventions
 
@@ -208,6 +233,9 @@ Base URL: `/api/v1`
 
 1. **Kanban Board** - Drag-drop task management with 5 columns
 2. **Sprint Planning** - Time-boxed iterations with goals
+   - Only Feature, Task, Bug, and Story work items can be added to sprints
+   - Epics are organizational containers and should NOT be added to sprints
+   - When planning sprints, select the work items within epics, not the epics themselves
 3. **Product Discovery** - Impact scoring, product themes
 4. **Multi-Organization** - Domain-based auto-join, role-based access
 5. **OAuth Login** - Google, Microsoft authentication
@@ -300,16 +328,16 @@ Base URL: `/api/v1`
 - **Stroke**: `strokeWidth={2}` default, `strokeWidth={3}` bold (logo)
 
 #### Icon Color Conventions
-| Type | Color Class |
-|------|-------------|
-| Epic | `text-purple-500` |
-| Feature | `text-pink-500` |
-| Bug | `text-red-500` |
-| Story | `text-emerald-500` |
-| Task | `text-blue-500` |
-| User | `text-orange-500` |
-| Sprint | `text-purple-500` |
-| Project | `text-blue-500` |
+| Type | Color Class | Sprint Eligible |
+|------|-------------|-----------------|
+| Epic | `text-purple-500` | ❌ No (container only) |
+| Feature | `text-pink-500` | ✅ Yes |
+| Bug | `text-red-500` | ✅ Yes |
+| Story | `text-emerald-500` | ✅ Yes |
+| Task | `text-blue-500` | ✅ Yes |
+| User | `text-orange-500` | N/A |
+| Sprint | `text-purple-500` | N/A |
+| Project | `text-blue-500` | N/A |
 
 ### Shadows
 - **Cards**: `shadow-sm` default, `hover:shadow-lg` on hover

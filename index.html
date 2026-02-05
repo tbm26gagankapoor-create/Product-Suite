@@ -4,7 +4,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Infinia Products</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Vulcan Products</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -169,6 +170,36 @@
       }
       .animate-fadeIn {
         animation: fadeIn 0.3s ease-out forwards;
+      }
+
+      /* Brutalist Button Shadow System */
+      .btn-shadow {
+        box-shadow: 2px 2px 0px #030217;
+        transition: box-shadow 0.15s ease, transform 0.15s ease;
+      }
+      .btn-shadow-sm {
+        box-shadow: 1px 1px 0px #030217;
+        transition: box-shadow 0.15s ease, transform 0.15s ease;
+      }
+      .btn-shadow:hover {
+        box-shadow: 1px 1px 0px #030217;
+        transform: translate(1px, 1px);
+      }
+      .btn-shadow-sm:hover {
+        box-shadow: 0px 0px 0px #030217;
+        transform: translate(1px, 1px);
+      }
+      .btn-shadow:active,
+      .btn-shadow-sm:active {
+        box-shadow: none;
+        transform: translate(2px, 2px);
+      }
+      .btn-shadow:disabled,
+      .btn-shadow-sm:disabled {
+        box-shadow: 1px 1px 0px #030217;
+        transform: none;
+        opacity: 0.5;
+        cursor: not-allowed;
       }
     </style>
   <script type="importmap">

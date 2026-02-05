@@ -17,6 +17,7 @@ import configRoutes from './config.routes.js';
 import notificationsRoutes from './notifications.routes.js';
 import githubOAuthRoutes from './github-oauth.routes.js';
 import githubIntegrationRoutes from './github-integration.routes.js';
+import documentCommentsRoutes from './document-comments.routes.js';
 import { microsoftOAuthService } from '../services/microsoft-oauth.service.js';
 import { googleOAuthService } from '../services/google-oauth.service.js';
 import { githubOAuthService } from '../services/github-oauth.service.js';
@@ -117,5 +118,6 @@ router.use('/config', configRoutes);
 router.use('/notifications', notificationsRoutes);
 router.use('/auth', githubOAuthRoutes);
 router.use('/', githubIntegrationRoutes);
+router.use('/', documentCommentsRoutes);
 
 export default router;

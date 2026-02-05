@@ -33,7 +33,7 @@ interface NotificationContextType {
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
 
 // Storage key
-const NOTIFICATIONS_KEY = 'infinia_notifications';
+const NOTIFICATIONS_KEY = 'vulcan_notifications';
 const MAX_NOTIFICATIONS = 50;
 
 // Notification Icons

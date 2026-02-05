@@ -45,7 +45,7 @@ const SprintsView: React.FC<SprintsViewProps> = ({ onProjectSelect }) => {
   const { sprints, tasks, projects, addSprint, startSprint, refreshData } = useProjectData();
   const [startingSprintId, setStartingSprintId] = useState<string | null>(null);
   const [selectedSprintId, setSelectedSprintId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'All' | 'Active' | 'Planned' | 'Completed'>('Active');
+  const [filter, setFilter] = useState<'All' | 'Active' | 'Planned' | 'Completed'>('All');
   const [isSprintModalOpen, setIsSprintModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'timeline'>('timeline');
   const [searchQuery, setSearchQuery] = useState('');

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Loader2, WifiOff, RefreshCw, AlertTriangle } from 'lucide-react';
+import { VulcanIcon } from './VulcanLogo';
 
 // Branded App Loading Screen - shown during initial auth check
 export const AppLoadingScreen: React.FC = () => (
@@ -8,19 +9,7 @@ export const AppLoadingScreen: React.FC = () => (
       {/* Logo with gradient animation */}
       <div className="relative">
         <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/25 animate-pulse">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            className="w-8 h-8 text-white"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M12 2L2 7l10 5 10-5-10-5z" />
-            <path d="M2 17l10 5 10-5" />
-            <path d="M2 12l10 5 10-5" />
-          </svg>
+          <VulcanIcon size={32} color="white" />
         </div>
         {/* Spinning ring around logo */}
         <div className="absolute inset-0 -m-1">
@@ -31,7 +20,7 @@ export const AppLoadingScreen: React.FC = () => (
       {/* App name */}
       <div className="text-center">
         <h1 className="text-xl font-bold text-[#172B4D] dark:text-white tracking-tight">
-          Infinia
+          Vulcan
         </h1>
         <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
           Loading your workspace...

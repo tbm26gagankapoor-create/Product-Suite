@@ -1,18 +1,10 @@
 /**
- * Storage Service - Uses Local Backend
- * All Supabase calls have been replaced with local backend API calls
+ * Storage Service - Uses Centralized HTTP Client
  */
 
-const API_BASE = '/api/v1';
+import { getAuthHeaders } from '../lib/httpClient';
 
-function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('infinia_token');
-  const headers: HeadersInit = {};
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return headers;
-}
+const API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
 
 export class StorageService {
   // Upload file to local storage
@@ -22,9 +14,14 @@ export class StorageService {
     formData.append('bucket', bucket);
     formData.append('path', path);
 
+    // For file uploads, we use fetch directly since FormData needs special handling
+    const headers = getAuthHeaders();
+    // Remove Content-Type so browser can set it with boundary for multipart/form-data
+    delete (headers as Record<string, string>)['Content-Type'];
+
     const response = await fetch(`${API_BASE}/storage/upload`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers,
       body: formData,
     });
 
@@ -40,8 +37,9 @@ export class StorageService {
 
   // Download file blob
   async downloadFile(bucket: string, path: string): Promise<Blob> {
+    const headers = getAuthHeaders();
     const response = await fetch(`${API_BASE}/storage/${bucket}/${path}`, {
-      headers: getAuthHeaders(),
+      headers,
     });
 
     if (!response.ok) throw new Error('Failed to download file');
@@ -50,9 +48,10 @@ export class StorageService {
 
   // Delete file
   async deleteFile(bucket: string, path: string): Promise<void> {
+    const headers = getAuthHeaders();
     await fetch(`${API_BASE}/storage/${bucket}/${path}`, {
       method: 'DELETE',
-      headers: getAuthHeaders(),
+      headers,
     });
   }
 }

@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import { usersService } from '../services/users.service.js';
 import { organizationsService } from '../services/organizations.service.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.middleware.js';
-import database from '../lib/database.js';
+import { createUserSchema, updateUserSchema, validate } from '../lib/validators.js';
 
 const router = Router();
 
@@ -12,7 +12,7 @@ router.use(authMiddleware);
 // Get all users (filtered by user's organizations)
 router.get('/', async (req: AuthRequest, res: Response) => {
   const user = req.user;
-  const { team_id } = req.query;
+  const { team_id, page, limit } = req.query;
 
   // If no user, return empty list
   if (!user) {
@@ -25,23 +25,16 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     return res.json({ success: true, data: users });
   }
 
-  // Get user's organization memberships
-  const userMemberships = await database.findMany<any>('organization_members', { user_id: user.id });
-  const userOrgIds = userMemberships.map((m: any) => m.organization_id);
-
-  // Get all members from user's organizations
-  const orgMembers = await Promise.all(
-    userOrgIds.map((orgId: string) => database.findMany<any>('organization_members', { organization_id: orgId }))
+  // Optimized: Get users by organization using a single aggregation
+  const users = await usersService.getUsersByOrganizationMembership(
+    user.id,
+    {
+      page: parseInt(page as string) || 1,
+      limit: Math.min(parseInt(limit as string) || 50, 200),
+    }
   );
-  const allMemberUserIds = new Set(orgMembers.flat().map((m: any) => m.user_id));
 
-  // Get all users
-  const allUsers = await usersService.getAll();
-
-  // Filter to only users in same organizations
-  const users = allUsers.filter(u => allMemberUserIds.has(u.id));
-
-  res.json({ success: true, data: users });
+  res.json({ success: true, data: users.data, pagination: users.pagination });
 });
 
 // Get user by ID
@@ -55,20 +48,30 @@ router.get('/:id', async (req, res) => {
 
 // Create user
 router.post('/', async (req, res) => {
-  const { name, email, password, avatar_url, role } = req.body;
-
-  if (!name || !email || !password) {
+  // Validate request body
+  const validation = validate(createUserSchema, req.body);
+  if (!validation.success) {
     return res.status(400).json({
       success: false,
-      error: 'Name, email, and password are required',
+      error: validation.error,
+      details: validation.details,
+    });
+  }
+
+  const { name, email, password, avatar_url, designation } = validation.data;
+
+  if (!password) {
+    return res.status(400).json({
+      success: false,
+      error: 'Password is required',
     });
   }
 
   try {
-    const user = await usersService.create({ name, email, password, avatar_url, role });
+    const user = await usersService.create({ name, email, password, avatar_url, designation });
     res.status(201).json({ success: true, data: user });
   } catch (error: any) {
-    if (error.message?.includes('UNIQUE constraint')) {
+    if (error.message?.includes('UNIQUE constraint') || error.message?.includes('duplicate key')) {
       return res.status(400).json({ success: false, error: 'Email already exists' });
     }
     throw error;
@@ -77,7 +80,25 @@ router.post('/', async (req, res) => {
 
 // Update user
 router.patch('/:id', async (req, res) => {
-  const user = await usersService.update(req.params.id, req.body);
+  // Validate request body
+  const validation = validate(updateUserSchema, req.body);
+  if (!validation.success) {
+    return res.status(400).json({
+      success: false,
+      error: validation.error,
+      details: validation.details,
+    });
+  }
+
+  // Filter out null values for the service
+  const updates: Record<string, any> = {};
+  for (const [key, value] of Object.entries(validation.data)) {
+    if (value !== null && value !== undefined) {
+      updates[key] = value;
+    }
+  }
+
+  const user = await usersService.update(req.params.id, updates);
   if (!user) {
     return res.status(404).json({ success: false, error: 'User not found' });
   }

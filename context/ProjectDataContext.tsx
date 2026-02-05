@@ -4,7 +4,7 @@ import { Task, Project, Sprint, User, Team, Comment, Organization, OrganizationM
 
 // Helper to get auth headers for API calls
 function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('infinia_token');
+  const token = localStorage.getItem('vulcan_token');
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
   };
@@ -34,6 +34,9 @@ function mapProject(data: any): Project {
     vision: data.vision || undefined,
     prd: data.prd || undefined,
     docs: data.docs || undefined,
+    // Draft fields for saving incomplete product wizard state
+    draftStep: data.draft_step ?? undefined,
+    draftData: data.draft_data || undefined,
   };
 }
 
@@ -123,7 +126,7 @@ function mapUser(data: any): User {
     id: data.id,
     name: data.name,
     email: data.email,
-    avatarUrl: data.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.name)}`,
+    avatarUrl: data.avatar_url || `https://avatar.iran.liara.run/public`,
     designation: data.designation || 'Member',
     isAdmin: data.designation === 'Admin',
     organizationId: data.organization_id,
@@ -201,8 +204,8 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         console.log("Fetching Data from local backend with auth...");
 
         // 1. Get Auth from localStorage (set by LoginView)
-        const storedUser = localStorage.getItem('infinia_user');
-        const storedToken = localStorage.getItem('infinia_token');
+        const storedUser = localStorage.getItem('vulcan_user');
+        const storedToken = localStorage.getItem('vulcan_token');
 
         // 2. Determine Current User Profile
         let profile: User | null = null;
@@ -210,14 +213,7 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         if (storedUser && storedToken) {
             try {
                 const parsedUser = JSON.parse(storedUser);
-                profile = {
-                    id: parsedUser.id,
-                    name: parsedUser.name,
-                    email: parsedUser.email,
-                    avatarUrl: parsedUser.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(parsedUser.name)}`,
-                    designation: parsedUser.designation || 'Member',
-                    isAdmin: parsedUser.designation === 'Admin'
-                };
+                profile = mapUser(parsedUser);
 
                 // Try to get fresh data from server
                 try {
@@ -227,21 +223,14 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
                     if (response.ok) {
                         const data = await response.json();
                         if (data.success && data.data) {
-                            profile = {
-                                id: data.data.id,
-                                name: data.data.name,
-                                email: data.data.email,
-                                avatarUrl: data.data.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(data.data.name)}`,
-                                designation: data.data.designation || 'Member',
-                                isAdmin: data.data.designation === 'Admin'
-                            };
-                            localStorage.setItem('infinia_user', JSON.stringify(data.data));
+                            profile = mapUser(data.data);
+                            localStorage.setItem('vulcan_user', JSON.stringify(data.data));
                         }
                     } else if (response.status === 401 || response.status === 404) {
                         // Token is invalid or user no longer exists - clear cache and reset
                         console.log('Token invalid or user not found, clearing cached data');
-                        localStorage.removeItem('infinia_token');
-                        localStorage.removeItem('infinia_user');
+                        localStorage.removeItem('vulcan_token');
+                        localStorage.removeItem('vulcan_user');
                         profile = null;
                     }
                 } catch (e) {
@@ -262,7 +251,7 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         // 3. Fetch organization data if user has one
         // Re-read from localStorage to get the fresh data (updated by /api/v1/auth/me above)
         let userOrgId: string | null = null;
-        const freshStoredUser = localStorage.getItem('infinia_user');
+        const freshStoredUser = localStorage.getItem('vulcan_user');
         if (freshStoredUser) {
           try {
             const parsedUser = JSON.parse(freshStoredUser);
@@ -344,7 +333,7 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
                           id: m.user.id,
                           name: m.user.name,
                           email: m.user.email,
-                          avatarUrl: m.user.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(m.user.name || 'User')}`,
+                          avatarUrl: m.user.avatar_url || `https://avatar.iran.liara.run/public`,
                         } : undefined,
                       }));
                       setOrganizationMembers(mappedMembers);
@@ -455,6 +444,10 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           vision: project.vision,
           prd: project.prd,
           docs: project.docs,
+          // Draft fields for saving incomplete product wizard state
+          status: project.status || 'active',
+          draft_step: project.draftStep,
+          draft_data: project.draftData,
         }),
       });
       const data = await response.json();
@@ -483,6 +476,13 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           image_url: project.imageUrl,
           icon: project.icon,
           icon_color: project.iconColor,
+          // Document fields
+          vision: project.vision,
+          prd: project.prd,
+          docs: project.docs,
+          // Draft fields for saving incomplete product wizard state
+          draft_step: project.draftStep,
+          draft_data: project.draftData,
         }),
       });
     } catch (e) {
@@ -796,7 +796,7 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
               id: m.user.id,
               name: m.user.name,
               email: m.user.email,
-              avatarUrl: m.user.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(m.user.name || 'User')}`,
+              avatarUrl: m.user.avatar_url || `https://avatar.iran.liara.run/public`,
             } : undefined,
           }));
           setOrganizationMembers(mappedMembers);
@@ -836,11 +836,11 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const data = await response.json();
       if (data.success) {
         // Update localStorage with new organization_id
-        const storedUser = localStorage.getItem('infinia_user');
+        const storedUser = localStorage.getItem('vulcan_user');
         if (storedUser) {
           const userData = JSON.parse(storedUser);
           userData.organization_id = organizationId;
-          localStorage.setItem('infinia_user', JSON.stringify(userData));
+          localStorage.setItem('vulcan_user', JSON.stringify(userData));
         }
 
         // Update local state

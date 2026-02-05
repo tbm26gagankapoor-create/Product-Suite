@@ -1,4 +1,4 @@
-import database, { generateUUID, now } from '../lib/database.js';
+import database, { now, PaginationOptions, PaginatedResult, DEFAULT_PAGE_SIZE } from '../lib/database.js';
 
 export interface Task {
   id: string;
@@ -131,32 +131,89 @@ async function generateTaskKey(projectId: string): Promise<string> {
 }
 
 export const tasksService = {
-  async getAll(filters?: { project_id?: string; sprint_id?: string; assignee_id?: string; reporter_id?: string; user_id?: string }): Promise<TaskWithDetails[]> {
-    let tasks: Task[];
+  // Paginated getAll with efficient batch loading
+  async getAllPaginated(
+    filters?: {
+      project_id?: string;
+      sprint_id?: string;
+      assignee_id?: string;
+      reporter_id?: string;
+      user_id?: string;
+      project_ids?: string[]; // For filtering by multiple projects
+    },
+    pagination?: PaginationOptions
+  ): Promise<PaginatedResult<TaskWithDetails>> {
+    // Build MongoDB query
+    const query: Record<string, any> = {};
 
     if (filters?.project_id) {
-      tasks = await database.findMany<Task>('tasks', { project_id: filters.project_id });
-    } else {
-      tasks = await database.getAll<Task>('tasks');
+      query.project_id = filters.project_id;
+    } else if (filters?.project_ids && filters.project_ids.length > 0) {
+      query.project_id = { $in: filters.project_ids };
     }
 
-    // Apply additional filters
     if (filters?.sprint_id) {
-      tasks = tasks.filter(t => t.sprint_id === filters.sprint_id);
+      query.sprint_id = filters.sprint_id;
     }
     if (filters?.assignee_id) {
-      tasks = tasks.filter(t => t.assignee_id === filters.assignee_id);
+      query.assignee_id = filters.assignee_id;
     }
     if (filters?.reporter_id) {
-      tasks = tasks.filter(t => t.reporter_id === filters.reporter_id);
+      query.reporter_id = filters.reporter_id;
     }
-    // user_id filter: tasks where user is assignee OR reporter
     if (filters?.user_id) {
-      tasks = tasks.filter(t => t.assignee_id === filters.user_id || t.reporter_id === filters.user_id);
+      query.$or = [
+        { assignee_id: filters.user_id },
+        { reporter_id: filters.user_id }
+      ];
     }
 
-    // Enrich tasks with details
-    return Promise.all(tasks.map(task => this.enrichTask(task)));
+    const result = await database.findManyPaginated<Task>('tasks', query, {
+      page: pagination?.page || 1,
+      limit: pagination?.limit || DEFAULT_PAGE_SIZE,
+      sortBy: pagination?.sortBy || 'updated_at',
+      sortOrder: pagination?.sortOrder || 'desc',
+    });
+
+    // Batch enrich tasks (fixes N+1)
+    const enrichedTasks = await this.enrichTasksBatch(result.data);
+
+    return {
+      data: enrichedTasks,
+      pagination: result.pagination,
+    };
+  },
+
+  // Legacy getAll for backward compatibility (still uses batch enrichment)
+  async getAll(filters?: { project_id?: string; sprint_id?: string; assignee_id?: string; reporter_id?: string; user_id?: string }): Promise<TaskWithDetails[]> {
+    // Build MongoDB query instead of filtering in JS
+    const query: Record<string, any> = {};
+
+    if (filters?.project_id) {
+      query.project_id = filters.project_id;
+    }
+    if (filters?.sprint_id) {
+      query.sprint_id = filters.sprint_id;
+    }
+    if (filters?.assignee_id) {
+      query.assignee_id = filters.assignee_id;
+    }
+    if (filters?.reporter_id) {
+      query.reporter_id = filters.reporter_id;
+    }
+    if (filters?.user_id) {
+      query.$or = [
+        { assignee_id: filters.user_id },
+        { reporter_id: filters.user_id }
+      ];
+    }
+
+    const tasks = Object.keys(query).length > 0
+      ? await database.findMany<Task>('tasks', query)
+      : await database.getAll<Task>('tasks');
+
+    // Use batch enrichment instead of individual enrichment
+    return this.enrichTasksBatch(tasks);
   },
 
   async getById(id: string): Promise<TaskWithDetails | null> {
@@ -199,6 +256,56 @@ export const tasksService = {
     };
   },
 
+  // Batch enrich tasks - fixes N+1 query problem
+  // Instead of 6+ queries per task, this does ~6 total queries for ALL tasks
+  async enrichTasksBatch(tasks: Task[]): Promise<TaskWithDetails[]> {
+    if (tasks.length === 0) return [];
+
+    const taskIds = tasks.map(t => t.id);
+    const columnIds = [...new Set(tasks.map(t => t.column_id).filter(Boolean))];
+    const assigneeIds = [...new Set(tasks.map(t => t.assignee_id).filter(Boolean))] as string[];
+
+    // Batch load all related data in parallel (6 queries total instead of 6 * N)
+    const [columnsMap, usersMap, taskTagsMap, commentsCountMap, subtasksCountMap] = await Promise.all([
+      // Load all columns at once
+      database.findByIds<any>('columns_status', columnIds),
+      // Load all assignees at once
+      database.findByIds<any>('users', assigneeIds),
+      // Load all task_tags grouped by task_id
+      database.findManyByField<any>('task_tags', 'task_id', taskIds),
+      // Count comments per task
+      database.countByField('comments', 'task_id', taskIds),
+      // Count subtasks per task
+      database.countByField('subtasks', 'task_id', taskIds),
+    ]);
+
+    // Get all unique tag IDs from task_tags
+    const allTagIds: string[] = [];
+    taskTagsMap.forEach(taskTags => {
+      taskTags.forEach(tt => allTagIds.push(tt.tag_id));
+    });
+    const tagsMap = await database.findByIds<any>('tags', [...new Set(allTagIds)]);
+
+    // Enrich all tasks using the batch-loaded data
+    return tasks.map(task => {
+      const column = task.column_id ? columnsMap.get(task.column_id) : null;
+      const assignee = task.assignee_id ? usersMap.get(task.assignee_id) : null;
+      const taskTags = taskTagsMap.get(task.id) || [];
+      const tags = taskTags.map(tt => tagsMap.get(tt.tag_id)).filter(Boolean);
+
+      return {
+        ...task,
+        column_title: column?.title || null,
+        assignee_name: assignee?.name || null,
+        assignee_avatar: assignee?.avatar_url || null,
+        tags,
+        comments_count: commentsCountMap.get(task.id) || 0,
+        subtasks_count: subtasksCountMap.get(task.id) || 0,
+        has_description: !!task.description && task.description.length > 0,
+      };
+    });
+  },
+
   async create(input: CreateTaskInput): Promise<TaskWithDetails> {
     const taskKey = await generateTaskKey(input.project_id);
 
@@ -218,8 +325,7 @@ export const tasksService = {
       }
     }
 
-    const task: Task = {
-      id: generateUUID(),
+    const taskData = {
       task_key: taskKey,
       project_id: input.project_id,
       column_id: columnId || '',
@@ -255,7 +361,8 @@ export const tasksService = {
       updated_at: now(),
     };
 
-    await database.insert('tasks', task);
+    // Use the returned document which has the correct MongoDB-generated _id
+    const task = await database.insert<Task>('tasks', taskData);
     return this.enrichTask(task);
   },
 
@@ -341,8 +448,7 @@ export const tasksService = {
   },
 
   async createSubtask(taskId: string, input: { title: string; assignee_id?: string }): Promise<Subtask> {
-    const subtask: Subtask = {
-      id: generateUUID(),
+    const subtaskData = {
       task_id: taskId,
       title: input.title,
       type: 'task',
@@ -354,8 +460,8 @@ export const tasksService = {
       created_at: now(),
     };
 
-    await database.insert('subtasks', subtask);
-    return subtask;
+    // Use the returned document which has the correct MongoDB-generated _id
+    return database.insert<Subtask>('subtasks', subtaskData);
   },
 
   async updateSubtask(subtaskId: string, updates: Partial<Subtask>): Promise<Subtask | null> {
@@ -411,8 +517,7 @@ export const tasksService = {
   },
 
   async addTaskLink(blockedTaskId: string, blockingTaskId: string, linkType: string = 'blocks', createdBy?: string): Promise<TaskLink> {
-    const link: TaskLink = {
-      id: generateUUID(),
+    const linkData = {
       blocking_task_id: blockingTaskId,
       blocked_task_id: blockedTaskId,
       link_type: (linkType as 'blocks' | 'relates_to' | 'duplicates') || 'blocks',
@@ -420,7 +525,8 @@ export const tasksService = {
       created_at: now(),
     };
 
-    await database.insert('task_links', link);
+    // Use the returned document which has the correct MongoDB-generated _id
+    const link = await database.insert<TaskLink>('task_links', linkData);
 
     // Return enriched link
     const blockingTask = await database.findById<Task>('tasks', blockingTaskId);
@@ -522,5 +628,62 @@ export const tasksService = {
     const statusOnlyFields = ['column_id', 'status'];
     const updateKeys = Object.keys(updates).filter(k => updates[k as keyof CreateTaskInput] !== undefined);
     return updateKeys.every(key => statusOnlyFields.includes(key));
+  },
+
+  // Batch get permissions for multiple tasks (fixes N+1 permission queries)
+  // Caches project data to avoid repeated lookups
+  async getTaskPermissionsBatch(
+    tasks: TaskWithDetails[],
+    userId: string,
+    isAdmin: boolean
+  ): Promise<Map<string, TaskPermissions>> {
+    if (tasks.length === 0) return new Map();
+
+    const projectIds = [...new Set(tasks.map(t => t.project_id))];
+
+    // Batch load all projects and memberships
+    const [projectsMap, membershipsByProject] = await Promise.all([
+      database.findByIds<any>('projects', projectIds),
+      database.findManyByField<any>('project_members', 'project_id', projectIds),
+    ]);
+
+    // Build a map of user's membership by project
+    const userMembershipByProject = new Map<string, any>();
+    membershipsByProject.forEach((members, projectId) => {
+      const userMembership = members.find(m => m.user_id === userId);
+      if (userMembership) {
+        userMembershipByProject.set(projectId, userMembership);
+      }
+    });
+
+    const permissionsMap = new Map<string, TaskPermissions>();
+
+    for (const task of tasks) {
+      const isReporter = task.reporter_id === userId;
+      const isAssignee = task.assignee_id === userId;
+
+      const project = projectsMap.get(task.project_id);
+      const isProjectOwner = project?.owner_id === userId;
+
+      const membership = userMembershipByProject.get(task.project_id);
+      const isProjectMember = !!membership;
+      const projectRole = membership?.role || 'member';
+
+      const canEdit = isAdmin || isProjectOwner || isReporter || projectRole === 'owner' || projectRole === 'admin';
+      const canComment = isProjectMember || isAdmin || isProjectOwner;
+      const canChangeStatus = isProjectMember || isAdmin || isProjectOwner;
+      const canDelete = isAdmin || isProjectOwner || isReporter || projectRole === 'owner';
+
+      permissionsMap.set(task.id, {
+        canEdit,
+        canComment,
+        canChangeStatus,
+        canDelete,
+        isReporter,
+        isAssignee,
+      });
+    }
+
+    return permissionsMap;
   },
 };

@@ -20,6 +20,7 @@ import CreateTaskModal from './CreateTaskModal';
 import BulkActionToolbar from './BulkActionToolbar';
 import { useProjectData } from '../context/ProjectDataContext';
 import { useConfig } from '../context/ConfigContext';
+import { typography } from '../lib/typography';
 
 // Helper to get icon component by name
 const getIconComponentByName = (iconName: string): any => {
@@ -27,14 +28,17 @@ const getIconComponentByName = (iconName: string): any => {
 };
 
 interface ListViewProps {
-  sprintId: string;
+  sprintId?: string;
   tasks: Task[]; // These are filtered tasks passed from parent (e.g. ProjectView)
   onTaskUpdate: (task: Task) => void;
-  mode?: 'planning' | 'sprint';
+  mode?: 'planning' | 'sprint' | 'myTasks';
   projectId?: string;
+  hideToolbar?: boolean;
+  onProjectSelect?: (projectId: string) => void;
+  groupBy?: 'none' | 'stage' | 'date';
 }
 
-const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode = 'planning', projectId }) => {
+const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode = 'planning', projectId, hideToolbar = false, onProjectSelect, groupBy = 'none' }) => {
   const { tasks: allGlobalTasks, sprints, users, updateTask, deleteTask } = useProjectData();
   const { getTaskTypeConfig, getPriorityConfig, getStatusConfig, statuses, priorities } = useConfig();
 
@@ -212,7 +216,10 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
   };
 
   const toggleSection = (section: string) => {
-      setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+      setExpandedSections(prev => ({
+        ...prev,
+        [section]: prev[section] === false // If collapsed (false), expand (true); otherwise collapse (false)
+      }));
   };
 
   const handleTaskClick = (task: Task) => {
@@ -262,7 +269,7 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
     const someSelected = visibleIds.some(id => selectedTaskIds.has(id));
 
     return (
-      <div className={`${GRID_COLS} border-b border-gray-200 dark:border-[#2D2F36] bg-gray-50/90 dark:bg-[#15171E] text-[10px] font-bold text-gray-500 uppercase tracking-wider sticky top-0 z-10 backdrop-blur-sm shadow-sm`}>
+      <div className={`${GRID_COLS} border-b border-gray-200 dark:border-[#2D2F36] bg-gray-50/90 dark:bg-[#15171E] ${typography.tableHeader} sticky top-0 z-10 backdrop-blur-sm shadow-sm`}>
           {/* Select All Checkbox */}
           <Cell className="justify-center">
             <button
@@ -294,26 +301,29 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
     );
   };
 
-  const renderSectionHeader = (title: string, count: number, sectionKey: string) => (
-      <div 
-        onClick={() => toggleSection(sectionKey)}
-        className="flex items-center gap-3 px-4 py-3 bg-gray-100 dark:bg-[#1A1D26] border-y border-gray-200 dark:border-[#2D2F36] cursor-pointer hover:bg-gray-200 dark:hover:bg-[#252832] transition-colors group relative z-0 sticky left-0 right-0"
-      >
-          <div className={`p-0.5 rounded text-gray-500 transition-transform duration-200 ${expandedSections[sectionKey] ? 'rotate-90' : ''}`}>
-              <ChevronRight size={14} />
+  const renderSectionHeader = (title: string, count: number, sectionKey: string) => {
+      const isExpanded = expandedSections[sectionKey] !== false; // Default to expanded if undefined
+      return (
+          <div
+            onClick={() => toggleSection(sectionKey)}
+            className="flex items-center gap-3 px-4 py-3 bg-gray-100 dark:bg-[#1A1D26] border-y border-gray-200 dark:border-[#2D2F36] cursor-pointer hover:bg-gray-200 dark:hover:bg-[#252832] transition-colors group relative z-0 sticky left-0 right-0"
+          >
+              <div className={`p-0.5 rounded text-gray-500 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>
+                  <ChevronRight size={14} />
+              </div>
+              <span className={`${typography.label.primary} tracking-widest`}>{title}</span>
+              <span className={`${typography.caption.bold} bg-white dark:bg-[#0B0C0E] px-2 py-0.5 rounded-full border border-gray-200 dark:border-[#2D2F36]`}>{count}</span>
+              <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setIsCreateModalOpen(true); }}
+                    className="p-1 hover:bg-white dark:hover:bg-[#2D2F36] rounded text-gray-500"
+                  >
+                      <Plus size={14} />
+                  </button>
+              </div>
           </div>
-          <span className="text-xs font-bold text-[#172B4D] dark:text-gray-200 uppercase tracking-widest">{title}</span>
-          <span className="text-[10px] font-bold text-gray-500 bg-white dark:bg-[#0B0C0E] px-2 py-0.5 rounded-full border border-gray-200 dark:border-[#2D2F36]">{count}</span>
-          <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
-              <button 
-                onClick={(e) => { e.stopPropagation(); setIsCreateModalOpen(true); }}
-                className="p-1 hover:bg-white dark:hover:bg-[#2D2F36] rounded text-gray-500"
-              >
-                  <Plus size={14} />
-              </button>
-          </div>
-      </div>
-  );
+      );
+  };
 
   const renderRow = (task: Task, depth: number = 0) => {
       const isExpanded = expandedEpics.has(task.id);
@@ -373,7 +383,7 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
 
                   {/* Key */}
                   <Cell>
-                      <div className="text-[10px] text-gray-500 font-mono truncate hover:text-blue-600 transition-colors" title={task.id}>
+                      <div className={`${typography.key} truncate transition-colors`} title={task.id}>
                           {task.id}
                       </div>
                   </Cell>
@@ -605,9 +615,62 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
   );
 
   const activeSprint = projectSprints.find(s => s.status === 'active') || projectSprints[0];
-  
+
   const getRootTasks = (taskList: Task[]) => {
       return taskList.filter(t => !t.parentEpicId);
+  };
+
+  // Group tasks by stage (sprint/backlog)
+  const groupTasksByStage = (taskList: Task[]): Record<string, Task[]> => {
+    const groups: Record<string, Task[]> = {};
+    taskList.forEach(task => {
+      const sprintName = task.sprintId
+        ? (sprints.find((s: { id: string; name: string }) => s.id === task.sprintId)?.name || 'Unknown Sprint')
+        : 'BACKLOG';
+      if (!groups[sprintName]) groups[sprintName] = [];
+      groups[sprintName].push(task);
+    });
+    return groups;
+  };
+
+  // Group tasks by date
+  const groupTasksByDate = (taskList: Task[]): Record<string, Task[]> => {
+    const groups: Record<string, Task[]> = {
+      'Overdue': [],
+      'Today': [],
+      'Upcoming': [],
+      'No Date': [],
+      'Completed': []
+    };
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    taskList.forEach(task => {
+      if (task.columnId === 'done') {
+        groups['Completed'].push(task);
+      } else if (!task.dueDate) {
+        groups['No Date'].push(task);
+      } else {
+        const dueDate = new Date(task.dueDate);
+        dueDate.setHours(0, 0, 0, 0);
+
+        if (dueDate < today) {
+          groups['Overdue'].push(task);
+        } else if (dueDate.getTime() === today.getTime()) {
+          groups['Today'].push(task);
+        } else {
+          groups['Upcoming'].push(task);
+        }
+      }
+    });
+
+    // Remove empty groups
+    Object.keys(groups).forEach(key => {
+      if (groups[key].length === 0) delete groups[key];
+    });
+
+    return groups;
   };
 
   const activeTasks = mode === 'sprint' ? tasks : (activeSprint ? tasks.filter(t => t.sprintId === activeSprint.id) : []);
@@ -616,33 +679,40 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
   const activeRootTasks = getRootTasks(activeTasks);
   const backlogRootTasks = getRootTasks(backlogTasks);
 
+  // For myTasks mode, prepare grouped tasks
+  const groupedTasks = mode === 'myTasks' && groupBy !== 'none'
+    ? (groupBy === 'stage' ? groupTasksByStage(tasks) : groupTasksByDate(tasks))
+    : null;
+
   return (
     <div className="flex flex-col h-full bg-[#F4F5F7] dark:bg-[#0B0C0E] transition-colors duration-200">
-      
+
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-8 py-6 pb-4 flex-shrink-0 bg-[#F4F5F7] dark:bg-[#0B0C0E]">
-          <div className="flex items-center gap-4">
-              <div className="relative">
-                  <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-                  <input 
-                    type="text" 
-                    placeholder="Filter by keyword..." 
-                    className="pl-9 pr-4 py-1.5 bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#2D2F36] rounded-lg text-sm text-gray-700 dark:text-gray-200 focus:outline-none focus:border-blue-500 transition-all shadow-sm w-64 placeholder-gray-400"
-                  />
-              </div>
-              <div className="flex items-center gap-2">
-                  <button className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#2D2F36] rounded-lg text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#2D2F36] transition-colors shadow-sm">
-                      <LayoutGrid size={14} /> Group by: None
-                  </button>
-              </div>
-          </div>
-          <button 
-            onClick={() => setIsCreateModalOpen(true)}
-            className="flex items-center gap-2 bg-[#172B4D] dark:bg-white text-white dark:text-black px-4 py-2 rounded-lg text-sm font-bold shadow-sm hover:opacity-90 transition-opacity"
-          >
-              <Plus size={16} /> New Task
-          </button>
-      </div>
+      {!hideToolbar && (
+        <div className="flex items-center justify-between px-8 py-6 pb-4 flex-shrink-0 bg-[#F4F5F7] dark:bg-[#0B0C0E]">
+            <div className="flex items-center gap-4">
+                <div className="relative">
+                    <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+                    <input
+                      type="text"
+                      placeholder="Filter by keyword..."
+                      className="pl-9 pr-4 py-1.5 bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#2D2F36] rounded-lg text-sm text-gray-700 dark:text-gray-200 focus:outline-none focus:border-blue-500 transition-all shadow-sm w-64 placeholder-gray-400"
+                    />
+                </div>
+                <div className="flex items-center gap-2">
+                    <button className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#2D2F36] rounded-lg text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#2D2F36] transition-colors shadow-sm">
+                        <LayoutGrid size={14} /> Group by: None
+                    </button>
+                </div>
+            </div>
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="flex items-center gap-2 bg-[#172B4D] dark:bg-white text-white dark:text-black px-4 py-2 rounded-lg text-sm font-bold shadow-sm hover:opacity-90 transition-opacity"
+            >
+                <Plus size={16} /> New Task
+            </button>
+        </div>
+      )}
 
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-12">
@@ -660,9 +730,38 @@ const ListView: React.FC<ListViewProps> = ({ sprintId, tasks, onTaskUpdate, mode
                     )}
                     {activeRootTasks.length > 0 && renderGhostRow("Create task in Sprint...")}
                 </div>
+            ) : mode === 'myTasks' ? (
+                <>
+                    {/* My Tasks Mode with Grouping */}
+                    {groupBy === 'none' ? (
+                        <div className="divide-y divide-gray-100 dark:divide-[#1F2128]">
+                            {getRootTasks(tasks).map(task => renderRow(task))}
+                            {tasks.length === 0 && (
+                                <div className="py-20 text-center text-gray-400">No tasks found.</div>
+                            )}
+                        </div>
+                    ) : groupedTasks ? (
+                        <>
+                            {Object.entries(groupedTasks).map(([groupName, groupTasks]) => {
+                                const sectionKey = groupName.toLowerCase().replace(/\s+/g, '_');
+                                const isExpanded = expandedSections[sectionKey] !== false;
+                                return (
+                                    <React.Fragment key={groupName}>
+                                        {renderSectionHeader(groupName, groupTasks.length, sectionKey)}
+                                        {isExpanded && (
+                                            <div className="divide-y divide-gray-100 dark:divide-[#1F2128] border-b border-gray-200 dark:border-[#2D2F36]">
+                                                {getRootTasks(groupTasks).map(task => renderRow(task))}
+                                            </div>
+                                        )}
+                                    </React.Fragment>
+                                );
+                            })}
+                        </>
+                    ) : null}
+                </>
             ) : (
                 <>
-                    {/* Active Sprint Section */}
+                    {/* Planning Mode - Active Sprint Section */}
                     {activeSprint && (
                         <>
                             {renderSectionHeader(activeSprint.name, activeRootTasks.length, 'active')}

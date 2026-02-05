@@ -1,37 +1,58 @@
 /**
- * Auth Service - Uses Local Backend
- * All Supabase calls have been replaced with local backend API calls
+ * Auth Service - Uses Centralized HTTP Client
  */
 
-import { api } from '../lib/api';
+import { httpClient, setToken, clearToken, getToken } from '../lib/httpClient';
+import { mapUser } from '../lib/mappers';
 
 export interface AuthResult {
   data: { user: any | null; session: any | null };
   error: Error | null;
 }
 
-const API_BASE = '/api/v1';
-
-function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('infinia_token');
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return headers;
-}
-
 export class AuthService {
   // Sign up with email/password
   async signUp(email: string, password: string, fullName: string, avatarUrl?: string): Promise<AuthResult> {
-    return api.auth.signUp(email, password, fullName);
+    try {
+      const response = await httpClient.post<any>('/auth/register', {
+        email,
+        password,
+        name: fullName,
+      }, { skipAuth: true });
+
+      // Store token
+      if (response.token) {
+        setToken(response.token);
+        localStorage.setItem('vulcan_user', JSON.stringify(response.user));
+      }
+
+      return { data: { user: response.user, session: null }, error: null };
+    } catch (error) {
+      return { data: { user: null, session: null }, error: error as Error };
+    }
   }
 
   // Sign in with email/password
   async signIn(email: string, password: string): Promise<AuthResult> {
-    return api.auth.signIn(email, password);
+    try {
+      const response = await httpClient.post<any>('/auth/login', {
+        email,
+        password,
+      }, { skipAuth: true });
+
+      // Store token
+      if (response.token) {
+        setToken(response.token);
+        localStorage.setItem('vulcan_user', JSON.stringify(response.user));
+      }
+
+      return {
+        data: { user: response.user, session: { access_token: response.token } },
+        error: null,
+      };
+    } catch (error) {
+      return { data: { user: null, session: null }, error: error as Error };
+    }
   }
 
   // Sign in with OAuth provider
@@ -43,6 +64,11 @@ export class AuthService {
       return { data: { user: null, session: null }, error: null };
     }
 
+    if (provider === 'google') {
+      window.location.href = '/api/v1/auth/google';
+      return { data: { user: null, session: null }, error: null };
+    }
+
     // Other providers not yet implemented
     console.warn(`OAuth sign-in for ${provider} is not yet supported`);
     return { data: { user: null, session: null }, error: new Error(`${provider} OAuth not supported`) };
@@ -50,63 +76,58 @@ export class AuthService {
 
   // Sign out current user
   async signOut(): Promise<void> {
-    await api.auth.signOut();
+    clearToken();
+    localStorage.removeItem('vulcan_user');
+    localStorage.removeItem('vulcan_session_user');
   }
 
   // Get current session
   async getSession(): Promise<any | null> {
-    const { data } = await api.auth.getSession();
-    return data.session;
+    const token = getToken();
+    const userStr = localStorage.getItem('vulcan_user');
+
+    if (!token || !userStr) {
+      return null;
+    }
+
+    try {
+      const user = JSON.parse(userStr);
+      return { access_token: token, user };
+    } catch {
+      return null;
+    }
   }
 
   // Get current authenticated user profile
   async getCurrentUser(): Promise<any | null> {
-    const token = localStorage.getItem('infinia_token');
+    const token = getToken();
     if (!token) return null;
 
     try {
-      const response = await fetch(`${API_BASE}/auth/me`, {
-        headers: getAuthHeaders(),
-      });
-      const data = await response.json();
-      if (data.success) {
-        return data.data;
-      }
-      return null;
+      const response = await httpClient.get<any>('/auth/me');
+      return mapUser(response);
     } catch (error) {
       console.error('Error fetching current user:', error);
       return null;
     }
   }
 
-  // Reset password - send email (needs backend implementation)
+  // Reset password - send email
   async resetPassword(email: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/auth/reset-password`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
-    const data = await response.json();
-    if (!response.ok || !data.success) {
-      throw new Error(data.error || 'Failed to send password reset email');
-    }
+    await httpClient.post('/auth/reset-password', { email }, { skipAuth: true });
   }
 
   // Update password (for logged in user)
   async updatePassword(newPassword: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/auth/update-password`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ password: newPassword }),
-    });
-    const data = await response.json();
-    if (!response.ok || !data.success) {
-      throw new Error(data.error || 'Failed to update password');
-    }
+    await httpClient.post('/auth/update-password', { password: newPassword });
   }
 
   // Verify OTP (not supported in local backend)
-  async verifyOtp(email: string, token: string, type: 'signup' | 'recovery' | 'invite' | 'magiclink'): Promise<AuthResult> {
+  async verifyOtp(
+    email: string,
+    token: string,
+    type: 'signup' | 'recovery' | 'invite' | 'magiclink'
+  ): Promise<AuthResult> {
     console.warn('OTP verification is not supported with local backend');
     return { data: { user: null, session: null }, error: new Error('OTP not supported') };
   }

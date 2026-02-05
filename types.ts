@@ -115,6 +115,30 @@ export interface Comment {
   timestamp: string;
 }
 
+export interface DocumentComment {
+  id: string;
+  projectId: string;
+  sectionId: string;
+  userId: string;
+  parentCommentId?: string;
+  text: string;
+  mentions: string[];
+  isResolved: boolean;
+  resolvedBy?: string;
+  resolvedAt?: string;
+  isEdited: boolean;
+  // Inline text selection fields (Google Docs style)
+  selectedText?: string;
+  selectionId?: string;
+  createdAt: string;
+  updatedAt: string;
+  // Enriched fields from API
+  userName?: string;
+  userAvatar?: string;
+  resolvedByName?: string;
+  replies?: DocumentComment[];
+}
+
 export type TaskType = 'epic' | 'feature' | 'task' | 'bug' | 'story';
 export type Priority = 'HIGH' | 'MEDIUM' | 'LOW';
 export type CustomerValue = 'HIGH' | 'MEDIUM' | 'LOW';
@@ -207,6 +231,39 @@ export interface DocVersion {
   summary?: string;
 }
 
+// Draft data interface for saving incomplete product wizard state
+export interface ProjectDraftData {
+  productName: string;
+  description: string;
+  tags: string;
+  startDate: string;
+  targetDate: string;
+  ownerId: string;
+  selectedTeam: string[];
+  refinedVision: string;
+  suggestions: Array<{
+    title: string;
+    description: string;
+    type: 'feature' | 'monetization' | 'market' | 'ux';
+    selected?: boolean;
+  }>;
+  generatedDocs: Record<string, string>;
+  generatedEpics: Array<{
+    title: string;
+    description: string;
+    tasks: Array<{
+      title: string;
+      description: string;
+      type: string;
+      priority: string;
+      points: number;
+    }>;
+  }>;
+  inputMode: 'scratch' | 'import';
+  fileText?: string;
+  productImage?: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -247,6 +304,10 @@ export interface Project {
   priorityRank?: number;
   customerCount?: number;
   revenueImpact?: number;
+
+  // Draft fields for saving incomplete product wizard state
+  draftStep?: number;
+  draftData?: ProjectDraftData;
 }
 
 export interface Sprint {

@@ -1,20 +1,8 @@
 /**
- * Documents Service - Uses Local Backend
- * All Supabase calls have been replaced with local backend API calls
+ * Documents Service - Uses Centralized HTTP Client
  */
 
-const API_BASE = '/api/v1';
-
-function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('infinia_token');
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return headers;
-}
+import { httpClient } from '../lib/httpClient';
 
 export interface ProjectDocument {
   id: string;
@@ -38,70 +26,87 @@ export interface DocumentVersion {
 export class DocumentsService {
   // Document section IDs
   static SECTIONS = [
-    'prd', 'roadmap', 'modules', 'business', 'data', 'app',
-    'tech', 'design-guidelines', 'design', 'adrs', 'specs',
-    'user-flows', 'biz-flow', 'sys-flow', 'integrations'
+    'prd',
+    'roadmap',
+    'modules',
+    'business',
+    'data',
+    'app',
+    'tech',
+    'design-guidelines',
+    'design',
+    'adrs',
+    'specs',
+    'user-flows',
+    'biz-flow',
+    'sys-flow',
+    'integrations',
   ];
 
   // Get all documents for project
   async getAll(projectId: string): Promise<ProjectDocument[]> {
-    const response = await fetch(`${API_BASE}/documents?project_id=${projectId}`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success ? data.data || [] : [];
+    try {
+      const response = await httpClient.get<ProjectDocument[]>(
+        `/documents?project_id=${projectId}`
+      );
+      return response || [];
+    } catch {
+      return [];
+    }
   }
 
   // Get specific document section
   async getSection(projectId: string, sectionId: string): Promise<ProjectDocument | null> {
-    const response = await fetch(`${API_BASE}/documents?project_id=${projectId}&section_id=${sectionId}`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success && data.data?.length > 0 ? data.data[0] : null;
+    try {
+      const response = await httpClient.get<ProjectDocument[]>(
+        `/documents?project_id=${projectId}&section_id=${sectionId}`
+      );
+      return response && response.length > 0 ? response[0] : null;
+    } catch {
+      return null;
+    }
   }
 
   // Create or update document section
-  async saveSection(projectId: string, sectionId: string, content: string, summary?: string): Promise<ProjectDocument> {
-    const response = await fetch(`${API_BASE}/documents`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({
-        project_id: projectId,
-        section_id: sectionId,
-        content,
-        summary: summary || 'Updated document',
-      }),
+  async saveSection(
+    projectId: string,
+    sectionId: string,
+    content: string,
+    summary?: string
+  ): Promise<ProjectDocument> {
+    return httpClient.post<ProjectDocument>('/documents', {
+      project_id: projectId,
+      section_id: sectionId,
+      content,
+      summary: summary || 'Updated document',
     });
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error || 'Failed to save document');
-    return data.data;
   }
 
   // Delete document section
   async deleteSection(projectId: string, sectionId: string): Promise<void> {
-    await fetch(`${API_BASE}/documents?project_id=${projectId}&section_id=${sectionId}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders(),
-    });
+    await httpClient.delete(`/documents?project_id=${projectId}&section_id=${sectionId}`);
   }
 
   // Get version history for a section
-  async getVersionHistory(projectId: string, sectionId: string): Promise<any[]> {
-    const response = await fetch(`${API_BASE}/documents/versions?project_id=${projectId}&section_id=${sectionId}`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success ? data.data || [] : [];
+  async getVersionHistory(projectId: string, sectionId: string): Promise<DocumentVersion[]> {
+    try {
+      const response = await httpClient.get<DocumentVersion[]>(
+        `/documents/versions?project_id=${projectId}&section_id=${sectionId}`
+      );
+      return response || [];
+    } catch {
+      return [];
+    }
   }
 
   // Get specific version
   async getVersion(versionId: string): Promise<DocumentVersion | null> {
-    const response = await fetch(`${API_BASE}/documents/versions/${versionId}`, {
-      headers: getAuthHeaders(),
-    });
-    const data = await response.json();
-    return data.success ? data.data : null;
+    try {
+      const response = await httpClient.get<DocumentVersion>(`/documents/versions/${versionId}`);
+      return response;
+    } catch {
+      return null;
+    }
   }
 
   // Restore version
@@ -118,13 +123,16 @@ export class DocumentsService {
   }
 
   // Compare two versions
-  async compareVersions(versionId1: string, versionId2: string): Promise<{
+  async compareVersions(
+    versionId1: string,
+    versionId2: string
+  ): Promise<{
     version1: DocumentVersion;
     version2: DocumentVersion;
   }> {
     const [v1, v2] = await Promise.all([
       this.getVersion(versionId1),
-      this.getVersion(versionId2)
+      this.getVersion(versionId2),
     ]);
 
     if (!v1 || !v2) throw new Error('One or both versions not found');
@@ -136,7 +144,7 @@ export class DocumentsService {
   async exportAll(projectId: string): Promise<Record<string, string>> {
     const docs = await this.getAll(projectId);
     const result: Record<string, string> = {};
-    docs.forEach(doc => {
+    docs.forEach((doc) => {
       result[doc.section_id] = doc.content || '';
     });
     return result;
