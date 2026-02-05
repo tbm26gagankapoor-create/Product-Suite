@@ -7,11 +7,12 @@
 [![React](https://img.shields.io/badge/React-19.2-61DAFB?style=flat-square&logo=react&logoColor=white)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![Supabase](https://img.shields.io/badge/Supabase-Backend-3FCF8E?style=flat-square&logo=supabase&logoColor=white)](https://supabase.com/)
+[![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![MongoDB](https://img.shields.io/badge/MongoDB-7.0-47A248?style=flat-square&logo=mongodb&logoColor=white)](https://www.mongodb.com/)
 
 *Transform your product ideas into actionable plans with AI-assisted documentation, task generation, and sprint management.*
 
-[Features](#-features) • [Getting Started](#-getting-started) • [Architecture](#-architecture) • [Documentation](#-documentation)
+[Features](#-features) • [Getting Started](#-getting-started) • [Documentation](docs/README.md) • [Architecture](docs/architecture/system-architecture.md) • [API Reference](docs/api/README.md)
 
 </div>
 
@@ -80,43 +81,52 @@ Auto-generated documents include:
 
 ## 🚀 Getting Started
 
+### Quick Start
+
+Get up and running in 5 minutes:
+
+```bash
+# Clone the repository
+git clone https://github.com/tbm26gagankapoor-create/Product-Suite.git
+cd Product-Suite
+
+# Install dependencies
+npm install
+cd backend && npm install && cd ..
+
+# Configure environment (see docs for details)
+# Create backend/.env and .env.local
+
+# Start backend
+cd backend && npm run dev
+
+# Start frontend (in new terminal)
+npm run dev
+```
+
+**For detailed setup instructions**, see:
+- 📘 [Quick Start Guide](docs/getting-started/quick-start.md) - 5-minute setup
+- 📗 [Complete Installation Guide](docs/getting-started/installation.md) - Full setup with troubleshooting
+- 📙 [Environment Configuration](docs/getting-started/environment-setup.md) - All environment variables explained
+
 ### Prerequisites
 
-- Node.js 18+
-- npm or yarn
-- Supabase account (for backend)
+- **Node.js** 18+ ([Download](https://nodejs.org/))
+- **MongoDB** 7.0+ (local or [MongoDB Atlas](https://www.mongodb.com/cloud/atlas))
+- **npm** 8+ (comes with Node.js)
 
-### Installation
+### Quick Commands
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/tbm26gagankapoor-create/Product-Suite.git
-   cd Product-Suite
-   ```
+```bash
+# Frontend
+npm run dev          # Start dev server (port 3000)
+npm run build        # Production build
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Configure environment**
-
-   Create a `.env.local` file:
-   ```env
-   VITE_SUPABASE_URL=your_supabase_url
-   VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-   GEMINI_API_KEY=your_gemini_api_key
-   ```
-
-4. **Run the development server**
-   ```bash
-   npm run dev
-   ```
-
-5. **Open in browser**
-   ```
-   http://localhost:5173
-   ```
+# Backend
+cd backend
+npm run dev          # Start with tsx watch (port 3001)
+npm run db:seed      # Seed database with sample data
+```
 
 ## 🏗️ Architecture
 
@@ -124,38 +134,83 @@ Auto-generated documents include:
 
 | Layer | Technology |
 |-------|------------|
-| **Frontend** | React 19, TypeScript, Tailwind CSS |
-| **State** | React Context API |
-| **Backend** | Supabase (PostgreSQL, Auth, Storage) |
-| **AI** | Google Gemini / OpenAI Compatible APIs |
-| **Build** | Vite |
+| **Frontend** | React 19, TypeScript, Vite 6, Tailwind CSS |
+| **State Management** | React Context API (5 contexts) |
+| **Backend** | Node.js 18+, Express 4, TypeScript |
+| **Database** | MongoDB 7.0 with Mongoose 9 |
+| **Authentication** | JWT + OAuth 2.0 (Google, Microsoft, GitHub) |
+| **AI Integration** | Google Gemini, Anthropic Claude |
+| **Email** | Resend |
+| **Security** | Helmet, CORS, Rate Limiting |
+
+**For detailed architecture**, see:
+- 🏛️ [System Architecture](docs/architecture/system-architecture.md) - Complete architecture overview
+- 🗄️ [Database Schema](docs/architecture/database-schema.md) - 27+ models with ERD (coming soon)
+- 🔐 [Authentication & Authorization](docs/architecture/authentication-authorization.md) - Security design (coming soon)
 
 ### Project Structure
 
 ```
-├── components/           # React components
-│   ├── ProductGeneratorModal.tsx   # AI Product Wizard
-│   ├── KanbanBoard.tsx            # Task board
+infinia-products/
+├── components/           # 62 React components
+│   ├── ProductGeneratorModal.tsx   # AI Product Wizard (4 steps)
+│   ├── KanbanBoard.tsx            # Drag-drop task board
 │   ├── SprintsView.tsx            # Sprint management
-│   ├── PlanningView.tsx           # Backlog & sprint planning
+│   ├── TaskDetailModal.tsx        # Task editing
 │   └── ...
 ├── context/              # React Context providers
-│   ├── ProjectDataContext.tsx     # Global state
+│   ├── ProjectDataContext.tsx     # Central data hub
+│   ├── ThemeContext.tsx           # Dark/light mode
 │   └── ...
-├── services/             # API service layer
+├── services/             # Frontend API services
 │   ├── projects.service.ts
 │   ├── tasks.service.ts
 │   └── ...
 ├── lib/                  # Utilities and clients
-│   ├── api.ts                     # Supabase API client
-│   ├── ai.ts                      # AI client wrapper
-│   └── supabase.ts
-├── types/                # TypeScript definitions
-├── hooks/                # Custom React hooks
-└── migrations/           # Database migrations
+│   ├── api.ts            # API client
+│   ├── httpClient.ts     # HTTP wrapper
+│   └── mappers.ts        # Data transformers
+├── types.ts              # TypeScript definitions
+└── backend/
+    └── src/
+        ├── routes/       # 19 API route groups
+        ├── services/     # 22 business logic services
+        ├── models/       # 27+ Mongoose schemas
+        ├── middleware/   # Auth, error handling
+        └── config/       # Environment config
 ```
 
+**See [Code Structure](docs/developer/code-structure.md) for detailed organization** (coming soon)
+
 ## 📖 Documentation
+
+**📚 [Complete Documentation Hub](docs/README.md)** - Start here for all documentation
+
+### Documentation Sections
+
+| Section | Description | Status |
+|---------|-------------|--------|
+| **[Getting Started](docs/getting-started/)** | Quick start, installation, environment setup | ✅ Complete |
+| **[Architecture](docs/architecture/)** | System design, database schema, authentication | 🚧 In Progress |
+| **[API Reference](docs/api/)** | Complete API documentation (80+ endpoints) | 🚧 In Progress |
+| **[User Guides](docs/user-guides/)** | Step-by-step feature guides | 📝 Planned |
+| **[Testing](docs/testing/)** | Test strategy, test plans, test cases (200+) | 🚧 In Progress |
+| **[Developer Guides](docs/developer/)** | Code structure, development workflows | 📝 Planned |
+| **[Deployment](docs/deployment/)** | Production deployment, security checklist | 📝 Planned |
+
+### Quick Links
+
+- 🚀 [Quick Start Guide](docs/getting-started/quick-start.md) - Get running in 5 minutes
+- 🏗️ [System Architecture](docs/architecture/system-architecture.md) - Technical overview
+- 🔑 [Authentication API](docs/api/authentication.md) - Login, OAuth, JWT
+- 🧪 [Test Strategy](docs/testing/test-strategy.md) - Testing approach
+
+### API Statistics
+
+- **80+ API endpoints** across 19 route groups
+- **27+ database models** with relationships
+- **Multi-tenant architecture** with organization scoping
+- **Complete OpenAPI documentation** (coming soon)
 
 ### Product Wizard Flow
 
@@ -222,36 +277,79 @@ Sprint lifecycle management:
 
 ## 🔧 Configuration
 
-### AI Provider
+### Environment Variables
 
-The platform supports multiple AI providers. Configure in `lib/ai.ts`:
+The platform requires configuration for both frontend and backend:
 
-```typescript
-// Default: SAIF API (OpenAI compatible)
-const AI_BASE_URL = 'https://model.iamsaif.ai/v1';
-const AI_MODEL = 'openai/gpt-oss-120b';
+**Backend** (`backend/.env`):
+```env
+# Server
+PORT=3001
+NODE_ENV=development
+
+# Database
+MONGODB_URI=mongodb://localhost:27017/infinia_dev
+
+# JWT Authentication
+JWT_SECRET=your-secret-key-minimum-32-characters
+JWT_EXPIRES_IN=7d
+
+# CORS
+CORS_ORIGIN=http://localhost:3000
+
+# OAuth (optional)
+GOOGLE_CLIENT_ID=your_google_client_id
+MICROSOFT_CLIENT_ID=your_microsoft_client_id
+GITHUB_CLIENT_ID=your_github_client_id
+
+# Email (optional)
+RESEND_API_KEY=your_resend_api_key
 ```
 
-### Database Schema
+**Frontend** (`.env.local` - optional):
+```env
+# AI APIs (for AI features)
+VITE_GEMINI_API_KEY=your_gemini_api_key
+VITE_CLAUDE_API_KEY=your_claude_api_key
+```
 
-Run migrations in Supabase SQL editor:
+**See [Environment Configuration Guide](docs/getting-started/environment-setup.md) for complete variable reference**
+
+### Database Setup
+
+The platform uses MongoDB with 27+ collections:
+
 ```bash
-# See migrations/001_organization_structure.sql
+# Seed database with sample data
+cd backend
+npm run db:seed
+
+# Creates:
+# - Sample organizations
+# - Test users (admin@example.com / Admin123!)
+# - Sample projects with tasks
+# - Sprints and teams
 ```
+
+**See [Database Schema](docs/architecture/database-schema.md) for complete schema documentation** (coming soon)
 
 ## 🌿 Branch Strategy
 
-| Branch | Purpose |
-|--------|---------|
-| `live` | Production-ready code deployed to users |
-| `staging` | Pre-production testing and QA environment |
-| `feature/*` | Feature development branches |
+| Branch | Database | Purpose |
+|--------|----------|---------|
+| `main` | `infinia` | Production-ready code deployed to users |
+| `staging` | `infinia_staging` | Pre-production testing and QA environment |
+| `dev` | `infinia_dev` | Active development branch |
+| `feature/*` | `infinia_dev` | Feature development branches |
 
 ### Workflow
 
-1. Create feature branches from `staging`
-2. Open PRs to merge into `staging` for testing
-3. After QA approval, merge `staging` into `live` for production release
+1. Create feature branches from `dev`
+2. Open PRs to merge into `dev` for integration testing
+3. Merge `dev` into `staging` for QA testing
+4. After QA approval, merge `staging` into `main` for production release
+
+**Note**: Each branch uses a separate MongoDB database for data isolation. See [Database Setup](docs/deployment/database-setup.md) for configuration (coming soon)
 
 ## 🤝 Contributing
 
