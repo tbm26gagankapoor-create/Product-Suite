@@ -210,7 +210,7 @@ export const projectsService = {
     };
   },
 
-  async getAllForUser(userId: string, isAdmin: boolean, organizationId?: string | null): Promise<ProjectWithStats[]> {
+  async getAllForUser(userId: string, isAdmin: boolean, organizationId?: string | null, includeDrafts: boolean = true): Promise<ProjectWithStats[]> {
     // Build query to filter at database level
     const query: Record<string, any> = {};
     if (organizationId) {
@@ -235,6 +235,11 @@ export const projectsService = {
       accessibleProjects = allProjects.filter(project =>
         project.owner_id === userId || membershipProjectIds.has(project.id)
       );
+    }
+
+    // Filter drafts if not included
+    if (!includeDrafts) {
+      accessibleProjects = accessibleProjects.filter(project => project.status !== 'draft');
     }
 
     // Batch get stats (1 set of queries instead of N*4 queries)

@@ -10,7 +10,7 @@ router.use(authMiddleware);
 // Get all projects (filtered by user access)
 router.get('/', async (req: AuthRequest, res: Response) => {
   const user = req.user;
-  const { member_id } = req.query;
+  const { member_id, include_drafts } = req.query;
 
   // If no user (not logged in), return empty list
   if (!user) {
@@ -23,8 +23,51 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     return res.json({ success: true, data: projects });
   }
 
-  const projects = await projectsService.getAllForUser(user.id, user.isAdmin, user.organizationId);
+  const projects = await projectsService.getAllForUser(user.id, user.isAdmin, user.organizationId, include_drafts === 'true');
   res.json({ success: true, data: projects });
+});
+
+// Get all drafts for the current user
+router.get('/drafts/list', async (req: AuthRequest, res: Response) => {
+  const user = req.user;
+
+  if (!user) {
+    return res.json({ success: true, data: [] });
+  }
+
+  // Get all projects (including drafts) and filter to only drafts
+  const allProjects = await projectsService.getAllForUser(user.id, user.isAdmin, user.organizationId, true);
+  const drafts = allProjects.filter(p => p.status === 'draft');
+
+  res.json({ success: true, data: drafts });
+});
+
+// Finalize a draft (convert to active project)
+router.post('/:id/finalize', async (req: AuthRequest, res: Response) => {
+  const user = req.user;
+  const projectId = req.params.id;
+
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+
+  // Check access
+  const hasAccess = await projectsService.userHasAccess(projectId, user.id, user.isAdmin);
+  if (!hasAccess) {
+    return res.status(403).json({ success: false, error: 'Access denied' });
+  }
+
+  const project = await projectsService.update(projectId, {
+    status: 'active',
+    draft_step: undefined,
+    draft_data: undefined
+  });
+
+  if (!project) {
+    return res.status(404).json({ success: false, error: 'Project not found' });
+  }
+
+  res.json({ success: true, data: project });
 });
 
 // Get project by ID (with access check)
@@ -67,10 +110,10 @@ router.get('/code/:code', async (req: AuthRequest, res: Response) => {
   res.json({ success: true, data: project });
 });
 
-// Create project
+// Create project or draft
 router.post('/', async (req: AuthRequest, res: Response) => {
   const user = req.user;
-  const { name, description, code, owner_id, organization_id, image_url, icon, icon_color, vision, prd, docs } = req.body;
+  const { name, description, code, owner_id, organization_id, image_url, icon, icon_color, vision, prd, docs, status, draft_step, draft_data } = req.body;
 
   if (!name || !code) {
     return res.status(400).json({
@@ -89,7 +132,10 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       owner_id: actualOwnerId,
       organization_id: actualOrganizationId,
       image_url, icon, icon_color,
-      vision, prd, docs
+      vision, prd, docs,
+      status: status || 'active',
+      draft_step,
+      draft_data
     });
 
     // Automatically add the creator as a project member

@@ -5,7 +5,7 @@ import {
   Search, Plus, MoreHorizontal, Calendar, ArrowUpRight, LayoutGrid,
   List as ListIcon, Download, Trash2, Edit3, X, AlertTriangle, Loader2,
   CheckSquare, Hexagon, Clock, Activity, Users, DollarSign, TrendingUp, Flag,
-  ChevronDown, AlignLeft, Target, ImageIcon
+  ChevronDown, AlignLeft, Target, ImageIcon, File as FileIcon, Play
 } from 'lucide-react';
 import { useProjectData } from '../context/ProjectDataContext';
 import { Project, Task, User } from '../types';
@@ -37,6 +37,57 @@ const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
 
   // Icon Picker State
   const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
+
+  // Draft State
+  const [draftToResume, setDraftToResume] = useState<Project | null>(null);
+
+  const handleSaveDraft = async (draftData: any): Promise<string> => {
+      const tempProjectId = draftData.id || `p-${Date.now()}`;
+      const projectKey = draftData.name.substring(0, 3).toUpperCase();
+
+      const draftProject: Project = {
+          id: tempProjectId,
+          name: draftData.name,
+          key: projectKey,
+          description: draftData.description || '',
+          status: 'draft',
+          progress: 0,
+          members: [draftData.draft_data?.ownerId].filter(Boolean),
+          ownerId: draftData.draft_data?.ownerId,
+          startDate: draftData.draft_data?.startDate,
+          dueDate: draftData.draft_data?.targetDate,
+          tags: draftData.draft_data?.tags?.split(',').map((t: string) => t.trim()).filter(Boolean) || ['Draft'],
+          color: 'from-gray-500 to-gray-600',
+          imageUrl: draftData.draft_data?.productImage,
+          prd: draftData.draft_data?.generatedDocs?.prd || '',
+          docs: draftData.draft_data?.generatedDocs || {},
+          vision: draftData.vision || '',
+          draftStep: draftData.draft_step,
+          draftData: draftData.draft_data
+      };
+
+      // Save or update the draft
+      let savedProject: Project | null;
+      if (draftData.id && projects.some(p => p.id === draftData.id)) {
+          // Update existing draft
+          savedProject = await updateProject(draftProject.id, draftProject);
+      } else {
+          // Create new draft
+          savedProject = await addProject(draftProject);
+      }
+
+      return savedProject?.id || tempProjectId;
+  };
+
+  const handleResumeDraft = (project: Project) => {
+      setDraftToResume(project);
+      setIsGeneratorOpen(true);
+  };
+
+  const handleModalClose = () => {
+      setIsGeneratorOpen(false);
+      setDraftToResume(null);
+  };
 
   const handleCreateProduct = async (productData: any) => {
       const tempProjectId = `p-${Date.now()}`;
@@ -499,7 +550,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
                     return (
                         <div
                             key={project.id}
-                            onClick={() => onProjectSelect(project.id)}
+                            onClick={() => project.status === 'draft' ? handleResumeDraft(project) : onProjectSelect(project.id)}
                             className="bg-white dark:bg-[#15171E] rounded-2xl border border-gray-200 dark:border-white/5 p-6 hover:border-blue-500/30 dark:hover:border-blue-500/30 hover:shadow-2xl hover:shadow-blue-500/5 transition-all cursor-pointer group flex flex-col h-full relative overflow-hidden"
                         >
                             {/* Decorative Background Blob - matches product theme */}
@@ -509,9 +560,16 @@ const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
                             <div className="flex items-start justify-between mb-5 relative z-10">
                                 <ProductIcon project={project} size="lg" className="shadow-lg shadow-gray-200 dark:shadow-none group-hover:scale-110 transition-transform duration-300" />
                                 <div className="flex items-center gap-2">
-                                    <div className={`flex items-center justify-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${getStatusColor(project.status)}`}>
-                                        {project.status}
-                                    </div>
+                                    {project.status === 'draft' ? (
+                                        <div className="flex items-center justify-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800">
+                                            <FileIcon size={10} className="mr-1" />
+                                            Draft
+                                        </div>
+                                    ) : (
+                                        <div className={`flex items-center justify-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${getStatusColor(project.status)}`}>
+                                            {project.status}
+                                        </div>
+                                    )}
                                     <button 
                                         onClick={(e) => toggleDropdown(e, project.id)}
                                         className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-[#1F2128] transition-colors"
@@ -543,10 +601,20 @@ const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
                             {/* Content */}
                             <h3 className="text-xl font-bold text-[#172B4D] dark:text-white mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center gap-2 relative z-10">
                                 {project.name}
-                                <ArrowUpRight size={18} className="opacity-0 group-hover:opacity-100 transition-all -ml-2 group-hover:ml-0 text-blue-500" />
+                                {project.status === 'draft' ? (
+                                    <Play size={18} className="opacity-0 group-hover:opacity-100 transition-all -ml-2 group-hover:ml-0 text-blue-500" />
+                                ) : (
+                                    <ArrowUpRight size={18} className="opacity-0 group-hover:opacity-100 transition-all -ml-2 group-hover:ml-0 text-blue-500" />
+                                )}
                             </h3>
                             <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed mb-4 line-clamp-2 min-h-[40px] relative z-10">
-                                {project.description}
+                                {project.status === 'draft' ? (
+                                    <span className="italic text-amber-600 dark:text-amber-400">
+                                        Click to resume from step {project.draftStep || 1}
+                                    </span>
+                                ) : (
+                                    project.description
+                                )}
                             </p>
 
                             {/* Metadata Row */}
@@ -1030,10 +1098,12 @@ const ProjectList: React.FC<ProjectListProps> = ({ onProjectSelect }) => {
       )}
 
       {/* AI Product Generator Modal */}
-      <ProductGeneratorModal 
-        isOpen={isGeneratorOpen} 
-        onClose={() => setIsGeneratorOpen(false)}
+      <ProductGeneratorModal
+        isOpen={isGeneratorOpen}
+        onClose={handleModalClose}
         onCreate={handleCreateProduct}
+        onSaveDraft={handleSaveDraft}
+        draftProject={draftToResume}
       />
 
       {/* Jira Import Modal */}

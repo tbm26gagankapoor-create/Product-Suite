@@ -78,6 +78,8 @@ interface ProductGeneratorModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCreate?: (productData: any) => Promise<void> | void;
+  onSaveDraft?: (draftData: any) => Promise<string | void> | string | void; // Returns draft project ID
+  draftProject?: any; // For resuming from draft
 }
 
 interface DocSection {
@@ -121,11 +123,13 @@ const STEPS = [
   { id: 'planning', label: 'Plan', icon: Layout },
 ];
 
-const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, onClose, onCreate }) => {
+const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, onClose, onCreate, onSaveDraft, draftProject }) => {
   const { organizationUsers: users, currentUser } = useProjectData();
   const { error: showError, warning, success, info } = useToast();
   const { docNavItems } = useConfig();
   const [step, setStep] = useState<'input' | 'processing' | 'review' | 'generating_docs' | 'prd_view' | 'planning' | 'creating_project'>('input');
+  const [draftProjectId, setDraftProjectId] = useState<string | null>(draftProject?.id || null);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
 
   // Input Mode
   const [inputMode, setInputMode] = useState<'scratch' | 'import'>('scratch');
@@ -421,6 +425,41 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
         setCreationProgress(0);
     }
   }, [isOpen]);
+
+  // Load draft data when resuming
+  useEffect(() => {
+    if (draftProject && draftProject.draftData) {
+      const data = draftProject.draftData;
+      setProductName(data.productName || '');
+      setDescription(data.description || '');
+      setTags(data.tags || '');
+      setStartDate(data.startDate || new Date().toISOString().split('T')[0]);
+      setTargetDate(data.targetDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+      setOwnerId(data.ownerId || currentUser?.id || users[0]?.id || '');
+      setSelectedTeam(data.selectedTeam || []);
+      setRefinedVision(data.refinedVision || '');
+      setSuggestions(data.suggestions || []);
+      setGeneratedDocs(data.generatedDocs || {});
+      setGeneratedEpics(data.generatedEpics || []);
+      setInputMode(data.inputMode || 'scratch');
+      setFileText(data.fileText || '');
+      setProductImage(data.productImage || null);
+
+      // Restore the step
+      const stepMap: Record<number, typeof step> = {
+        1: 'input',
+        2: 'review',
+        3: 'prd_view',
+        4: 'planning'
+      };
+      if (draftProject.draftStep) {
+        setStep(stepMap[draftProject.draftStep] || 'input');
+        setCompletedSteps(new Set(Object.values(stepMap).slice(0, draftProject.draftStep)));
+      }
+
+      info(`Resuming from draft: ${draftProject.name}`);
+    }
+  }, [draftProject]);
 
   // Loading Simulator
   useEffect(() => {
@@ -1641,6 +1680,148 @@ Please check the browser console for detailed logs and try again.`;
       setCreationProgress(100);
   };
 
+  const handleSaveDraft = async () => {
+      if (!onSaveDraft) return;
+
+      setIsSavingDraft(true);
+
+      try {
+          // Map current step to draft_step number
+          const stepMap = {
+              'input': 1,
+              'review': 2,
+              'prd_view': 3,
+              'planning': 4
+          };
+
+          const draftData = {
+              productName,
+              description,
+              tags,
+              startDate,
+              targetDate,
+              ownerId,
+              selectedTeam,
+              refinedVision,
+              suggestions,
+              generatedDocs,
+              generatedEpics,
+              inputMode,
+              fileText,
+              productImage
+          };
+
+          const savedDraftId = await onSaveDraft({
+              id: draftProjectId,
+              name: productName || 'Untitled Product',
+              description,
+              status: 'draft',
+              draft_step: stepMap[step as keyof typeof stepMap] || 1,
+              draft_data: draftData,
+              vision: refinedVision,
+              docs: generatedDocs
+          });
+
+          if (savedDraftId && typeof savedDraftId === 'string') {
+              setDraftProjectId(savedDraftId);
+          }
+
+          // If at documents stage and documents aren't generated, trigger background generation
+          if (step === 'prd_view' && savedDraftId) {
+              const incompleteDocs = docNavItems.filter(doc => !generatedDocs[doc.id]);
+              if (incompleteDocs.length > 0) {
+                  info('Draft saved! Documents are being generated in the background...');
+                  // Start background doc generation without waiting
+                  generateDocsInBackground(savedDraftId, incompleteDocs);
+              } else {
+                  success('Draft saved successfully! You can resume from where you left off.');
+              }
+          } else {
+              success('Draft saved successfully! You can resume from where you left off.');
+          }
+      } catch (error) {
+          console.error('Failed to save draft:', error);
+          showError('Failed to save draft. Please try again.');
+      } finally {
+          setIsSavingDraft(false);
+      }
+  };
+
+  // Background document generation (fire and forget)
+  const generateDocsInBackground = async (draftId: string, incompleteDocs: Array<{id: string; label: string}>) => {
+      try {
+          const context = `
+            Product: ${productName}
+            Description: ${description}
+            Refined Vision: ${refinedVision}
+            Tags: ${tags}
+            ${fileText ? `\nOriginal Document Context:\n${fileText.substring(0, 150000)}` : ''}
+          `;
+
+          for (const doc of incompleteDocs) {
+              try {
+                  // Generate document
+                  const docPrompt = `
+                    Role: Chief Product Architect.
+                    Task: Generate the "${doc.label}" document.
+                    Context Summary: ${context}
+
+                    **Style Guide:**
+                    - Use 'bg-white dark:bg-[#15171E] rounded-xl border border-gray-200 dark:border-[#2D2F36] p-6 mb-6' for main containers.
+                    - Use <h2> for section headers (text-xl font-bold mb-4).
+                    - Use tables for structured data.
+                    - Make it look professional, spacious, and easy to read.
+
+                    Output strictly valid HTML using Tailwind CSS classes. No markdown.
+                  `;
+
+                  const res = await generateWithRetry({
+                      model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
+                      contents: [{ role: 'user', parts: [{ text: docPrompt }] }]
+                  });
+
+                  if (res.text && onSaveDraft) {
+                      const newDoc = cleanHtml(res.text);
+                      const updatedDocs = { ...generatedDocs, [doc.id]: newDoc };
+
+                      // Update draft with new document
+                      await onSaveDraft({
+                          id: draftId,
+                          name: productName || 'Untitled Product',
+                          description,
+                          status: 'draft',
+                          draft_step: 3,
+                          draft_data: {
+                              productName,
+                              description,
+                              tags,
+                              startDate,
+                              targetDate,
+                              ownerId,
+                              selectedTeam,
+                              refinedVision,
+                              suggestions,
+                              generatedDocs: updatedDocs,
+                              generatedEpics,
+                              inputMode,
+                              fileText,
+                              productImage
+                          },
+                          vision: refinedVision,
+                          docs: updatedDocs
+                      });
+                  }
+              } catch (error) {
+                  console.error(`Failed to generate ${doc.label}:`, error);
+                  // Continue with next doc
+              }
+          }
+      } catch (error) {
+          console.error('Background doc generation failed:', error);
+          // Silently fail - user can regenerate when they resume
+      }
+  };
+
   const toggleSuggestion = (id: string) => {
       const suggestion = suggestions.find(s => s.id === id);
       if (!suggestion) return;
@@ -2319,14 +2500,37 @@ STRICT RULES:
                             </div>
                         )}
 
-                        {/* Generate Button */}
-                        <button
-                            onClick={handleGenerate}
-                            disabled={inputMode === 'scratch' ? !productName : !uploadedFile || isExtracting}
-                            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3.5 rounded-xl font-bold text-sm shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
-                        >
-                            <Sparkles size={16} /> Generate Product Vision
-                        </button>
+                        {/* Action Buttons */}
+                        <div className="flex gap-3">
+                            {/* Save as Draft Button */}
+                            <button
+                                onClick={handleSaveDraft}
+                                disabled={isSavingDraft || !productName}
+                                className="flex-1 border-2 border-gray-200 dark:border-[#2D2F36] text-gray-700 dark:text-gray-300 py-3.5 rounded-xl font-bold text-sm hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title={!productName ? 'Product name is required' : 'Save progress and continue later'}
+                            >
+                                {isSavingDraft ? (
+                                    <>
+                                        <Loader2 size={16} className="animate-spin" />
+                                        Saving...
+                                    </>
+                                ) : (
+                                    <>
+                                        <FileIcon size={16} />
+                                        Save Draft
+                                    </>
+                                )}
+                            </button>
+
+                            {/* Generate Button */}
+                            <button
+                                onClick={handleGenerate}
+                                disabled={inputMode === 'scratch' ? !productName : !uploadedFile || isExtracting}
+                                className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3.5 rounded-xl font-bold text-sm shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                            >
+                                <Sparkles size={16} /> Generate Vision
+                            </button>
+                        </div>
                     </div>
                 )}
 
@@ -3134,13 +3338,35 @@ STRICT RULES:
             {/* Footer Actions */}
             {(step === 'review' || step === 'prd_view' || step === 'planning') && (
                 <div className="px-6 py-3 border-t border-gray-200 dark:border-[#1F2128] bg-white dark:bg-[#0A0B0D] flex justify-between items-center z-10 flex-shrink-0">
-                    <button
-                        onClick={() => handleStepChange(getPreviousStep(), 'backward')}
-                        disabled={isTransitioning}
-                        className="px-4 py-2.5 text-xs font-bold text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-2 transition-colors disabled:opacity-50"
-                    >
-                        <ArrowLeft size={14} /> Back
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => handleStepChange(getPreviousStep(), 'backward')}
+                            disabled={isTransitioning}
+                            className="px-4 py-2.5 text-xs font-bold text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-2 transition-colors disabled:opacity-50"
+                        >
+                            <ArrowLeft size={14} /> Back
+                        </button>
+
+                        {/* Save as Draft Button */}
+                        <button
+                            onClick={handleSaveDraft}
+                            disabled={isSavingDraft || !productName}
+                            className="px-4 py-2.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white border border-gray-200 dark:border-[#2D2F36] rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={!productName ? 'Product name is required to save draft' : 'Save progress and continue later'}
+                        >
+                            {isSavingDraft ? (
+                                <>
+                                    <Loader2 size={14} className="animate-spin" />
+                                    Saving...
+                                </>
+                            ) : (
+                                <>
+                                    <FileIcon size={14} />
+                                    Save as Draft
+                                </>
+                            )}
+                        </button>
+                    </div>
 
                     <div className="flex items-center gap-3">
                         {step === 'review' && (
