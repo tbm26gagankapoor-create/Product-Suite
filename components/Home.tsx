@@ -1,21 +1,18 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
-  Clock, CheckCircle, AlertCircle, TrendingUp, MoreHorizontal, Calendar,
-  ChevronsRight, ArrowUpRight, Activity, Zap, GitCommit, MessageSquare,
-  Box, AlertTriangle, ArrowRight, ChevronDown, Layers, Users, CheckSquare,
-  Plus, Hexagon, Lightbulb, Ban, LayoutGrid, BarChart2
+  Calendar, ArrowUpRight, Activity, Zap, GitCommit,
+  ChevronDown, CheckSquare, Hexagon, Lightbulb, Ban, Sparkles, ArrowRight
 } from 'lucide-react';
 import ProductIcon from './ProductIcon';
 import TaskDetailModal from './TaskDetailModal';
 import CreateTaskModal from './CreateTaskModal';
 import SprintModal from './SprintModal';
 import ProductGeneratorModal from './ProductGeneratorModal';
+import CopilotModal from './CopilotModal';
 import { Task, Sprint, Team, Project, User } from '../types';
 import { useProjectData } from '../context/ProjectDataContext';
 import { View } from '../App';
-import { activityService } from '../services/activity.service';
-
 interface HomeProps {
   onViewChange: (view: View) => void;
 }
@@ -28,23 +25,7 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
   const [createTaskType, setCreateTaskType] = useState<'task' | 'epic'>('task');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-
-  // Real activity logs
-  const [recentUpdates, setRecentUpdates] = useState<any[]>([]);
-
-  useEffect(() => {
-      activityService.getFeed({ limit: 5 }).then(res => {
-          setRecentUpdates(res.data.map(log => ({
-              id: log.id,
-              user: log.user || { name: 'System', avatarUrl: '' },
-              action: log.action,
-              target: 'Entity',
-              project: 'Infinia',
-              time: new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              type: log.entity_type
-          })));
-      });
-  }, []);
+  const [isCopilotOpen, setIsCopilotOpen] = useState(false);
 
   // myTasks comes from API (filtered by user_id - assignee OR reporter)
   const myTasks = allMyTasks.slice(0, 5);
@@ -230,203 +211,233 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+      {/* Bento Grid Dashboard - Symmetrical 6-column layout */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
+
+        {/* Row 1: Stats Cards - 3 equal cards */}
         {stats.map((stat, i) => (
-          <div 
-            key={i} 
+          <div
+            key={i}
             onClick={() => onViewChange(stat.target)}
-            className="bg-white dark:bg-[#15171E] p-6 rounded-2xl border border-gray-200 dark:border-[#1F2128] shadow-sm hover:border-blue-500/30 dark:hover:border-blue-500/30 transition-all cursor-pointer group relative flex flex-col justify-between min-h-[140px]"
+            className="xl:col-span-2 bg-white dark:bg-[#15171E] p-5 rounded-2xl border border-gray-200 dark:border-[#1F2128] shadow-sm hover:border-blue-500/30 dark:hover:border-blue-500/30 transition-all cursor-pointer group flex flex-col justify-between min-h-[120px]"
           >
-            <div className="flex justify-between items-start mb-4">
+            <div className="flex justify-between items-start">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${stat.bg} ${stat.color}`}>
                     <stat.icon size={20} />
                 </div>
-                <ArrowUpRight size={16} className="text-gray-400 dark:text-gray-600 group-hover:text-blue-500 transition-colors" />
+                <ArrowUpRight size={14} className="text-gray-400 dark:text-gray-600 group-hover:text-blue-500 transition-colors" />
             </div>
             <div>
-                <div className="text-3xl font-bold text-[#172B4D] dark:text-white tracking-tight mb-1">{stat.value}</div>
-                <div className="text-[11px] font-bold text-[#5E6C84] dark:text-[#a1a1aa] uppercase tracking-wider">{stat.label}</div>
+                <div className="text-3xl font-bold text-[#172B4D] dark:text-white tracking-tight">{stat.value}</div>
+                <div className="text-[10px] font-bold text-[#5E6C84] dark:text-[#a1a1aa] uppercase tracking-wider">{stat.label}</div>
             </div>
           </div>
         ))}
-      </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        {/* Main Column */}
-        <div className="xl:col-span-2 space-y-8">
-            
-            {/* Product Health Tracker */}
-            <div className="bg-white dark:bg-[#15171E] rounded-2xl border border-gray-200 dark:border-[#1F2128] shadow-sm overflow-hidden">
-                <div className="px-8 py-6 border-b border-gray-200 dark:border-[#1F2128] flex items-center justify-between">
-                    <h2 className="text-lg font-bold text-[#172B4D] dark:text-white">Product Health</h2>
-                    <button onClick={() => onViewChange('project-list')} className="text-xs font-bold text-[#5E6C84] dark:text-gray-500 hover:text-[#172B4D] dark:hover:text-white transition-colors">View All</button>
-                </div>
-                
-                <div className="grid grid-cols-12 px-8 py-4 text-[10px] font-bold text-[#5E6C84] dark:text-[#a1a1aa] uppercase tracking-wider border-b border-gray-100 dark:border-[#1F2128] bg-gray-50 dark:bg-[#15171E]">
-                    <div className="col-span-5">Product</div>
-                    <div className="col-span-2">Health</div>
-                    <div className="col-span-3">Active Sprint</div>
-                    <div className="col-span-2 text-right">Progress</div>
-                </div>
+        {/* Row 2-3: Copilot CTA (left half) + Workload (right half) */}
+        {/* Copilot CTA - Left Half */}
+        <div
+          onClick={() => setIsCopilotOpen(true)}
+          className="xl:col-span-3 md:col-span-1 min-h-[280px] bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 dark:from-[#0a0a0c] dark:via-[#0f1014] dark:to-[#131620] rounded-2xl border border-gray-800 dark:border-[#1F2128] shadow-xl overflow-hidden relative group cursor-pointer hover:border-purple-500/50 transition-all"
+        >
+          {/* Animated gradient background */}
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-purple-900/20 via-transparent to-transparent"></div>
+          <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-purple-900/10 to-transparent"></div>
 
-                <div className="divide-y divide-gray-100 dark:divide-[#1F2128]">
-                    {productHealth.map(prod => (
-                        <div key={prod.id} onClick={() => onViewChange('project')} className="grid grid-cols-12 px-8 py-5 items-center hover:bg-gray-50 dark:hover:bg-[#1F2128]/50 transition-colors cursor-pointer group">
-                            <div className="col-span-5 flex items-center gap-4">
-                                <ProductIcon project={prod} size="sm" />
-                                <div>
-                                    <div className="text-sm font-bold text-[#172B4D] dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{prod.name}</div>
-                                    <div className="text-[10px] text-[#5E6C84] dark:text-gray-500 mt-0.5">Velocity: {prod.velocity} pts</div>
-                                </div>
-                            </div>
-                            <div className="col-span-2">
-                                {getHealthBadge(prod.health)}
-                            </div>
-                            <div className="col-span-3">
-                                <div className="text-sm font-medium text-[#172B4D] dark:text-gray-300">{prod.activeSprint}</div>
-                            </div>
-                            <div className="col-span-2 flex items-center justify-end gap-3">
-                                <div className="w-20 h-1.5 bg-gray-100 dark:bg-[#2D2F36] rounded-full overflow-hidden">
-                                    <div className={`h-full rounded-full ${prod.progress > 75 ? 'bg-emerald-500' : 'bg-gray-400 dark:bg-gray-600'}`} style={{ width: `${prod.progress}%` }}></div>
-                                </div>
-                                <span className="text-xs font-bold text-[#5E6C84] dark:text-gray-400 w-8 text-right">{prod.progress}%</span>
-                            </div>
-                        </div>
-                    ))}
-                </div>
+          {/* Grid pattern overlay */}
+          <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'1\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")' }}></div>
+
+          <div className="relative z-10 h-full flex flex-col items-center justify-center p-8 text-center">
+            {/* AI Icon with glow */}
+            <div className="relative mb-6">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center shadow-lg shadow-purple-500/25 group-hover:shadow-purple-500/40 group-hover:scale-105 transition-all duration-300">
+                <Sparkles size={28} className="text-white" />
+              </div>
+              {/* Glow effect */}
+              <div className="absolute -inset-2 bg-purple-500/20 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10"></div>
             </div>
 
-            {/* My Priorities */}
-            <div className="bg-white dark:bg-[#15171E] rounded-2xl border border-gray-200 dark:border-[#1F2128] shadow-sm overflow-hidden min-h-[300px]">
-                 <div className="px-8 py-6 border-b border-gray-200 dark:border-[#1F2128] flex items-center gap-3">
-                    <h2 className="text-lg font-bold text-[#172B4D] dark:text-white">My Priorities</h2>
-                    <span className="bg-blue-100 text-blue-700 dark:bg-[#2D2F36] dark:text-blue-400 text-xs px-2 py-0.5 rounded-full font-bold">{allMyTasks.length}</span>
-                </div>
+            <h2 className="text-xl font-semibold text-white mb-2">AI Copilot</h2>
+            <p className="text-gray-400 text-sm mb-6 max-w-[260px] leading-relaxed">
+              Create tasks, summarize projects, and get intelligent suggestions powered by AI.
+            </p>
 
-                <div className="divide-y divide-gray-100 dark:divide-[#1F2128]">
-                    {myTasks.length > 0 ? myTasks.map((task) => (
-                    <div 
-                        key={task.id} 
-                        onClick={() => setSelectedTask(task)}
-                        className="px-8 py-5 flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-[#1F2128]/50 transition-colors group cursor-pointer"
-                    >
-                        <div className={`w-2.5 h-2.5 rounded-full mt-1 flex-shrink-0 ${
-                            task.columnId === 'done' ? 'bg-emerald-500' :
-                            task.columnId === 'inprogress' ? 'bg-blue-500' :
-                            'bg-gray-300 dark:bg-gray-600'
-                        }`}></div>
+            <button className="inline-flex items-center gap-2 px-6 py-3 bg-white hover:bg-gray-100 text-gray-900 text-sm font-semibold rounded-xl transition-all group-hover:shadow-lg group-hover:shadow-white/10">
+              <span>Open Copilot</span>
+              <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
+            </button>
+          </div>
+        </div>
 
-                        <div className="flex-1 min-w-0">
-                            <h3 className="text-sm font-bold text-[#172B4D] dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate mb-1">
-                                {task.title}
-                            </h3>
-                            <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase">{task.id}</span>
-                                <span className="text-[9px] font-bold bg-gray-100 dark:bg-[#2D2F36] text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded border border-gray-200 dark:border-[#3D404A] uppercase tracking-wide">
-                                    {(task.columnId || 'todo').replace('inprogress', 'IN PROGRESS').replace('todo', 'TO DO')}
-                                </span>
+        {/* Workload - Right Half */}
+        <div className="xl:col-span-3 md:col-span-1 min-h-[280px] bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#1F2128] rounded-2xl p-6 shadow-sm flex flex-col">
+          <div className="flex items-center justify-between mb-6">
+              <span className="text-sm font-bold text-[#172B4D] dark:text-white">Current Workload</span>
+              <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase ${
+                  !isBalanced ? 'bg-red-100 text-red-600 dark:bg-red-900/20 dark:text-red-400' :
+                  'bg-green-100 text-green-600 dark:bg-green-900/20 dark:text-green-400'
+              }`}>
+                  {isBalanced ? 'Balanced' : 'At Risk'}
+              </span>
+          </div>
+
+          <div className="flex items-end justify-between mb-6">
+              <div>
+                  <div className="text-5xl font-bold text-[#172B4D] dark:text-white leading-none">{allActiveTasks.length}</div>
+                  <div className="text-xs text-[#5E6C84] dark:text-gray-500 font-bold uppercase tracking-wider mt-2">Active Tasks</div>
+              </div>
+              <div className="text-right">
+                  <div className="text-3xl font-bold text-[#172B4D] dark:text-white leading-none">{pointsAllocated}</div>
+                  <div className="text-xs text-[#5E6C84] dark:text-gray-500 font-bold uppercase tracking-wider mt-2">Points</div>
+              </div>
+          </div>
+
+          <div className="h-3 w-full flex rounded-full overflow-hidden bg-gray-100 dark:bg-[#1F2128] mb-6">
+              <div className="bg-red-500" style={{ width: `${(laggingCount / totalActive) * 100}%` }}></div>
+              <div className="bg-blue-500" style={{ width: `${(onTimeCount / totalActive) * 100}%` }}></div>
+              <div className="bg-gray-300 dark:bg-gray-700" style={{ width: `${(notStartedCount / totalActive) * 100}%` }}></div>
+          </div>
+
+          <div className="space-y-3 mt-auto">
+              <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-3">
+                      <div className="w-2.5 h-2.5 rounded-full bg-red-500"></div>
+                      <span className="text-[#5E6C84] dark:text-gray-400 font-medium">Lagging</span>
+                  </div>
+                  <span className="font-bold text-[#172B4D] dark:text-white">{laggingCount}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-3">
+                      <div className="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
+                      <span className="text-[#5E6C84] dark:text-gray-400 font-medium">On Time</span>
+                  </div>
+                  <span className="font-bold text-[#172B4D] dark:text-white">{onTimeCount}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-3">
+                      <div className="w-2.5 h-2.5 rounded-full bg-gray-300 dark:bg-gray-700"></div>
+                      <span className="text-[#5E6C84] dark:text-gray-400 font-medium">Not Started</span>
+                  </div>
+                  <span className="font-bold text-[#172B4D] dark:text-white">{notStartedCount}</span>
+              </div>
+          </div>
+        </div>
+
+        {/* Row 4-5: Product Health (left half) + My Priorities (right half) */}
+        {/* Product Health - Left Half */}
+        <div className="xl:col-span-3 md:col-span-1 min-h-[280px] bg-white dark:bg-[#15171E] rounded-2xl border border-gray-200 dark:border-[#1F2128] shadow-sm overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-[#1F2128] flex items-center justify-between flex-shrink-0">
+                <h2 className="text-sm font-bold text-[#172B4D] dark:text-white">Product Health</h2>
+                <button onClick={() => onViewChange('project-list')} className="text-xs font-bold text-blue-500 hover:text-blue-600 transition-colors">View All</button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+                {productHealth.length > 0 ? (
+                    <div className="divide-y divide-gray-100 dark:divide-[#1F2128]">
+                        {productHealth.map(prod => (
+                            <div key={prod.id} onClick={() => onViewChange('project')} className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-[#1F2128]/50 transition-colors cursor-pointer group">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <ProductIcon project={prod} size="sm" />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-bold text-[#172B4D] dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">{prod.name}</div>
+                                        <div className="text-[10px] text-[#5E6C84] dark:text-gray-500">{prod.activeSprint}</div>
+                                    </div>
+                                    {getHealthBadge(prod.health)}
+                                </div>
+                                <div className="flex items-center gap-3 pl-11">
+                                    <div className="flex-1 h-1.5 bg-gray-100 dark:bg-[#2D2F36] rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full ${prod.progress > 75 ? 'bg-emerald-500' : 'bg-blue-500'}`} style={{ width: `${prod.progress}%` }}></div>
+                                    </div>
+                                    <span className="text-xs font-bold text-[#5E6C84] dark:text-gray-400 w-10 text-right">{prod.progress}%</span>
+                                </div>
                             </div>
-                        </div>
-
-                        {task.dueDate && (
-                            <div className="text-xs font-bold text-gray-500 dark:text-gray-500 bg-gray-100 dark:bg-[#1F2128] px-3 py-1.5 rounded-lg border border-gray-200 dark:border-[#2D2F36]">
-                                {new Date(task.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                            </div>
-                        )}
-
-                        <button className="text-gray-300 dark:text-gray-600 hover:text-[#172B4D] dark:hover:text-white transition-colors">
-                            <MoreHorizontal size={18} />
-                        </button>
+                        ))}
                     </div>
-                    )) : (
-                    <div className="p-8 text-center text-gray-500 dark:text-gray-400 text-sm">No priority tasks assigned.</div>
-                    )}
-                </div>
+                ) : (
+                    <div className="flex-1 flex items-center justify-center p-8">
+                        <div className="text-center">
+                            {/* Minimal Product Illustration */}
+                            <div className="mx-auto mb-5 w-12 h-12 rounded-xl bg-gray-100 dark:bg-[#1F2128] flex items-center justify-center">
+                              <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none">
+                                <rect x="3" y="3" width="7" height="7" rx="1.5" className="stroke-gray-400 dark:stroke-gray-500" strokeWidth="1.5" />
+                                <rect x="14" y="3" width="7" height="7" rx="1.5" className="stroke-gray-400 dark:stroke-gray-500" strokeWidth="1.5" />
+                                <rect x="3" y="14" width="7" height="7" rx="1.5" className="stroke-gray-400 dark:stroke-gray-500" strokeWidth="1.5" />
+                                <rect x="14" y="14" width="7" height="7" rx="1.5" className="stroke-gray-300 dark:stroke-gray-600" strokeWidth="1.5" strokeDasharray="2 2" />
+                              </svg>
+                            </div>
+                            <p className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">No products yet</p>
+                            <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">Create your first product to get started</p>
+                            <button onClick={() => onViewChange('project-list')} className="text-xs font-medium text-gray-900 dark:text-white bg-gray-100 dark:bg-[#1F2128] hover:bg-gray-200 dark:hover:bg-[#2D2F36] px-4 py-2 rounded-lg transition-colors">
+                              + New Product
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
 
-        {/* Sidebar Column */}
-        <div className="flex flex-col h-full space-y-8">
-           
-           {/* Current Workload */}
-           <div className="bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#1F2128] rounded-2xl p-8 shadow-sm flex flex-col">
-                <div className="flex items-center justify-between mb-8">
-                    <span className="text-xs font-bold text-[#5E6C84] dark:text-[#a1a1aa] uppercase tracking-wider">Current Workload</span>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                        !isBalanced ? 'bg-red-100 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 
-                        'bg-green-100 text-green-600 dark:bg-green-900/20 dark:text-green-400'
-                    }`}>
-                        {isBalanced ? 'Balanced' : 'At Risk'}
-                    </span>
+        {/* My Priorities - Right Half */}
+        <div className="xl:col-span-3 md:col-span-1 min-h-[280px] bg-white dark:bg-[#15171E] rounded-2xl border border-gray-200 dark:border-[#1F2128] shadow-sm overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-[#1F2128] flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-bold text-[#172B4D] dark:text-white">My Priorities</h2>
+                    <span className="bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 text-xs px-2 py-0.5 rounded-full font-bold">{allMyTasks.length}</span>
                 </div>
-                
-                <div className="flex items-end justify-between mb-6">
-                    <div>
-                        <div className="text-5xl font-bold text-[#172B4D] dark:text-white leading-none mb-1">{allActiveTasks.length}</div>
-                        <div className="text-xs text-[#5E6C84] dark:text-gray-500 font-bold uppercase tracking-wider mt-2">Active Tasks</div>
-                    </div>
-                    <div className="text-right">
-                        <div className="text-3xl font-bold text-[#172B4D] dark:text-white leading-none mb-1">{pointsAllocated}</div>
-                        <div className="text-xs text-[#5E6C84] dark:text-gray-500 font-bold uppercase tracking-wider mt-2">Pts Allocated</div>
-                    </div>
-                </div>
+                <button onClick={() => onViewChange('my-tasks')} className="text-xs font-bold text-blue-500 hover:text-blue-600 transition-colors">View All</button>
+            </div>
 
-                <div className="h-3 w-full flex rounded-full overflow-hidden bg-gray-100 dark:bg-[#1F2128] mb-8">
-                    <div className="bg-red-500" style={{ width: `${(laggingCount / totalActive) * 100}%` }}></div>
-                    <div className="bg-blue-500" style={{ width: `${(onTimeCount / totalActive) * 100}%` }}></div>
-                    <div className="bg-gray-300 dark:bg-gray-700" style={{ width: `${(notStartedCount / totalActive) * 100}%` }}></div>
-                </div>
+            <div className="flex-1 overflow-y-auto">
+                {myTasks.length > 0 ? (
+                    <div className="divide-y divide-gray-100 dark:divide-[#1F2128]">
+                        {myTasks.map((task) => (
+                            <div
+                                key={task.id}
+                                onClick={() => setSelectedTask(task)}
+                                className="px-6 py-4 flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-[#1F2128]/50 transition-colors group cursor-pointer"
+                            >
+                                <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                                    task.columnId === 'done' ? 'bg-emerald-500' :
+                                    task.columnId === 'inprogress' ? 'bg-blue-500' :
+                                    'bg-gray-300 dark:bg-gray-600'
+                                }`}></div>
 
-                <div className="space-y-4">
-                    <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-3">
-                            <div className="w-2.5 h-2.5 rounded-full bg-red-500"></div>
-                            <span className="text-[#5E6C84] dark:text-gray-400 font-bold">Lagging</span>
-                        </div>
-                        <span className="font-bold text-[#172B4D] dark:text-white">{laggingCount}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-3">
-                            <div className="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
-                            <span className="text-[#5E6C84] dark:text-gray-400 font-bold">On Time</span>
-                        </div>
-                        <span className="font-bold text-[#172B4D] dark:text-white">{onTimeCount}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-3">
-                            <div className="w-2.5 h-2.5 rounded-full bg-gray-300 dark:bg-gray-700"></div>
-                            <span className="text-[#5E6C84] dark:text-gray-400 font-bold">Not Started</span>
-                        </div>
-                        <span className="font-bold text-[#172B4D] dark:text-white">{notStartedCount}</span>
-                    </div>
-                </div>
-           </div>
-
-           {/* Live Updates */}
-           <div className="bg-white dark:bg-[#15171E] rounded-2xl border border-gray-200 dark:border-[#1F2128] shadow-sm flex flex-col overflow-hidden h-full min-h-[300px]">
-                <div className="px-8 py-6 border-b border-gray-200 dark:border-[#1F2128]">
-                    <h2 className="text-lg font-bold text-[#172B4D] dark:text-white">Live Updates</h2>
-                </div>
-
-                <div className="p-4 flex-1 flex flex-col justify-center">
-                    {recentUpdates.length > 0 ? (
-                        <div className="w-full space-y-5 px-4">
-                            {recentUpdates.map((update, idx) => (
-                                <div key={idx} className="flex gap-4 text-left group">
-                                    <div className="text-[10px] text-gray-400 dark:text-gray-500 w-12 pt-1 font-mono">{update.time}</div>
-                                    <div className="flex-1 text-xs text-gray-600 dark:text-gray-400 leading-relaxed">
-                                        <span className="font-bold text-[#172B4D] dark:text-gray-200">{update.user.name.split(' ')[0]}</span> {update.action} <span className="text-blue-600 dark:text-blue-400 font-medium">{update.target}</span>
+                                <div className="flex-1 min-w-0">
+                                    <h3 className="text-sm font-bold text-[#172B4D] dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate mb-1">
+                                        {task.title}
+                                    </h3>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase">{task.id}</span>
+                                        <span className="text-[9px] font-bold bg-gray-100 dark:bg-[#2D2F36] text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded uppercase">
+                                            {(task.columnId || 'todo').replace('inprogress', 'IN PROGRESS').replace('todo', 'TO DO')}
+                                        </span>
                                     </div>
                                 </div>
-                            ))}
+
+                                {task.dueDate && (
+                                    <div className="text-xs font-bold text-gray-500 dark:text-gray-500 bg-gray-100 dark:bg-[#1F2128] px-2.5 py-1 rounded-lg">
+                                        {new Date(task.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="flex-1 flex items-center justify-center p-8">
+                        <div className="text-center">
+                            {/* Minimal checkmark illustration */}
+                            <div className="mx-auto mb-5 w-12 h-12 rounded-full bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center">
+                              <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none">
+                                <path d="M7 13l3 3 7-7" className="stroke-emerald-500" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </div>
+                            <p className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">All caught up</p>
+                            <p className="text-xs text-gray-400 dark:text-gray-500">No tasks need your attention</p>
                         </div>
-                    ) : (
-                        <div className="text-center text-gray-400 dark:text-gray-500 text-xs">No recent updates.</div>
-                    )}
-                </div>
-           </div>
+                    </div>
+                )}
+            </div>
         </div>
+
       </div>
 
       {selectedTask && (
@@ -456,6 +467,11 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
         isOpen={isProductModalOpen}
         onClose={() => setIsProductModalOpen(false)}
         onCreate={handleProductSubmit}
+      />
+
+      <CopilotModal
+        isOpen={isCopilotOpen}
+        onClose={() => setIsCopilotOpen(false)}
       />
     </div>
   );
