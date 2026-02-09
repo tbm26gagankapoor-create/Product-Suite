@@ -8,7 +8,7 @@ import TeamsView from './TeamsView';
 import DocsView from './DocsView';
 import Overview from './Overview';
 import PlanningView from './PlanningView';
-import PRDView from './PRDView';
+import PRDView from './prd/PRDView';
 import DateFixerModal from './DateFixerModal';
 import { Project, Task } from '../types';
 import { useProjectData } from '../context/ProjectDataContext';

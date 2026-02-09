@@ -75,12 +75,14 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
   const user = req.user;
   const projectId = req.params.id;
 
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+
   // Check access
-  if (user) {
-    const hasAccess = await projectsService.userHasAccess(projectId, user.id, user.isAdmin);
-    if (!hasAccess) {
-      return res.status(403).json({ success: false, error: 'Access denied' });
-    }
+  const hasAccess = await projectsService.userHasAccess(projectId, user.id, user.isAdmin);
+  if (!hasAccess) {
+    return res.status(403).json({ success: false, error: 'Access denied' });
   }
 
   const project = await projectsService.getById(projectId);
@@ -93,6 +95,11 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 // Get project by code (with access check)
 router.get('/code/:code', async (req: AuthRequest, res: Response) => {
   const user = req.user;
+
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+
   const project = await projectsService.getByCode(req.params.code);
 
   if (!project) {
@@ -100,11 +107,9 @@ router.get('/code/:code', async (req: AuthRequest, res: Response) => {
   }
 
   // Check access
-  if (user) {
-    const hasAccess = await projectsService.userHasAccess(project.id, user.id, user.isAdmin);
-    if (!hasAccess) {
-      return res.status(403).json({ success: false, error: 'Access denied' });
-    }
+  const hasAccess = await projectsService.userHasAccess(project.id, user.id, user.isAdmin);
+  if (!hasAccess) {
+    return res.status(403).json({ success: false, error: 'Access denied' });
   }
 
   res.json({ success: true, data: project });
@@ -113,7 +118,7 @@ router.get('/code/:code', async (req: AuthRequest, res: Response) => {
 // Create project or draft
 router.post('/', async (req: AuthRequest, res: Response) => {
   const user = req.user;
-  const { name, description, code, owner_id, organization_id, image_url, icon, icon_color, vision, prd, docs, status, draft_step, draft_data } = req.body;
+  const { name, description, code, owner_id, owner_ids, organization_id, image_url, icon, icon_color, vision, prd, docs, status, draft_step, draft_data } = req.body;
 
   if (!name || !code) {
     return res.status(400).json({
@@ -123,13 +128,14 @@ router.post('/', async (req: AuthRequest, res: Response) => {
   }
 
   try {
-    // Set owner to current user if not specified
-    const actualOwnerId = owner_id || user?.id;
+    // Build owner_ids array: prefer owner_ids, fall back to owner_id, then current user
+    const actualOwnerIds: string[] = owner_ids?.length ? owner_ids : (owner_id ? [owner_id] : [user?.id].filter(Boolean));
     // Set organization_id from request body, or fall back to user's organization
     const actualOrganizationId = organization_id || user?.organizationId;
     const project = await projectsService.create({
       name, description, code,
-      owner_id: actualOwnerId,
+      owner_ids: actualOwnerIds,
+      owner_id: actualOwnerIds[0],
       organization_id: actualOrganizationId,
       image_url, icon, icon_color,
       vision, prd, docs,
@@ -138,10 +144,10 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       draft_data
     });
 
-    // Automatically add the creator as a project member
-    if (user && actualOwnerId === user.id) {
+    // Automatically add all owners as project members
+    for (const oid of actualOwnerIds) {
       try {
-        await projectsService.addMember(project.id, user.id, 'owner');
+        await projectsService.addMember(project.id, oid, 'owner');
       } catch (e) {
         // Ignore if already a member
       }
@@ -191,7 +197,8 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
     return res.status(404).json({ success: false, error: 'Project not found' });
   }
 
-  if (!user.isAdmin && project.owner_id !== user.id) {
+  const isOwner = project.owner_ids?.includes(user.id) || project.owner_id === user.id;
+  if (!user.isAdmin && !isOwner) {
     return res.status(403).json({ success: false, error: 'Only project owner or admin can delete' });
   }
 
@@ -234,7 +241,8 @@ router.post('/:id/members', async (req: AuthRequest, res: Response) => {
   }
 
   // Only owner or admin can add members
-  if (!user.isAdmin && project.owner_id !== user.id) {
+  const isOwnerAdd = project.owner_ids?.includes(user.id) || project.owner_id === user.id;
+  if (!user.isAdmin && !isOwnerAdd) {
     return res.status(403).json({ success: false, error: 'Only project owner or admin can add members' });
   }
 
@@ -269,7 +277,8 @@ router.delete('/:id/members/:userId', async (req: AuthRequest, res: Response) =>
   }
 
   // Only owner or admin can remove members
-  if (!user.isAdmin && project.owner_id !== user.id) {
+  const isOwnerRemove = project.owner_ids?.includes(user.id) || project.owner_id === user.id;
+  if (!user.isAdmin && !isOwnerRemove) {
     return res.status(403).json({ success: false, error: 'Only project owner or admin can remove members' });
   }
 

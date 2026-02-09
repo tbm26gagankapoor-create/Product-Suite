@@ -14,8 +14,9 @@ const CreateTeamModal: React.FC<CreateTeamModalProps> = ({ isOpen, onClose, onSu
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
-  // Use organization-scoped users - only show users from current organization
-  const { organizationUsers, currentOrganization } = useProjectData();
+  // Use organization-scoped members - only show users from current organization
+  const { organizationMembers, currentOrganization } = useProjectData();
+  const organizationUsers = organizationMembers.map(m => m.user);
 
   if (!isOpen) return null;
 

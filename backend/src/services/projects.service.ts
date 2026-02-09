@@ -6,7 +6,8 @@ export interface ProjectDraftData {
   tags: string;
   startDate: string;
   targetDate: string;
-  ownerId: string;
+  ownerId?: string;
+  ownerIds?: string[];
   selectedTeam: string[];
   refinedVision: string;
   suggestions: Array<{
@@ -41,10 +42,15 @@ export interface Project {
   progress_percentage: number;
   is_favorite: boolean;
   owner_id: string | null;
+  owner_ids: string[];
   organization_id?: string | null;
   image_url: string | null;
   icon: string | null;
   icon_color: string | null;
+  // Document fields
+  vision?: string | null;
+  prd?: string | null;
+  docs?: Record<string, string> | null;
   // Draft fields for saving incomplete product wizard state
   draft_step?: number | null;
   draft_data?: ProjectDraftData | null;
@@ -64,6 +70,7 @@ export interface CreateProjectInput {
   description?: string;
   code: string;
   owner_id?: string;
+  owner_ids?: string[];
   organization_id?: string;
   image_url?: string;
   icon?: string;
@@ -214,6 +221,7 @@ export const projectsService = {
     // Build query to filter at database level
     const query: Record<string, any> = {};
     if (organizationId) {
+      // database.ts normalizes string IDs to ObjectIds automatically
       query.organization_id = organizationId;
     }
 
@@ -229,12 +237,17 @@ export const projectsService = {
     } else {
       // Get user's memberships in a single query
       const memberships = await database.findMany<any>('project_members', { user_id: userId });
-      const membershipProjectIds = new Set(memberships.map(pm => pm.project_id));
+      // Convert membership project IDs to strings for comparison
+      const membershipProjectIds = new Set(memberships.map(pm => pm.project_id?.toString()));
 
       // Filter projects where user is owner or member
-      accessibleProjects = allProjects.filter(project =>
-        project.owner_id === userId || membershipProjectIds.has(project.id)
-      );
+      // Convert IDs to strings for comparison since MongoDB may return ObjectIds
+      accessibleProjects = allProjects.filter(project => {
+        const projectId = project.id?.toString();
+        const isOwner = project.owner_ids?.map(id => id?.toString()).includes(userId) ||
+                        project.owner_id?.toString() === userId;
+        return isOwner || membershipProjectIds.has(projectId);
+      });
     }
 
     // Filter drafts if not included
@@ -268,8 +281,8 @@ export const projectsService = {
     const project = await database.findById<Project>('projects', projectId);
     if (!project) return false;
 
-    // User is owner
-    if (project.owner_id === userId) return true;
+    // User is owner (check both owner_ids array and legacy owner_id)
+    if (project.owner_ids?.map(id => id?.toString()).includes(userId) || project.owner_id === userId) return true;
 
     // User is member
     const membership = await database.findOne<any>('project_members', {
@@ -291,20 +304,28 @@ export const projectsService = {
   },
 
   async create(input: CreateProjectInput): Promise<ProjectWithStats> {
-    const existing = await this.getByCode(input.code);
+    // Auto-deduplicate code: if "UBE" exists, try "UBE1", "UBE2", etc.
+    let code = input.code;
+    let existing = await this.getByCode(code);
     if (existing) {
-      throw new Error('UNIQUE constraint failed: code already exists');
+      let suffix = 1;
+      while (existing) {
+        code = `${input.code}${suffix}`;
+        existing = await this.getByCode(code);
+        suffix++;
+      }
     }
 
     const projectData: Project = {
       id: generateUUID(),
       name: input.name,
       description: input.description || null,
-      code: input.code,
+      code,
       status: input.status || 'active',
       progress_percentage: 0,
       is_favorite: false,
-      owner_id: input.owner_id || null,
+      owner_id: input.owner_ids?.[0] || input.owner_id || null,
+      owner_ids: input.owner_ids || (input.owner_id ? [input.owner_id] : []),
       organization_id: input.organization_id || null,
       image_url: input.image_url || null,
       icon: input.icon || null,
@@ -327,15 +348,18 @@ export const projectsService = {
     // Check if transactions are supported
     const canUseTransactions = await supportsTransactions();
 
+    let savedProject: Project;
+
     if (canUseTransactions) {
       // Use transaction for atomic project + columns creation
+      let txProject: Project | undefined;
       await withTransaction(async (session) => {
-        await database.insertWithSession('projects', projectData, session);
+        txProject = await database.insertWithSession('projects', projectData, session);
 
         for (let index = 0; index < columns.length; index++) {
           await database.insertWithSession('columns_status', {
             id: generateUUID(),
-            project_id: projectData.id,
+            project_id: txProject!.id,
             title: columns[index],
             display_order: index,
             color: colors[index],
@@ -344,14 +368,15 @@ export const projectsService = {
           }, session);
         }
       });
+      savedProject = txProject!;
     } else {
       // Fallback: non-transactional insert
-      await database.insert('projects', projectData);
+      savedProject = await database.insert('projects', projectData);
 
       for (let index = 0; index < columns.length; index++) {
         await database.insert('columns_status', {
           id: generateUUID(),
-          project_id: projectData.id,
+          project_id: savedProject.id,
           title: columns[index],
           display_order: index,
           color: colors[index],
@@ -361,7 +386,8 @@ export const projectsService = {
       }
     }
 
-    return (await this.getById(projectData.id))!;
+    // Use the actual ID from the inserted document (MongoDB-generated _id)
+    return (await this.getById(savedProject.id))!;
   },
 
   async update(id: string, input: Partial<CreateProjectInput & { status?: string; progress_percentage?: number; is_favorite?: boolean; image_url?: string | null; icon?: string | null; icon_color?: string | null }>): Promise<ProjectWithStats | null> {
@@ -380,23 +406,56 @@ export const projectsService = {
     // Check if transactions are supported
     const canUseTransactions = await supportsTransactions();
 
+    // Helper to clean up task-dependent data
+    const cleanupTaskDependencies = async (projectId: string, sessionFn?: (collection: any, filter: any) => Promise<any>) => {
+      const deleteFn = sessionFn || ((collection: any, filter: any) => database.deleteMany(collection, filter));
+      const tasks = await database.findMany<any>('tasks', { project_id: projectId });
+      const taskIds = tasks.map((t: any) => t.id);
+      if (taskIds.length > 0) {
+        for (const taskId of taskIds) {
+          await deleteFn('comments', { task_id: taskId });
+          await deleteFn('subtasks', { task_id: taskId });
+          await deleteFn('task_tags', { task_id: taskId });
+          await deleteFn('attachments', { task_id: taskId });
+          await deleteFn('task_links', { blocking_task_id: taskId });
+          await deleteFn('task_links', { blocked_task_id: taskId });
+        }
+      }
+    };
+
     if (canUseTransactions) {
       // Use transaction for atomic cascading delete
       return withTransaction(async (session) => {
+        // Clean up task-dependent data first
+        const tasks = await database.findMany<any>('tasks', { project_id: id });
+        const taskIds = tasks.map((t: any) => t.id);
+        for (const taskId of taskIds) {
+          await database.deleteManyWithSession('comments', { task_id: taskId }, session);
+          await database.deleteManyWithSession('subtasks', { task_id: taskId }, session);
+          await database.deleteManyWithSession('task_tags', { task_id: taskId }, session);
+          await database.deleteManyWithSession('attachments', { task_id: taskId }, session);
+          await database.deleteManyWithSession('task_links', { blocking_task_id: taskId }, session);
+          await database.deleteManyWithSession('task_links', { blocked_task_id: taskId }, session);
+        }
         await database.deleteManyWithSession('tasks', { project_id: id }, session);
         await database.deleteManyWithSession('sprints', { project_id: id }, session);
         await database.deleteManyWithSession('columns_status', { project_id: id }, session);
         await database.deleteManyWithSession('tags', { project_id: id }, session);
         await database.deleteManyWithSession('project_members', { project_id: id }, session);
+        await database.deleteManyWithSession('document_comments', { project_id: id }, session);
+        await database.deleteManyWithSession('team_projects', { project_id: id }, session);
         return database.deleteWithSession('projects', id, session);
       });
     } else {
       // Fallback: non-transactional delete
+      await cleanupTaskDependencies(id);
       await database.deleteMany('tasks', { project_id: id });
       await database.deleteMany('sprints', { project_id: id });
       await database.deleteMany('columns_status', { project_id: id });
       await database.deleteMany('tags', { project_id: id });
       await database.deleteMany('project_members', { project_id: id });
+      await database.deleteMany('document_comments', { project_id: id });
+      await database.deleteMany('team_projects', { project_id: id });
       return database.delete('projects', id);
     }
   },

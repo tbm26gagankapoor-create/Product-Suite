@@ -24,7 +24,7 @@ const Header: React.FC<HeaderProps> = ({
   onFixDates,
   missingDateCount = 0
 }) => {
-  const { users, sprints, tasks } = useProjectData();
+  const { users, sprints, tasks, currentOrganization } = useProjectData();
   const tabs = ['Overview', 'Documents', 'Sprints', 'Tasks', 'Boards', 'Timeline', 'Calendar', 'Teams', 'Files'];
 
   // Sprint selector state
@@ -52,11 +52,11 @@ const Header: React.FC<HeaderProps> = ({
 
   // Get task counts per sprint
   const getSprintTaskCount = (sprintId: string) => {
-    return tasks.filter(t => t.sprintId === sprintId && t.projectId === activeProject?.id).length;
+    return tasks.filter(t => t.sprintId === sprintId && t.projectId === activeProject?.id && t.type !== 'epic').length;
   };
 
   // Get all tasks count (for "All Tasks" option)
-  const allProjectTasksCount = tasks.filter(t => t.projectId === activeProject?.id).length;
+  const allProjectTasksCount = tasks.filter(t => t.projectId === activeProject?.id && t.type !== 'epic').length;
 
   // Get selected sprint
   const selectedSprint = sprints.find(s => s.id === selectedSprintId);
@@ -88,12 +88,18 @@ const Header: React.FC<HeaderProps> = ({
                     <button className="text-gray-400 hover:text-yellow-400 transition-colors">
                         <Star size={16} />
                     </button>
-                    <div className="px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400 text-[10px] font-bold uppercase tracking-wider border border-green-200 dark:border-green-500/20">
+                    <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                        activeProject?.status === 'Completed' ? 'bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400 border-green-200 dark:border-green-500/20' :
+                        activeProject?.status === 'In Progress' ? 'bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-500/20' :
+                        activeProject?.status === 'On Hold' ? 'bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/20' :
+                        activeProject?.status === 'Archived' ? 'bg-gray-100 dark:bg-gray-500/10 text-gray-700 dark:text-gray-400 border-gray-200 dark:border-gray-500/20' :
+                        'bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-500/20'
+                    }`}>
                         {activeProject?.status || 'Active'}
                     </div>
                  </div>
                  <div className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
-                    <span className="hover:underline cursor-pointer">Vulcan Technologies</span>
+                    <span className="hover:underline cursor-pointer">{currentOrganization?.name || 'Organization'}</span>
                     <span>/</span>
                     <span className="hover:underline cursor-pointer">Product</span>
                  </div>

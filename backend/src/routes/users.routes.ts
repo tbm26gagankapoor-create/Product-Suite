@@ -78,8 +78,16 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Update user
-router.patch('/:id', async (req, res) => {
+// Update user - ownership check: can only update own profile (or admin)
+router.patch('/:id', async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+  // Only allow updating own profile or if admin
+  if (req.user.id !== req.params.id && !req.user.isAdmin) {
+    return res.status(403).json({ success: false, error: 'You can only update your own profile' });
+  }
+
   // Validate request body
   const validation = validate(updateUserSchema, req.body);
   if (!validation.success) {
@@ -105,8 +113,16 @@ router.patch('/:id', async (req, res) => {
   res.json({ success: true, data: user });
 });
 
-// Delete user
-router.delete('/:id', async (req, res) => {
+// Delete user - ownership check: can only delete own account (or admin)
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+  // Only allow deleting own account or if admin
+  if (req.user.id !== req.params.id && !req.user.isAdmin) {
+    return res.status(403).json({ success: false, error: 'You can only delete your own account' });
+  }
+
   const deleted = await usersService.delete(req.params.id);
   if (!deleted) {
     return res.status(404).json({ success: false, error: 'User not found' });

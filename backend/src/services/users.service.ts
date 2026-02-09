@@ -94,6 +94,12 @@ export const usersService = {
   },
 
   async delete(id: string): Promise<boolean> {
+    // Cascade: clean up all user-related data
+    await database.deleteMany('organization_members', { user_id: id });
+    await database.deleteMany('project_members', { user_id: id });
+    await database.deleteMany('team_members', { user_id: id });
+    await database.deleteMany('comments', { user_id: id });
+    await database.deleteMany('notifications', { user_id: id });
     return database.delete('users', id);
   },
 

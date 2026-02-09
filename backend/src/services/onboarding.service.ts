@@ -105,37 +105,64 @@ export const onboardingService = {
       updated_at: now(),
     };
 
-    await database.insert('users', user);
+    // Create all records with cleanup on failure
+    const createdEntities: string[] = [];
+    try {
+      await database.insert('users', user);
+      createdEntities.push('user');
 
-    // Create the organization (with owner_id already set)
+      // Create the organization (with owner_id already set)
+      const organization_data = {
+        id: organizationId,
+        name: input.organization.name,
+        slug,
+        domain: input.organization.domain || null,
+        logo_url: input.organization.logo_url || null,
+        owner_id: userId,
+        settings: {
+          allowDomainJoin: true,
+          requireApproval: true,
+          defaultRole: 'member',
+        },
+        created_at: now(),
+        updated_at: now(),
+      };
+
+      await database.insert('organizations', organization_data);
+      createdEntities.push('organization');
+
+      // Create organization member record (owner as admin)
+      const membership = {
+        id: generateUUID(),
+        organization_id: organizationId,
+        user_id: userId,
+        role: 'owner',
+        joined_at: now(),
+      };
+
+      await database.insert('organization_members', membership);
+      createdEntities.push('membership');
+    } catch (error) {
+      // Rollback created entities on failure
+      if (createdEntities.includes('membership')) {
+        await database.deleteMany('organization_members', { user_id: userId }).catch(() => {});
+      }
+      if (createdEntities.includes('organization')) {
+        await database.delete('organizations', organizationId).catch(() => {});
+      }
+      if (createdEntities.includes('user')) {
+        await database.delete('users', userId).catch(() => {});
+      }
+      throw error;
+    }
+
     const organization = {
       id: organizationId,
       name: input.organization.name,
       slug,
       domain: input.organization.domain || null,
-      logo_url: input.organization.logo_url || null,
       owner_id: userId,
-      settings: {
-        allowDomainJoin: true,
-        requireApproval: true,
-        defaultRole: 'member',
-      },
-      created_at: now(),
-      updated_at: now(),
     };
-
-    await database.insert('organizations', organization);
-
-    // Create organization member record (owner as admin)
-    const membership = {
-      id: generateUUID(),
-      organization_id: organizationId,
-      user_id: userId,
-      role: 'owner',
-      joined_at: now(),
-    };
-
-    await database.insert('organization_members', membership);
 
     // Generate JWT token
     const token = jwt.sign(

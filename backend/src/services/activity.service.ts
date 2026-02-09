@@ -105,20 +105,20 @@ export const activityService = {
 
   // Get activity for a task (including comments on that task)
   async getByTask(taskId: string): Promise<ActivityLogWithUser[]> {
-    const allActivities = await database.getAll<ActivityLog>('activity_log');
-    const activities: ActivityLog[] = [];
+    // Query directly for task activities instead of loading entire collection
+    const taskActivities = await database.findMany<ActivityLog>('activity_log', { entity_id: taskId });
 
-    for (const a of allActivities) {
-      if (a.entity_id === taskId) {
-        activities.push(a);
-      } else if (a.entity_type === 'comment') {
-        const isOnTask = await this.isCommentOnTask(a.entity_id, taskId);
-        if (isOnTask) {
-          activities.push(a);
-        }
+    // Also get comment activities that belong to this task
+    const commentActivities = await database.findMany<ActivityLog>('activity_log', { entity_type: 'comment' });
+    const relevantCommentActivities: ActivityLog[] = [];
+    for (const a of commentActivities) {
+      const isOnTask = await this.isCommentOnTask(a.entity_id, taskId);
+      if (isOnTask) {
+        relevantCommentActivities.push(a);
       }
     }
 
+    const activities = [...taskActivities, ...relevantCommentActivities];
     const sorted = activities.sort((a: ActivityLog, b: ActivityLog) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
@@ -135,13 +135,19 @@ export const activityService = {
   async getByProject(projectId: string): Promise<ActivityLogWithUser[]> {
     // Get all task IDs for the project
     const tasks = await database.findMany<any>('tasks', { project_id: projectId });
-    const taskIds = new Set(tasks.map((t: any) => t.id));
+    const taskIds = tasks.map((t: any) => t.id);
 
-    const allActivities = await database.getAll<ActivityLog>('activity_log');
-    const activities = allActivities.filter(
-      (a: ActivityLog) => a.entity_id === projectId || taskIds.has(a.entity_id)
-    );
+    // Query for project-level activities
+    const projectActivities = await database.findMany<ActivityLog>('activity_log', { entity_id: projectId });
 
+    // Query for task-level activities using task IDs
+    let taskActivities: ActivityLog[] = [];
+    for (const taskId of taskIds) {
+      const acts = await database.findMany<ActivityLog>('activity_log', { entity_id: taskId });
+      taskActivities = taskActivities.concat(acts);
+    }
+
+    const activities = [...projectActivities, ...taskActivities];
     const sorted = activities.sort((a: ActivityLog, b: ActivityLog) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
@@ -160,9 +166,9 @@ export const activityService = {
     return Promise.all(sorted.map(enrichActivity));
   },
 
-  // Get all recent activity
+  // Get all recent activity (query with sort instead of loading all)
   async getRecent(limit: number = 100): Promise<ActivityLogWithUser[]> {
-    const activities = await database.getAll<ActivityLog>('activity_log');
+    const activities = await database.findMany<ActivityLog>('activity_log', {});
     const sorted = activities
       .sort((a: ActivityLog, b: ActivityLog) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .slice(0, limit);

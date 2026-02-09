@@ -5,11 +5,11 @@ import {
   ChevronDown, CheckSquare, Hexagon, Lightbulb, Ban, Sparkles, ArrowRight
 } from 'lucide-react';
 import ProductIcon from './ProductIcon';
-import TaskDetailModal from './TaskDetailModal';
+import TaskDetailModal from './task-detail/TaskDetailModal';
 import CreateTaskModal from './CreateTaskModal';
 import SprintModal from './SprintModal';
-import ProductGeneratorModal from './ProductGeneratorModal';
-import CopilotModal from './CopilotModal';
+import ProductGeneratorModal from './product-generator/ProductGeneratorModal';
+import CopilotModal from './copilot/CopilotModal';
 import { Task, Sprint, Team, Project, User } from '../types';
 import { useProjectData } from '../context/ProjectDataContext';
 import { View } from '../App';
@@ -18,7 +18,8 @@ interface HomeProps {
 }
 
 const Home: React.FC<HomeProps> = ({ onViewChange }) => {
-  const { tasks, myTasks: allMyTasks, projects, sprints, currentUser, organizationUsers: users, updateTask, addTask, addSprint, addProject, addEpic } = useProjectData();
+  const { tasks, myTasks: allMyTasks, projects, sprints, currentUser, organizationMembers, updateTask, addTask, addSprint, addProject, addEpic, generateNextId, updateProject, currentOrganization } = useProjectData();
+  const users = organizationMembers.map(m => m.user);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isSprintModalOpen, setIsSprintModalOpen] = useState(false);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -60,7 +61,7 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
   // Derived Product Health
   const productHealth = useMemo(() => {
       return projects.map(p => {
-          const pTasks = tasks.filter(t => t.projectId === p.id);
+          const pTasks = tasks.filter(t => t.projectId === p.id && t.type !== 'epic');
           const activeS = sprints.find(s => s.projectId === p.id && s.status === 'active');
           const blockers = pTasks.filter(t => t.columnId === 'blocked').length;
           
@@ -68,7 +69,9 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
           if (blockers > 3) health = 'At Risk';
           
           const completedSprints = sprints.filter(s => s.projectId === p.id && s.status === 'completed');
-          const velocity = completedSprints.length * 20 || 0; 
+          // Calculate velocity from actual completed task points in sprints
+          const completedTaskPoints = pTasks.filter(t => t.columnId === 'done').reduce((sum, t) => sum + (t.points || 0), 0);
+          const velocity = completedSprints.length > 0 ? Math.round(completedTaskPoints / completedSprints.length) : 0;
 
           const done = pTasks.filter(t => t.columnId === 'done').length;
           const progress = pTasks.length > 0 ? Math.round((done / pTasks.length) * 100) : 0;
@@ -108,9 +111,13 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
   };
 
   const handleSprintSubmit = (data: { name: string; startDate: string; endDate: string; goal: string }) => {
+      // Use the first active project, or the first project available
+      const targetProject = projects.find(p => p.status === 'In Progress' || p.status === 'Planning') || projects[0];
+      if (!targetProject) return;
+
       const newSprint: Sprint = {
           id: `s-${Date.now()}`,
-          projectId: projects[0]?.id, 
+          projectId: targetProject.id,
           name: data.name,
           startDate: data.startDate,
           endDate: data.endDate,
@@ -122,8 +129,125 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
   };
 
   const handleProductSubmit = async (productData: any) => {
+      const tempProjectId = `p-${Date.now()}`;
+      const projectKey = productData.name.substring(0, 3).toUpperCase();
+
+      const newProject: Project = {
+          id: tempProjectId,
+          name: productData.name,
+          key: projectKey,
+          description: productData.description,
+          status: 'Planning',
+          progress: 0,
+          members: [...(productData.ownerIds || [productData.ownerId]).filter(Boolean), ...productData.team],
+          ownerId: productData.ownerIds?.[0] || productData.ownerId,
+          ownerIds: productData.ownerIds || (productData.ownerId ? [productData.ownerId] : []),
+          startDate: productData.startDate,
+          dueDate: productData.dueDate,
+          tags: productData.tags || ['Product'],
+          color: 'from-indigo-500 to-purple-500',
+          imageUrl: productData.imageUrl,
+          prd: productData.docs?.prd || '',
+          docs: productData.docs,
+          vision: productData.vision || ''
+      };
+
+      const savedProject = await addProject(newProject);
+      const projectId = savedProject?.id || tempProjectId;
+
+      if (productData.epics && Array.isArray(productData.epics)) {
+          let localIdCounter = 0;
+          for (const epicData of productData.epics) {
+              localIdCounter++;
+              const epicId = generateNextId(projectId, 'epic');
+
+              const newEpic: Task = {
+                  id: epicId,
+                  projectId: projectId,
+                  title: epicData.title,
+                  description: epicData.description,
+                  columnId: 'todo',
+                  type: 'epic',
+                  priority: 'MEDIUM',
+                  points: 0,
+                  assignee: users.find((u: User) => u.id === (productData.ownerIds?.[0] || productData.ownerId)) || users[0],
+                  reporter: users.find((u: User) => u.id === (productData.ownerIds?.[0] || productData.ownerId)) || users[0],
+                  tags: [],
+                  commentsCount: 0,
+                  startDate: new Date().toISOString()
+              };
+
+              const savedEpic = await addEpic(newEpic);
+              const parentId = savedEpic ? savedEpic.id : epicId;
+
+              if (epicData.tasks && Array.isArray(epicData.tasks)) {
+                  for (const taskData of epicData.tasks) {
+                      localIdCounter++;
+                      const taskId = generateNextId(projectId, 'task');
+                      const assignee = users.find((u: User) => u.id === taskData.assigneeId) || users[0];
+
+                      const newTask: Task = {
+                          id: taskId,
+                          projectId: projectId,
+                          title: taskData.title,
+                          description: taskData.description,
+                          columnId: 'todo',
+                          type: taskData.type || 'task',
+                          priority: 'MEDIUM',
+                          points: taskData.points || 1,
+                          assignee: assignee,
+                          reporter: users[0],
+                          parentEpicId: parentId,
+                          tags: [],
+                          commentsCount: 0,
+                          startDate: new Date().toISOString(),
+                          dueDate: taskData.dueDate
+                      };
+                      await addTask(newTask);
+                  }
+              }
+          }
+      }
+
       setIsProductModalOpen(false);
       onViewChange('project-list');
+  };
+
+  const handleSaveDraft = async (draftData: any): Promise<string> => {
+      const tempProjectId = draftData.id || `p-${Date.now()}`;
+      const projectKey = draftData.name.substring(0, 3).toUpperCase();
+
+      const draftProject: Project = {
+          id: tempProjectId,
+          name: draftData.name,
+          key: projectKey,
+          description: draftData.description || '',
+          status: 'draft',
+          progress: 0,
+          members: (draftData.draft_data?.ownerIds || [draftData.draft_data?.ownerId]).filter(Boolean),
+          ownerId: draftData.draft_data?.ownerIds?.[0] || draftData.draft_data?.ownerId || currentUser?.id,
+          ownerIds: draftData.draft_data?.ownerIds || (draftData.draft_data?.ownerId ? [draftData.draft_data.ownerId] : [currentUser?.id].filter(Boolean)),
+          organizationId: currentOrganization?.id,
+          startDate: draftData.draft_data?.startDate,
+          dueDate: draftData.draft_data?.targetDate,
+          tags: draftData.draft_data?.tags?.split(',').map((t: string) => t.trim()).filter(Boolean) || ['Draft'],
+          color: 'from-gray-500 to-gray-600',
+          imageUrl: draftData.draft_data?.productImage,
+          prd: draftData.draft_data?.generatedDocs?.prd || '',
+          docs: draftData.draft_data?.generatedDocs || {},
+          vision: draftData.vision || '',
+          draftStep: draftData.draft_step,
+          draftData: draftData.draft_data
+      };
+
+      let savedProject: Project | null;
+      if (draftData.id && projects.some(p => p.id === draftData.id)) {
+          savedProject = await updateProject(draftProject);
+      } else {
+          savedProject = await addProject(draftProject);
+      }
+
+      return savedProject?.id || tempProjectId;
   };
 
   // Calculate blockers across all projects (exclude epics - they are containers)
@@ -469,6 +593,7 @@ const Home: React.FC<HomeProps> = ({ onViewChange }) => {
         isOpen={isProductModalOpen}
         onClose={() => setIsProductModalOpen(false)}
         onCreate={handleProductSubmit}
+        onSaveDraft={handleSaveDraft}
       />
 
       <CopilotModal

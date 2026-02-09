@@ -186,7 +186,35 @@ export const organizationsService = {
   },
 
   async delete(id: string): Promise<boolean> {
-    // Delete all organization members first
+    // Clean up projects belonging to this organization
+    const projects = await database.findMany<any>('projects', { organization_id: id });
+    for (const project of projects) {
+      // Delete project tasks and their dependencies
+      const tasks = await database.findMany<any>('tasks', { project_id: project.id });
+      for (const task of tasks) {
+        await database.deleteMany('comments', { task_id: task.id });
+        await database.deleteMany('subtasks', { task_id: task.id });
+        await database.deleteMany('task_tags', { task_id: task.id });
+        await database.deleteMany('attachments', { task_id: task.id });
+        await database.deleteMany('task_links', { blocking_task_id: task.id });
+        await database.deleteMany('task_links', { blocked_task_id: task.id });
+      }
+      await database.deleteMany('tasks', { project_id: project.id });
+      await database.deleteMany('sprints', { project_id: project.id });
+      await database.deleteMany('columns_status', { project_id: project.id });
+      await database.deleteMany('tags', { project_id: project.id });
+      await database.deleteMany('project_members', { project_id: project.id });
+      await database.deleteMany('document_comments', { project_id: project.id });
+      await database.delete('projects', project.id);
+    }
+    // Clean up teams belonging to this organization
+    const teams = await database.findMany<any>('teams', { organization_id: id });
+    for (const team of teams) {
+      await database.deleteMany('team_members', { team_id: team.id });
+      await database.deleteMany('team_projects', { team_id: team.id });
+      await database.delete('teams', team.id);
+    }
+    // Delete all organization members
     await database.deleteMany('organization_members', { organization_id: id });
     // Delete all join requests
     await database.deleteMany('organization_join_requests', { organization_id: id });
@@ -405,15 +433,28 @@ export const organizationsService = {
     const userIds = members.map(m => m.user_id);
     const usersMap = await database.findByIds<any>('users', userIds);
 
-    return members.map(member => ({
-      ...member,
-      user: usersMap.get(member.user_id) ? {
-        id: usersMap.get(member.user_id)!.id,
-        name: usersMap.get(member.user_id)!.name,
-        email: usersMap.get(member.user_id)!.email,
-        avatar_url: usersMap.get(member.user_id)!.avatar_url,
-      } : null,
-    }));
+    return members.map(member => {
+      const u = usersMap.get(member.user_id);
+      return {
+        ...member,
+        user: u ? {
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          avatar_url: u.avatar_url,
+          designation: u.designation,
+          organization_id: u.organization_id,
+          location: u.location,
+          bio: u.bio,
+          website: u.website,
+          job_title: u.job_title,
+          social_links: u.social_links,
+          status: u.status,
+          created_at: u.created_at,
+          last_active_at: u.last_active_at,
+        } : null,
+      };
+    });
   },
 
   // Get statistics (optimized)

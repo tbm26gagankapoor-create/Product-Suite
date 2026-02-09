@@ -8,12 +8,10 @@ export const AppLoadingScreen: React.FC = () => (
     <div className="flex flex-col items-center gap-6">
       {/* Logo with gradient animation */}
       <div className="relative">
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/25 animate-pulse">
-          <VulcanIcon size={32} color="white" />
-        </div>
+        <VulcanIcon size={56} color="currentColor" className="text-blue-600 dark:text-blue-400 animate-pulse" />
         {/* Spinning ring around logo */}
-        <div className="absolute inset-0 -m-1">
-          <div className="w-[72px] h-[72px] rounded-2xl border-2 border-transparent border-t-blue-500/50 animate-spin" style={{ animationDuration: '1.5s' }} />
+        <div className="absolute inset-0 -m-2">
+          <div className="w-[72px] h-[72px] rounded-full border-2 border-transparent border-t-blue-500/50 animate-spin" style={{ animationDuration: '1.5s' }} />
         </div>
       </div>
 

@@ -87,7 +87,16 @@ router.patch('/:id', async (req: AuthRequest, res: Response) => {
     return res.status(403).json({ success: false, error: 'Access denied' });
   }
 
-  const sprint = await sprintsService.update(sprintId, req.body);
+  // Only allow updating specific fields
+  const allowedFields = ['name', 'goal', 'status', 'start_date', 'end_date', 'velocity'];
+  const updates: Record<string, any> = {};
+  for (const key of allowedFields) {
+    if (req.body[key] !== undefined) {
+      updates[key] = req.body[key];
+    }
+  }
+
+  const sprint = await sprintsService.update(sprintId, updates);
   if (!sprint) {
     return res.status(404).json({ success: false, error: 'Sprint not found' });
   }

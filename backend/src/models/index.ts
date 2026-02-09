@@ -197,6 +197,7 @@ export interface IProject extends Document {
   progress_percentage: number;
   is_favorite: boolean;
   owner_id?: string;
+  owner_ids?: string[];
   organization_id?: string;
   image_url?: string;
   icon?: string;
@@ -231,6 +232,7 @@ const projectSchema = new Schema<IProject>({
   progress_percentage: { type: Number, default: 0 },
   is_favorite: { type: Boolean, default: false },
   owner_id: { type: Schema.Types.Mixed, index: true },
+  owner_ids: [{ type: Schema.Types.Mixed }],
   organization_id: { type: Schema.Types.Mixed, index: true },
   image_url: String,
   icon: String,

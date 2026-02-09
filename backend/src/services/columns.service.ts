@@ -67,7 +67,7 @@ export const columnsService = {
     const existing = await database.findById<Column>('columns_status', id);
     if (!existing) return null;
 
-    const updated = await database.update<Column>('columns_status', id, input);
+    const updated = await database.update<Column>('columns_status', id, { ...input, updated_at: now() });
     if (!updated) return null;
     return enrichColumn(updated);
   },

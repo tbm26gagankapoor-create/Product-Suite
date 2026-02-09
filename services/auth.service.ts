@@ -118,8 +118,12 @@ export class AuthService {
   }
 
   // Update password (for logged in user)
-  async updatePassword(newPassword: string): Promise<void> {
-    await httpClient.post('/auth/update-password', { password: newPassword });
+  async updatePassword(newPassword: string, resetToken?: string): Promise<void> {
+    const payload: Record<string, string> = { password: newPassword };
+    if (resetToken) {
+      payload.token = resetToken;
+    }
+    await httpClient.post('/auth/update-password', payload, resetToken ? { skipAuth: true } : undefined);
   }
 
   // Verify OTP (not supported in local backend)

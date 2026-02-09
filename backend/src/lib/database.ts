@@ -147,8 +147,11 @@ function transformDoc<T>(doc: any): T {
     if (isObjectIdInstance(value)) {
       // Convert ObjectId to string
       transformed[key] = value.toString();
-    } else if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
-      // Recursively transform nested objects (but not arrays or dates)
+    } else if (Array.isArray(value)) {
+      // Convert ObjectIds inside arrays to strings
+      transformed[key] = value.map((item: any) => isObjectIdInstance(item) ? item.toString() : item);
+    } else if (value && typeof value === 'object' && !(value instanceof Date)) {
+      // Recursively transform nested objects (but not dates)
       transformed[key] = transformNestedObjectIds(value);
     } else {
       transformed[key] = value;
@@ -574,6 +577,11 @@ function normalizeRecordForInsert(record: Record<string, any>): Record<string, a
     if (typeof value === 'string' && isValidObjectId(value) && key.endsWith('_id')) {
       // Convert foreign key fields to ObjectId for consistency
       normalized[key] = new mongoose.Types.ObjectId(value);
+    } else if (Array.isArray(value) && key.endsWith('_ids')) {
+      // Convert arrays of ID strings to ObjectIds (e.g. owner_ids)
+      normalized[key] = value.map((item: any) =>
+        typeof item === 'string' && isValidObjectId(item) ? new mongoose.Types.ObjectId(item) : item
+      );
     } else if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
       // Recursively normalize nested objects (but not arrays or dates)
       normalized[key] = normalizeRecordForInsert(value);

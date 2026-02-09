@@ -22,7 +22,8 @@ interface PlanningViewProps {
 
 const PlanningView: React.FC<PlanningViewProps> = ({ projectId }) => {
   // --- Context ---
-  const { sprints, tasks, addSprint, addTask, updateTask, generateNextId, currentUser, organizationUsers: users } = useProjectData();
+  const { sprints, tasks, addSprint, addTask, updateTask, generateNextId, currentUser, organizationMembers } = useProjectData();
+  const users = organizationMembers.map(m => m.user);
 
   // --- State ---
   const [activeTab, setActiveTab] = useState<'All' | 'Ongoing' | 'Upcoming' | 'Completed'>('All');
@@ -35,7 +36,7 @@ const PlanningView: React.FC<PlanningViewProps> = ({ projectId }) => {
 
   // --- Derived Data ---
   const projectSprints = sprints.filter(s => s.projectId === projectId);
-  const projectTasks = tasks.filter(t => t.projectId === projectId);
+  const projectTasks = tasks.filter(t => t.projectId === projectId && t.type !== 'epic');
   const backlogTasks = projectTasks.filter(t => !t.sprintId && t.columnId !== 'done');
 
   // Calculate velocity from completed sprints (last 3)
@@ -74,8 +75,8 @@ const PlanningView: React.FC<PlanningViewProps> = ({ projectId }) => {
     if (!draggingTaskId) return;
 
     const taskToUpdate = tasks.find(t => t.id === draggingTaskId);
-    if (taskToUpdate) {
-        updateTask({ ...taskToUpdate, sprintId: targetSprintId || undefined }); 
+    if (taskToUpdate && taskToUpdate.type !== 'epic') {
+        updateTask({ ...taskToUpdate, sprintId: targetSprintId || undefined });
     }
     setDraggingTaskId(null);
   };
@@ -88,12 +89,13 @@ const PlanningView: React.FC<PlanningViewProps> = ({ projectId }) => {
           id: generateNextId(projectId, 'task'),
           projectId: projectId,
           title: title,
+          description: '',
           columnId: 'todo',
           type: 'task',
           priority: 'MEDIUM',
           points: 0,
           assignee: user,
-          reporter: user, 
+          reporter: user,
           tags: [],
           commentsCount: 0,
           sprintId: sprintId

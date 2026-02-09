@@ -23,13 +23,27 @@ function mapProject(data: any): Project {
     description: data.description,
     status: data.status,
     progress: data.progress_percentage || 0,
-    members: [],
+    members: data.members || [],
     ownerId: data.owner_id,
+    ownerIds: data.owner_ids || (data.owner_id ? [data.owner_id] : []),
+    organizationId: data.organization_id,
     createdAt: data.created_at,
-    tags: [],
+    tags: data.tags || [],
     imageUrl: data.image_url || undefined,
     icon: data.icon || undefined,
     iconColor: data.icon_color || undefined,
+    color: data.color || undefined,
+    // Metadata fields
+    startDate: data.start_date || undefined,
+    dueDate: data.due_date || undefined,
+    budget: data.budget ?? undefined,
+    spentBudget: data.spent_budget ?? undefined,
+    category: data.category || undefined,
+    lifecycleStage: data.lifecycle_stage || undefined,
+    healthStatus: data.health_status || undefined,
+    customerCount: data.customer_count ?? undefined,
+    targetAudience: data.target_audience || undefined,
+    priorityRank: data.priority_rank ?? undefined,
     // Document fields
     vision: data.vision || undefined,
     prd: data.prd || undefined,
@@ -148,7 +162,6 @@ interface ProjectDataContextType {
   users: User[];
   teams: Team[];
   // Organization-scoped data - only includes items from current organization
-  organizationUsers: User[];
   organizationTeams: Team[];
   currentUser: User | null;
   currentOrganization: Organization | null;
@@ -322,19 +335,18 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
                   if (membersResponse.ok) {
                     const membersData = await membersResponse.json();
                     if (membersData.success && membersData.data) {
-                      // Map members and include user data
+                      // Map members and include full user data
                       const mappedMembers: OrganizationMember[] = membersData.data.map((m: any) => ({
                         id: m.id,
                         organizationId: m.organization_id,
                         userId: m.user_id,
                         role: m.role || 'member',
                         joinedAt: m.joined_at,
-                        user: m.user ? {
-                          id: m.user.id,
-                          name: m.user.name,
-                          email: m.user.email,
-                          avatarUrl: m.user.avatar_url || `https://avatar.iran.liara.run/public`,
-                        } : undefined,
+                        user: m.user ? mapUser(m.user) : {
+                          id: m.user_id,
+                          name: 'Unknown',
+                          avatarUrl: `https://avatar.iran.liara.run/public`,
+                        } as User,
                       }));
                       setOrganizationMembers(mappedMembers);
 
@@ -366,7 +378,7 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
         const [usersRes, projectsRes, tasksRes, sprintsRes, teamsRes] = await Promise.all([
           fetch('/api/v1/users', { headers }),
-          fetch('/api/v1/projects', { headers }),
+          fetch('/api/v1/projects?include_drafts=true', { headers }),
           fetch('/api/v1/tasks', { headers }),
           fetch('/api/v1/sprints', { headers }),
           fetch('/api/v1/teams', { headers }),
@@ -436,7 +448,8 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           name: project.name,
           code: project.key,
           description: project.description,
-          owner_id: currentUser?.id,
+          owner_ids: project.ownerIds?.length ? project.ownerIds : [currentUser?.id].filter(Boolean),
+          organization_id: project.organizationId || currentUser?.organizationId,
           // Include all document and visual fields
           image_url: project.imageUrl,
           icon: project.icon,
@@ -456,10 +469,14 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         setProjects(prev => prev.map(p => p.id === project.id ? savedProject : p));
         return savedProject;
       }
-      return null;
+      // Remove optimistic project on failure
+      setProjects(prev => prev.filter(p => p.id !== project.id));
+      throw new Error(data.error || 'Failed to create project');
     } catch (e) {
+      // Remove optimistic project on network/parse error
+      setProjects(prev => prev.filter(p => p.id !== project.id));
       console.error("Failed to sync project", e);
-      return null;
+      throw e;
     }
   }, [currentUser]);
 
@@ -473,9 +490,22 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           name: project.name,
           description: project.description,
           status: project.status,
+          organization_id: project.organizationId,
+          owner_ids: project.ownerIds,
           image_url: project.imageUrl,
           icon: project.icon,
           icon_color: project.iconColor,
+          // Metadata fields
+          start_date: project.startDate,
+          due_date: project.dueDate,
+          health_status: project.healthStatus,
+          lifecycle_stage: project.lifecycleStage,
+          category: project.category,
+          budget: project.budget,
+          spent_budget: project.spentBudget,
+          customer_count: project.customerCount,
+          target_audience: project.targetAudience,
+          color: project.color,
           // Document fields
           vision: project.vision,
           prd: project.prd,
@@ -485,8 +515,10 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           draft_data: project.draftData,
         }),
       });
+      return project;
     } catch (e) {
       console.error("Failed to sync project update", e);
+      return null;
     }
   }, []);
 
@@ -494,6 +526,7 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       setProjects(prev => prev.filter(p => p.id !== projectId));
       setTasks(prev => prev.filter(t => t.projectId !== projectId));
       setSprints(prev => prev.filter(s => s.projectId !== projectId));
+      setMyTasks(prev => prev.filter(t => t.projectId !== projectId));
 
       try {
           await fetch(`/api/v1/projects/${projectId}`, {
@@ -518,7 +551,7 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
           description: task.description,
           type: task.type,
           priority: task.priority,
-          points: task.points,
+          points: typeof task.points === 'number' ? task.points : undefined,
           assignee_id: task.assignee?.id,
           reporter_id: task.reporter?.id || currentUser?.id,
           sprint_id: task.sprintId,
@@ -536,9 +569,10 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
         setTasks(prev => prev.map(t => t.id === task.id ? savedTask : t));
         return savedTask;
       }
+      console.error("Failed to create task:", task.title, data.error, data.details);
       return null;
     } catch (e) {
-      console.error("Failed to sync task", e);
+      console.error("Failed to sync task", task.title, e);
       return null;
     }
   }, [currentUser, users]);
@@ -558,7 +592,6 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
               points: epic.points || 0,
               assignee_id: epic.assignee?.id,
               reporter_id: epic.reporter?.id || currentUser?.id,
-              column_id: epic.columnId,
               start_date: epic.startDate,
             }),
           });
@@ -568,9 +601,10 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
             setTasks(prev => prev.map(t => t.id === epic.id ? savedEpic : t));
             return savedEpic;
           }
+          console.error("Failed to create epic:", epic.title, data.error, data.details);
           return null;
       } catch (e) {
-          console.error("Failed to sync epic", e);
+          console.error("Failed to sync epic", epic.title, e);
           return null;
       }
   }, [currentUser, users]);
@@ -792,12 +826,11 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
             userId: m.user_id,
             role: m.role || 'member',
             joinedAt: m.joined_at,
-            user: m.user ? {
-              id: m.user.id,
-              name: m.user.name,
-              email: m.user.email,
-              avatarUrl: m.user.avatar_url || `https://avatar.iran.liara.run/public`,
-            } : undefined,
+            user: m.user ? mapUser(m.user) : {
+              id: m.user_id,
+              name: 'Unknown',
+              avatarUrl: `https://avatar.iran.liara.run/public`,
+            } as User,
           }));
           setOrganizationMembers(mappedMembers);
 
@@ -863,6 +896,9 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, [userOrganizations, fetchData]);
 
   // --- Smart ID Generation ---
+  // Track generated IDs per project to prevent duplicates within the same render cycle
+  const idCounterRef = React.useRef<Record<string, number>>({});
+
   const generateNextId = useCallback((projectId: string, type: string = 'task') => {
     const project = projects.find(p => p.id === projectId);
     const productKey = project?.key || 'PRD';
@@ -871,9 +907,9 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const t = type.toLowerCase();
     if (t === 'bug') typeCode = 'BUG';
     else if (['feature', 'epic'].includes(t)) typeCode = 'FTR';
-    
+
     const projectTasks = tasks.filter(t => t.projectId === projectId);
-    
+
     const numbers = projectTasks.map(task => {
       // Handle cases where ID might be UUID (new Epics)
       if (task.id.includes('-') && task.id.length > 20) return 0;
@@ -884,28 +920,19 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
       return isNaN(num) ? 0 : num;
     });
 
-    const maxId = numbers.length > 0 ? Math.max(...numbers) : 0;
-    const nextNum = maxId + 1;
+    const maxFromDb = numbers.length > 0 ? Math.max(...numbers) : 0;
+    // Use the higher of DB max or our local counter to prevent duplicates
+    const currentCounter = idCounterRef.current[projectId] || 0;
+    const nextNum = Math.max(maxFromDb, currentCounter) + 1;
+    idCounterRef.current[projectId] = nextNum;
+
     const paddedNum = nextNum.toString().padStart(4, '0');
 
     return `${productKey}-${typeCode}-${paddedNum}`;
   }, [projects, tasks]);
 
   // Compute organization-scoped users and teams
-  // Filter users by their organization_id field - users belong to org if their organizationId matches
-  const organizationUsers = useMemo(() => {
-    console.log('DEBUG organizationUsers - currentOrg:', currentOrganization?.id, 'users count:', users.length);
-    console.log('DEBUG users orgIds:', users.map(u => ({ name: u.name, orgId: u.organizationId })));
-    if (!currentOrganization?.id) {
-      // If no org context, return all users (fallback)
-      console.log('DEBUG: No org context, returning all users');
-      return users;
-    }
-    // Filter users based on their organizationId field
-    const filtered = users.filter(u => u.organizationId === currentOrganization.id);
-    console.log('DEBUG filtered users:', filtered.length);
-    return filtered;
-  }, [users, currentOrganization]);
+  // Compute organization-scoped users - derived from organizationMembers (single source of truth)
 
   const organizationTeams = useMemo(() => {
     if (!currentOrganization?.id) {
@@ -922,7 +949,6 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     sprints,
     users,
     teams,
-    organizationUsers,
     organizationTeams,
     currentUser,
     currentOrganization,
@@ -949,7 +975,7 @@ export const ProjectDataProvider: React.FC<{ children: React.ReactNode }> = ({ c
     updateCurrentUser,
     refreshOrganization,
     switchOrganization
-  }), [projects, tasks, myTasks, sprints, users, teams, organizationUsers, organizationTeams, currentUser, currentOrganization, organizationMembers, userOrganizations, isOrgAdmin, isLoading, connectionStatus, connectionError, fetchData, generateNextId, addComment, updateCurrentUser, refreshOrganization, switchOrganization, addProject, updateProject, deleteProject, addTask, addEpic, addTeam, addSprint, updateSprint, startSprint, updateTask, deleteTask]);
+  }), [projects, tasks, myTasks, sprints, users, teams, organizationTeams, currentUser, currentOrganization, organizationMembers, userOrganizations, isOrgAdmin, isLoading, connectionStatus, connectionError, fetchData, generateNextId, addComment, updateCurrentUser, refreshOrganization, switchOrganization, addProject, updateProject, deleteProject, addTask, addEpic, addTeam, addSprint, updateSprint, startSprint, updateTask, deleteTask]);
 
   return (
     <ProjectDataContext.Provider value={value}>

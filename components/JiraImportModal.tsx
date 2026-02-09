@@ -23,8 +23,8 @@ interface JiraImportModalProps {
 }
 
 const JiraImportModal: React.FC<JiraImportModalProps> = ({ isOpen, onClose }) => {
-  const { addProject, addTask, addSprint, currentUser, organizationUsers } = useProjectData();
-  const defaultUser = currentUser || organizationUsers[0];
+  const { addProject, addTask, addSprint, currentUser, organizationMembers } = useProjectData();
+  const defaultUser = currentUser || organizationMembers[0]?.user;
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

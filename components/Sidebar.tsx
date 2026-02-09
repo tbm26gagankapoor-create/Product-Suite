@@ -22,7 +22,7 @@ const getIconByName = (iconName: string, size: number = 20): React.ReactNode => 
   }
   return <LucideIcons.Circle size={size} />;
 };
-import { CopilotModal } from './CopilotModal';
+import { CopilotModal } from './copilot/CopilotModal';
 import { Project, Task, Sprint, User } from '../types';
 
 interface SidebarProps {
@@ -154,7 +154,12 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onLogout, 
         }
         break;
       case 'task':
-        onViewChange('my-tasks');
+        // Navigate to the project containing this task if possible
+        if ('projectId' in result.data && (result.data as Task).projectId && onProjectSelect) {
+          onProjectSelect((result.data as Task).projectId);
+        } else {
+          onViewChange('my-tasks');
+        }
         break;
       case 'sprint':
         onViewChange('sprints');
@@ -252,9 +257,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onLogout, 
           className={`flex items-center cursor-pointer group transition-all duration-300 ${isCollapsed ? 'justify-center gap-0' : 'gap-3'}`}
           onClick={() => onViewChange('home')}
         >
-           <div className="w-9 h-9 bg-white dark:bg-black rounded-xl flex items-center justify-center text-black dark:text-white shadow-sm border border-gray-200 dark:border-white/10 group-hover:scale-105 transition-transform duration-300 flex-shrink-0">
-             <VulcanIcon size={20} color="currentColor" />
-           </div>
+           <VulcanIcon size={32} color="currentColor" className="text-black dark:text-white group-hover:scale-105 transition-transform duration-300 flex-shrink-0" />
 
            <div className={`flex flex-col justify-center transition-all duration-300 overflow-hidden ${isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100 w-auto'}`}>
                <span className="font-bold text-[15px] text-gray-900 dark:text-white leading-none tracking-tight">VULCAN</span>
@@ -368,7 +371,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onLogout, 
                               (item.route === 'sprints' && currentView === 'sprints') ||
                               (item.route === 'settings' && currentView === 'settings') ||
                               (item.route === 'teams' && currentView === 'teams') ||
-                              (item.route === 'my-tasks' && currentView === 'my-tasks');
+                              (item.route === 'my-tasks' && currentView === 'my-tasks') ||
+                              (item.route === 'profile' && currentView === 'profile') ||
+                              (item.route === 'notifications' && currentView === 'notifications');
 
              return (
               <a

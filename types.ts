@@ -48,7 +48,7 @@ export interface OrganizationMember {
   organizationId: string;
   userId: string;
   role: OrganizationRole;
-  user?: User;
+  user: User;
   organization?: Organization;
   joinedAt?: string;
   invitedBy?: string;
@@ -238,7 +238,8 @@ export interface ProjectDraftData {
   tags: string;
   startDate: string;
   targetDate: string;
-  ownerId: string;
+  ownerId?: string;
+  ownerIds?: string[];
   selectedTeam: string[];
   refinedVision: string;
   suggestions: Array<{
@@ -274,6 +275,7 @@ export interface Project {
   progress?: number;
   members: string[];
   ownerId?: string;
+  ownerIds?: string[];
   organizationId?: string;
   startDate?: string;
   dueDate?: string;

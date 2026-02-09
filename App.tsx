@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import ProjectView from './components/ProjectView';
-import ProjectList from './components/ProjectList';
+import ProjectList from './components/projects/ProjectList';
 import Home from './components/Home';
 import SettingsView from './components/SettingsView';
 import TeamsView from './components/TeamsView';

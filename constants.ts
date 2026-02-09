@@ -70,7 +70,7 @@ export const NAV_ITEMS = [
 /**
  * @deprecated USERS should be fetched from /api/v1/users
  * This constant is kept for backward compatibility during migration.
- * Use `useProjectData().organizationUsers` from ProjectDataContext instead.
+ * Use `useProjectData().organizationMembers` from ProjectDataContext instead.
  */
 export const USERS: User[] = [
   { id: 'u0', name: 'Gagan Kapoor', avatarUrl: 'https://ui-avatars.com/api/?name=Gagan+Kapoor&background=0D8ABC&color=fff', role: 'Product Owner', email: 'gagan@example.com', isAdmin: true },

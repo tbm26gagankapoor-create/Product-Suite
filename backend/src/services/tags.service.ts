@@ -54,7 +54,7 @@ export const tagsService = {
     const existing = await database.findById<Tag>('tags', id);
     if (!existing) return null;
 
-    return database.update<Tag>('tags', id, input);
+    return database.update<Tag>('tags', id, { ...input, updated_at: now() });
   },
 
   async delete(id: string): Promise<boolean> {

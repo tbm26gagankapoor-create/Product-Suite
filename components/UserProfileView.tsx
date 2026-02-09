@@ -401,7 +401,7 @@ const UserProfileView: React.FC = () => {
                             </div>
                             <div className="divide-y divide-gray-100 dark:divide-[#1F2128]">
                                 {userProjects.map(project => {
-                                    const projectTasks = tasks.filter(t => t.projectId === project.id);
+                                    const projectTasks = tasks.filter(t => t.projectId === project.id && t.type !== 'epic');
                                     const pTotal = projectTasks.length;
                                     const pDone = projectTasks.filter(t => t.columnId === 'done').length;
                                     const pProgress = pTotal > 0 ? Math.round((pDone / pTotal) * 100) : 0;

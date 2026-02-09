@@ -114,20 +114,31 @@ export interface TaskWithPermissions extends TaskWithDetails {
   permissions?: TaskPermissions;
 }
 
-// Helper to generate task key
-async function generateTaskKey(projectId: string): Promise<string> {
+// Helper to generate task key with retry logic for race conditions
+async function generateTaskKey(projectId: string, maxRetries: number = 3): Promise<string> {
   const project = await database.findById<any>('projects', projectId);
   const projectCode = project?.code || 'TSK';
 
-  // Get all tasks for this project to determine next number
-  const tasks = await database.findMany<Task>('tasks', { project_id: projectId });
-  const maxNum = tasks.reduce((max, task) => {
-    const match = task.task_key?.match(/-(\d+)$/);
-    const num = match ? parseInt(match[1], 10) : 0;
-    return Math.max(max, num);
-  }, 0);
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    // Get all tasks for this project to determine next number
+    const tasks = await database.findMany<Task>('tasks', { project_id: projectId });
+    const maxNum = tasks.reduce((max, task) => {
+      const match = task.task_key?.match(/-(\d+)$/);
+      const num = match ? parseInt(match[1], 10) : 0;
+      return Math.max(max, num);
+    }, 0);
 
-  return `${projectCode}-${maxNum + 1}`;
+    const candidateKey = `${projectCode}-${maxNum + 1 + attempt}`;
+
+    // Check if key already exists to prevent duplicates
+    const existing = await database.findOne<Task>('tasks', { task_key: candidateKey, project_id: projectId });
+    if (!existing) {
+      return candidateKey;
+    }
+  }
+
+  // Fallback: use timestamp-based suffix to guarantee uniqueness
+  return `${projectCode}-${Date.now()}`;
 }
 
 export const tasksService = {
@@ -309,8 +320,25 @@ export const tasksService = {
   async create(input: CreateTaskInput): Promise<TaskWithDetails> {
     const taskKey = await generateTaskKey(input.project_id);
 
-    // Get default column if not provided
+    // Resolve column_id: short name → actual UUID, or get default
     let columnId = input.column_id;
+    if (columnId) {
+      // Check if it's a short name like 'todo' rather than a UUID
+      const isUUID = columnId.includes('-') && columnId.length > 20;
+      const isObjectId = /^[0-9a-f]{24}$/i.test(columnId);
+      if (!isUUID && !isObjectId) {
+        const columnNameMap: Record<string, string> = {
+          'idea': 'IDEA', 'todo': 'TO DO', 'inprogress': 'IN PROGRESS',
+          'blocked': 'BLOCKED', 'testing': 'TESTING', 'done': 'DONE',
+        };
+        const columnTitle = columnNameMap[columnId.toLowerCase()] || columnId.toUpperCase();
+        const column = await database.findOne<any>('columns_status', {
+          project_id: input.project_id,
+          title: columnTitle,
+        });
+        columnId = column?.id || undefined;
+      }
+    }
     if (!columnId) {
       const defaultColumn = await database.findOne<any>('columns_status', {
         project_id: input.project_id,
@@ -428,6 +456,9 @@ export const tasksService = {
     await database.deleteMany('task_tags', { task_id: id });
     await database.deleteMany('comments', { task_id: id });
     await database.deleteMany('attachments', { task_id: id });
+    // Clean up task dependency links in both directions
+    await database.deleteMany('task_links', { blocking_task_id: id });
+    await database.deleteMany('task_links', { blocked_task_id: id });
 
     return database.delete('tasks', id);
   },

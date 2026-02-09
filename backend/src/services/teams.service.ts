@@ -115,12 +115,14 @@ export const teamsService = {
     const existing = await database.findById<Team>('teams', id);
     if (!existing) return null;
 
-    const updated = await database.update<Team>('teams', id, {
-      name: input.name,
-      description: input.description,
-      avatar_url: input.avatar_url,
+    const updates: Record<string, any> = {
       updated_at: now(),
-    });
+    };
+    if (input.name !== undefined) (updates as any).name = input.name;
+    if (input.description !== undefined) (updates as any).description = input.description;
+    if (input.avatar_url !== undefined) (updates as any).avatar_url = input.avatar_url;
+
+    const updated = await database.update<Team>('teams', id, updates);
 
     if (!updated) return null;
     return this.enrichTeam(updated);

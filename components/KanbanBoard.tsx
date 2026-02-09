@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import * as LucideIcons from 'lucide-react';
 import { Task } from '../types';
 import TaskCard from './TaskCard';
-import TaskDetailModal from './TaskDetailModal';
+import TaskDetailModal from './task-detail/TaskDetailModal';
 import CreateTaskModal from './CreateTaskModal';
 import { useProjectData } from '../context/ProjectDataContext';
 import { useConfig } from '../context/ConfigContext';
@@ -26,7 +26,8 @@ interface KanbanBoardProps {
 type GroupBy = 'none' | 'priority' | 'assignee' | 'epic';
 
 const KanbanBoard: React.FC<KanbanBoardProps> = ({ sprintId, tasks, onTaskUpdate, title = "Product roadmap", projectId }) => {
-  const { tasks: allTasks, organizationUsers: users, deleteTask } = useProjectData();
+  const { tasks: allTasks, organizationMembers, deleteTask } = useProjectData();
+  const users = organizationMembers.map(m => m.user);
   const { statuses, getStatusConfig } = useConfig();
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   

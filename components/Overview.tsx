@@ -72,12 +72,14 @@ const Overview: React.FC<OverviewProps> = ({ onNavigate, activeProject, onProjec
                   id: log.id,
                   user: log.user || { name: 'System', avatarUrl: '' },
                   action: log.action,
-                  target: log.entity_type === 'task' ? 'a task' : log.entity_type === 'comment' ? 'a comment' : 'the project', 
-                  // In a real app we'd fetch the entity title too, simplifed for now
+                  target: log.entity_type === 'task' ? 'a task' : log.entity_type === 'comment' ? 'a comment' : 'the project',
                   detail: log.field_changed ? `Changed ${log.field_changed}` : '',
                   time: new Date(log.created_at).toLocaleDateString() === new Date().toLocaleDateString() ? new Date(log.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : new Date(log.created_at).toLocaleDateString(),
                   type: log.entity_type
               })));
+          }).catch(error => {
+              console.error('Failed to fetch activity:', error);
+              setRecentUpdates([]);
           });
       }
   }, [activeProject]);
@@ -86,11 +88,11 @@ const Overview: React.FC<OverviewProps> = ({ onNavigate, activeProject, onProjec
       return <div className="p-8 text-gray-500">No project selected</div>;
   }
   
-  const totalTasks = projectTasks.length;
-  const completedTasks = projectTasks.filter(t => t.columnId === 'done').length;
-  const inProgressTasks = projectTasks.filter(t => t.columnId === 'inprogress').length;
-  const testingTasks = projectTasks.filter(t => t.columnId === 'testing').length;
-  const todoTasks = projectTasks.filter(t => t.columnId === 'todo' || t.columnId === 'idea').length;
+  const totalTasks = projectTasks.filter(t => t.type !== 'epic').length;
+  const completedTasks = projectTasks.filter(t => t.columnId === 'done' && t.type !== 'epic').length;
+  const inProgressTasks = projectTasks.filter(t => t.columnId === 'inprogress' && t.type !== 'epic').length;
+  const testingTasks = projectTasks.filter(t => t.columnId === 'testing' && t.type !== 'epic').length;
+  const todoTasks = projectTasks.filter(t => (t.columnId === 'todo' || t.columnId === 'idea') && t.type !== 'epic').length;
   
   // Calculate Progress
   const completionPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : (activeProject.progress || 0);
@@ -135,7 +137,10 @@ const Overview: React.FC<OverviewProps> = ({ onNavigate, activeProject, onProjec
               budget: activeProject.budget,
               spentBudget: activeProject.spentBudget,
               customerCount: activeProject.customerCount,
-              targetAudience: activeProject.targetAudience || ''
+              targetAudience: activeProject.targetAudience || '',
+              imageUrl: activeProject.imageUrl,
+              icon: activeProject.icon,
+              iconColor: activeProject.iconColor,
           });
           setIsEditModalOpen(true);
       }
@@ -325,17 +330,29 @@ const Overview: React.FC<OverviewProps> = ({ onNavigate, activeProject, onProjec
                         <dl className="space-y-4">
                             <div className="flex justify-between items-center">
                                 <dt className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2 font-medium">
-                                    <User size={14} /> Owner
+                                    <User size={14} /> {(activeProject.ownerIds?.length || 0) > 1 ? 'Owners' : 'Owner'}
                                 </dt>
                                 <dd className="text-xs font-medium text-[#172B4D] dark:text-gray-200 flex items-center gap-2">
-                                    {activeProject.ownerId && (
-                                        <img 
-                                            src={users.find(u => u.id === activeProject.ownerId)?.avatarUrl} 
-                                            className="w-5 h-5 rounded-full object-cover" 
-                                            alt="Owner"
-                                        />
-                                    )}
-                                    {activeProject.ownerId ? (users.find(u => u.id === activeProject.ownerId)?.name || 'Unknown') : 'Unassigned'}
+                                    {(() => {
+                                        const ownerIdList = activeProject.ownerIds?.length ? activeProject.ownerIds : (activeProject.ownerId ? [activeProject.ownerId] : []);
+                                        const ownerUsers = ownerIdList.map(id => users.find(u => u.id === id)).filter(Boolean);
+                                        if (ownerUsers.length === 0) return 'Unassigned';
+                                        return (
+                                            <>
+                                                <div className="flex -space-x-1.5">
+                                                    {ownerUsers.slice(0, 3).map((u: any) => (
+                                                        <img key={u.id} src={u.avatarUrl} className="w-5 h-5 rounded-full object-cover border border-white dark:border-[#15171E]" alt={u.name} />
+                                                    ))}
+                                                    {ownerUsers.length > 3 && (
+                                                        <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/30 border border-white dark:border-[#15171E] flex items-center justify-center text-[7px] font-bold text-blue-600 dark:text-blue-400">
+                                                            +{ownerUsers.length - 3}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {ownerUsers.length === 1 ? ownerUsers[0]!.name : `${ownerUsers.length} owners`}
+                                            </>
+                                        );
+                                    })()}
                                 </dd>
                             </div>
 
@@ -352,8 +369,15 @@ const Overview: React.FC<OverviewProps> = ({ onNavigate, activeProject, onProjec
                                 <dt className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2 font-medium">
                                     <AlertCircle size={14} /> Priority
                                 </dt>
-                                <dd className="text-xs font-bold text-red-500 bg-red-50 dark:bg-red-900/10 px-2 py-1 rounded flex items-center gap-1.5">
-                                    <ArrowUpRight size={14} strokeWidth={2.5} /> High
+                                <dd className={`text-xs font-bold px-2 py-1 rounded flex items-center gap-1.5 ${
+                                    (activeProject.priorityRank ?? 1) <= 1 ? 'text-red-500 bg-red-50 dark:bg-red-900/10' :
+                                    (activeProject.priorityRank ?? 1) <= 3 ? 'text-amber-500 bg-amber-50 dark:bg-amber-900/10' :
+                                    'text-gray-500 bg-gray-50 dark:bg-gray-900/10'
+                                }`}>
+                                    <ArrowUpRight size={14} strokeWidth={2.5} /> {
+                                        (activeProject.priorityRank ?? 1) <= 1 ? 'High' :
+                                        (activeProject.priorityRank ?? 1) <= 3 ? 'Medium' : 'Low'
+                                    }
                                 </dd>
                             </div>
 
@@ -371,7 +395,7 @@ const Overview: React.FC<OverviewProps> = ({ onNavigate, activeProject, onProjec
                                     <Calendar size={14} /> Due Date
                                 </dt>
                                 <dd className="text-xs font-medium text-[#172B4D] dark:text-gray-200">
-                                    {activeProject.dueDate}
+                                    {activeProject.dueDate ? new Date(activeProject.dueDate).toLocaleDateString() : 'N/A'}
                                 </dd>
                             </div>
 
@@ -742,9 +766,8 @@ const Overview: React.FC<OverviewProps> = ({ onNavigate, activeProject, onProjec
                                         <Flag size={10} /> Due Date
                                     </label>
                                     <input
-                                        type="text"
-                                        placeholder="MMM DD, YYYY"
-                                        value={editFormData.dueDate}
+                                        type="date"
+                                        value={editFormData.dueDate || ''}
                                         onChange={(e) => setEditFormData({...editFormData, dueDate: e.target.value})}
                                         className="w-full bg-white dark:bg-[#15171E] border border-gray-200 dark:border-[#2D2F36] rounded-lg px-3 py-1.5 text-xs text-[#172B4D] dark:text-white focus:outline-none focus:border-blue-500"
                                     />

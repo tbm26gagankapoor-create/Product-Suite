@@ -11,6 +11,7 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import ParticleBackground from './ParticleBackground';
 import { authService } from '../services/auth.service';
+import { VulcanIcon } from './VulcanLogo';
 
 interface ForgotPasswordViewProps {
   onBack: () => void;
@@ -27,7 +28,7 @@ const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onBack }) => {
     e.preventDefault();
     setError('');
 
-    if (!email.includes('@')) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setError('Please enter a valid email address.');
       return;
     }
@@ -57,9 +58,7 @@ const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onBack }) => {
 
         {/* Top: Logo */}
         <div className="relative z-10 flex items-center gap-3">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-white">
-            <path d="M3 4L12 20L21 4" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
+          <VulcanIcon size={32} color="white" />
           <div className="flex flex-col justify-center">
             <span className="font-bold text-xl text-white leading-none tracking-[0.1em]">VULCAN</span>
             <span className="text-[10px] text-gray-400 font-bold tracking-[0.25em] leading-none mt-1">TECHNOLOGIES</span>
@@ -90,9 +89,7 @@ const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onBack }) => {
       <div className="w-full lg:w-[45%] bg-white dark:bg-[#0B0C0E] flex flex-col relative z-10 transition-colors duration-500">
         <div className="flex items-center justify-between p-6 lg:p-8 absolute top-0 left-0 w-full z-20">
           <div className="lg:hidden flex items-center gap-2">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-[#172B4D] dark:text-white">
-              <path d="M3 4L12 20L21 4" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+            <VulcanIcon size={28} color="currentColor" className="text-[#172B4D] dark:text-white" />
             <span className="font-bold text-lg text-[#172B4D] dark:text-white tracking-widest">VULCAN</span>
           </div>
           <div className="ml-auto">

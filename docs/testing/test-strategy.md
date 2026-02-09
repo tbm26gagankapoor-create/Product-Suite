@@ -293,7 +293,7 @@ Detailed test plans for each feature area:
 
 1. [Authentication Test Plan](test-plans/authentication.md)
    - Email/password registration and login
-   - OAuth flows (Google, Microsoft, GitHub)![alt text](image.png)
+   - OAuth flows (Google, Microsoft, GitHub)
    - Password reset
    - Session management
 

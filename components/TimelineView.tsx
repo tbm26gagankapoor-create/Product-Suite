@@ -12,7 +12,7 @@ import {
   ArrowUp
 } from 'lucide-react';
 import { Task, User } from '../types';
-import TaskDetailModal from './TaskDetailModal';
+import TaskDetailModal from './task-detail/TaskDetailModal';
 import { useProjectData } from '../context/ProjectDataContext';
 import { useConfig } from '../context/ConfigContext';
 
@@ -58,7 +58,12 @@ const ROW_HEIGHT = TIMELINE_CONSTANTS.ROW_HEIGHT;
 const SIDEBAR_WIDTH = TIMELINE_CONSTANTS.SIDEBAR_WIDTH;
 
 const getValidDate = (dateStr?: string, defaultOffset = 0): string => {
-    if (dateStr) return new Date(dateStr).toISOString().split('T')[0];
+    if (dateStr) {
+      const parsed = new Date(dateStr);
+      if (!isNaN(parsed.getTime())) {
+        return parsed.toISOString().split('T')[0];
+      }
+    }
     const d = new Date();
     d.setDate(d.getDate() + defaultOffset);
     return d.toISOString().split('T')[0];

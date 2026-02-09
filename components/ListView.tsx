@@ -15,7 +15,7 @@ import {
   UserPlus
 } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
-import TaskDetailModal from './TaskDetailModal';
+import TaskDetailModal from './task-detail/TaskDetailModal';
 import CreateTaskModal from './CreateTaskModal';
 import BulkActionToolbar from './BulkActionToolbar';
 import { useProjectData } from '../context/ProjectDataContext';
