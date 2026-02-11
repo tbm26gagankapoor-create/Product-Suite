@@ -77,15 +77,15 @@ interface NotificationPreferencesUpdate {
 /**
  * Get the frontend URL for a task
  */
-function getTaskUrl(projectCode: string, taskKey: string): string {
-  return `${config.frontend.url}/projects/${projectCode}?task=${taskKey}`;
+function getTaskUrl(projectId: string, taskKey: string): string {
+  return `${config.frontend.url}/projects/${projectId}?task=${taskKey}`;
 }
 
 /**
  * Get the frontend URL for a sprint
  */
-function getSprintUrl(projectCode: string, sprintId: string): string {
-  return `${config.frontend.url}/projects/${projectCode}/sprints?sprint=${sprintId}`;
+function getSprintUrl(projectId: string, sprintId: string): string {
+  return `${config.frontend.url}/projects/${projectId}/sprints?sprint=${sprintId}`;
 }
 
 /**
@@ -410,7 +410,7 @@ export const notificationService = {
     const project = await Project.findOne({ id: task.project_id });
     if (!project) return;
 
-    const taskUrl = getTaskUrl(project.code, task.task_key);
+    const taskUrl = getTaskUrl(project.id, task.task_key);
     const prefs = await this.getUserPreferences(assigneeId);
 
     // Create in-app notification
@@ -487,8 +487,8 @@ export const notificationService = {
     const project = await Project.findOne({ id: task.project_id });
     if (!project) return;
 
-    const taskUrl = getTaskUrl(project.code, task.task_key);
-    const commentPreview = truncateText(comment.text);
+    const taskUrl = getTaskUrl(project.id, task.task_key);
+    const commentPreview = truncateText((comment as any).content || comment.text);
 
     // Notify assignee if different from commenter
     if (task.assignee_id && task.assignee_id !== commenterId) {
@@ -586,7 +586,7 @@ export const notificationService = {
     const project = await Project.findOne({ id: task.project_id });
     if (!project) return;
 
-    const taskUrl = getTaskUrl(project.code, task.task_key);
+    const taskUrl = getTaskUrl(project.id, task.task_key);
     const contextPreview = truncateText(context);
 
     for (const userId of mentionedUserIds) {
@@ -670,7 +670,7 @@ export const notificationService = {
       return;
     }
 
-    const documentUrl = `${config.frontend.url}/projects/${project.code}?tab=Documents&section=${sectionId}`;
+    const documentUrl = `${config.frontend.url}/projects/${project.id}?tab=Documents&section=${sectionId}`;
     const contextPreview = truncateText(context);
 
     for (const userId of mentionedUserIds) {
@@ -751,7 +751,7 @@ export const notificationService = {
     const { ProjectMember } = await import('../models/index.js');
     const members = await ProjectMember.find({ project_id: project.id });
 
-    const sprintUrl = getSprintUrl(project.code, sprintId);
+    const sprintUrl = getSprintUrl(project.id, sprintId);
 
     // Get task stats for ending sprints
     let taskCount = 0;

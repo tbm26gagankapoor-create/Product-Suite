@@ -4,15 +4,15 @@ import { columnsService } from '../services/columns.service.js';
 const router = Router();
 
 // Get all columns (optionally filtered by project)
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const projectId = req.query.project_id as string | undefined;
-  const columns = columnsService.getAll(projectId);
+  const columns = await columnsService.getAll(projectId);
   res.json({ success: true, data: columns });
 });
 
 // Get column by ID
-router.get('/:id', (req, res) => {
-  const column = columnsService.getById(req.params.id);
+router.get('/:id', async (req, res) => {
+  const column = await columnsService.getById(req.params.id);
   if (!column) {
     return res.status(404).json({ success: false, error: 'Column not found' });
   }
@@ -20,7 +20,7 @@ router.get('/:id', (req, res) => {
 });
 
 // Create column
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { project_id, title, color, is_default } = req.body;
 
   if (!project_id || !title) {
@@ -30,13 +30,13 @@ router.post('/', (req, res) => {
     });
   }
 
-  const column = columnsService.create({ project_id, title, color, is_default });
+  const column = await columnsService.create({ project_id, title, color, is_default });
   res.status(201).json({ success: true, data: column });
 });
 
 // Update column
-router.patch('/:id', (req, res) => {
-  const column = columnsService.update(req.params.id, req.body);
+router.patch('/:id', async (req, res) => {
+  const column = await columnsService.update(req.params.id, req.body);
   if (!column) {
     return res.status(404).json({ success: false, error: 'Column not found' });
   }
@@ -44,7 +44,7 @@ router.patch('/:id', (req, res) => {
 });
 
 // Reorder columns
-router.post('/reorder', (req, res) => {
+router.post('/reorder', async (req, res) => {
   const { project_id, column_ids } = req.body;
 
   if (!project_id || !column_ids || !Array.isArray(column_ids)) {
@@ -54,13 +54,13 @@ router.post('/reorder', (req, res) => {
     });
   }
 
-  const columns = columnsService.reorder(project_id, column_ids);
+  const columns = await columnsService.reorder(project_id, column_ids);
   res.json({ success: true, data: columns });
 });
 
 // Delete column
-router.delete('/:id', (req, res) => {
-  const deleted = columnsService.delete(req.params.id);
+router.delete('/:id', async (req, res) => {
+  const deleted = await columnsService.delete(req.params.id);
   if (!deleted) {
     return res.status(404).json({ success: false, error: 'Column not found' });
   }

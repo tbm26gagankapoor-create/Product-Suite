@@ -16,6 +16,45 @@ export interface AuthRequest extends Request {
   user?: AuthUser;
 }
 
+// Simple in-memory cache for user lookups to avoid slow DB roundtrips on every request
+const userCache = new Map<string, { user: AuthUser; expiresAt: number }>();
+const USER_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function getCachedUser(userId: string): AuthUser | null {
+  const entry = userCache.get(userId);
+  if (entry && entry.expiresAt > Date.now()) {
+    return entry.user;
+  }
+  if (entry) {
+    userCache.delete(userId);
+  }
+  return null;
+}
+
+function setCachedUser(userId: string, user: AuthUser): void {
+  userCache.set(userId, { user, expiresAt: Date.now() + USER_CACHE_TTL_MS });
+  // Evict old entries if cache grows too large
+  if (userCache.size > 500) {
+    const now = Date.now();
+    for (const [key, entry] of userCache) {
+      if (entry.expiresAt <= now) userCache.delete(key);
+    }
+  }
+}
+
+// Auth-specific fields: skip large fields like avatar_url to reduce transfer time
+const AUTH_USER_FIELDS = 'name email designation organization_id';
+
+// Helper: DB lookup with timeout to prevent hanging requests
+async function findUserWithTimeout(userId: string, timeoutMs: number = 15000): Promise<any> {
+  return Promise.race([
+    database.findById<any>('users', userId, AUTH_USER_FIELDS),
+    new Promise<null>((_, reject) =>
+      setTimeout(() => reject(new Error(`User lookup timed out after ${timeoutMs}ms`)), timeoutMs)
+    ),
+  ]);
+}
+
 /**
  * Middleware to extract and verify JWT token
  * Attaches user info to request object
@@ -33,11 +72,18 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
   try {
     const decoded = jwt.verify(token, config.jwt.secret) as { userId: string; email: string };
 
-    // Get full user info from database
-    const user = await database.findById<any>('users', decoded.userId);
+    // Check cache first
+    const cached = getCachedUser(decoded.userId);
+    if (cached) {
+      req.user = cached;
+      return next();
+    }
+
+    // Get full user info from database (with timeout)
+    const user = await findUserWithTimeout(decoded.userId);
 
     if (user) {
-      req.user = {
+      const authUser: AuthUser = {
         id: user.id,
         email: user.email,
         name: user.name,
@@ -45,10 +91,12 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
         isAdmin: user.designation === 'Admin',
         organizationId: user.organization_id || null,
       };
+      req.user = authUser;
+      setCachedUser(decoded.userId, authUser);
     }
   } catch (error) {
-    // Invalid token - continue without user
-    console.log('Invalid token:', error instanceof Error ? error.message : 'Unknown error');
+    // Invalid token or DB timeout - continue without user
+    console.log('Auth middleware error:', error instanceof Error ? error.message : 'Unknown error');
   }
 
   next();
@@ -70,13 +118,20 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
   try {
     const decoded = jwt.verify(token, config.jwt.secret) as { userId: string; email: string };
 
-    const user = await database.findById<any>('users', decoded.userId);
+    // Check cache first
+    const cached = getCachedUser(decoded.userId);
+    if (cached) {
+      req.user = cached;
+      return next();
+    }
+
+    const user = await findUserWithTimeout(decoded.userId);
 
     if (!user) {
       return res.status(401).json({ success: false, error: 'User not found' });
     }
 
-    req.user = {
+    const authUser: AuthUser = {
       id: user.id,
       email: user.email,
       name: user.name,
@@ -84,6 +139,8 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
       isAdmin: user.designation === 'Admin',
       organizationId: user.organization_id || null,
     };
+    req.user = authUser;
+    setCachedUser(decoded.userId, authUser);
 
     next();
   } catch (error) {

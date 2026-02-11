@@ -93,14 +93,14 @@ export const teamsService = {
       updated_at: now(),
     };
 
-    await database.insert('teams', team);
+    const savedTeam = await database.insert<Team>('teams', team);
 
     // Add members if provided
     if (input.member_ids && input.member_ids.length > 0) {
       for (const userId of input.member_ids) {
         const teamMember: TeamMember = {
           id: generateUUID(),
-          team_id: team.id,
+          team_id: savedTeam.id,
           user_id: userId,
           joined_at: now(),
         };
@@ -108,7 +108,7 @@ export const teamsService = {
       }
     }
 
-    return this.enrichTeam(team);
+    return this.enrichTeam(savedTeam);
   },
 
   async update(id: string, input: Partial<CreateTeamInput>): Promise<TeamWithMembers | null> {

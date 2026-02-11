@@ -62,7 +62,6 @@ export const usersApi = {
 export const projectsApi = {
   getAll: () => request<any[]>('/projects'),
   getById: (id: string) => request<any>(`/projects/${id}`),
-  getByCode: (code: string) => request<any>(`/projects/code/${code}`),
   create: (data: {
     name: string;
     code: string;

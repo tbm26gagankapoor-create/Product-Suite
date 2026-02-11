@@ -92,29 +92,6 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
   res.json({ success: true, data: project });
 });
 
-// Get project by code (with access check)
-router.get('/code/:code', async (req: AuthRequest, res: Response) => {
-  const user = req.user;
-
-  if (!user) {
-    return res.status(401).json({ success: false, error: 'Authentication required' });
-  }
-
-  const project = await projectsService.getByCode(req.params.code);
-
-  if (!project) {
-    return res.status(404).json({ success: false, error: 'Project not found' });
-  }
-
-  // Check access
-  const hasAccess = await projectsService.userHasAccess(project.id, user.id, user.isAdmin);
-  if (!hasAccess) {
-    return res.status(403).json({ success: false, error: 'Access denied' });
-  }
-
-  res.json({ success: true, data: project });
-});
-
 // Create project or draft
 router.post('/', async (req: AuthRequest, res: Response) => {
   const user = req.user;
@@ -155,8 +132,8 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 
     res.status(201).json({ success: true, data: project });
   } catch (error: any) {
-    if (error.message?.includes('UNIQUE constraint')) {
-      return res.status(400).json({ success: false, error: 'Project code already exists' });
+    if (error.message?.includes('UNIQUE constraint') || error.message?.includes('E11000 duplicate key') || error.code === 11000) {
+      return res.status(400).json({ success: false, error: 'Project code already exists in this organization' });
     }
     throw error;
   }

@@ -109,14 +109,22 @@ app.use((req, res) => {
 
 // Start server function
 async function startServer() {
-  // Connect to MongoDB
-  try {
-    await connectDB();
-    console.log('✅ MongoDB connected');
-  } catch (error) {
-    console.error('❌ Failed to connect to MongoDB:', error);
-    console.log('💡 Make sure MongoDB is running or MONGODB_URI is set correctly');
-    process.exit(1);
+  // Connect to MongoDB with retry
+  const maxRetries = 3;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await connectDB();
+      console.log('✅ MongoDB connected');
+      break;
+    } catch (error) {
+      if (attempt === maxRetries) {
+        console.error('❌ Failed to connect to MongoDB after', maxRetries, 'attempts:', error);
+        console.log('💡 Make sure MongoDB is running or MONGODB_URI is set correctly');
+        process.exit(1);
+      }
+      console.log(`⏳ MongoDB connection attempt ${attempt}/${maxRetries} failed, retrying in 5s...`);
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
   }
 
   // Start Express server - Listen on 0.0.0.0 for network access

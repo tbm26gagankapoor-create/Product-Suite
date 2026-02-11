@@ -227,7 +227,7 @@ const projectSchema = new Schema<IProject>({
 
   name: { type: String, required: true },
   description: String,
-  code: { type: String, required: true, unique: true, index: true },
+  code: { type: String, required: true, index: true },
   status: { type: String, default: 'active' },
   progress_percentage: { type: Number, default: 0 },
   is_favorite: { type: Boolean, default: false },
@@ -257,6 +257,9 @@ const projectSchema = new Schema<IProject>({
   created_at: { type: Date, default: Date.now },
   updated_at: { type: Date, default: Date.now },
 });
+
+// Unique code per organization (not globally unique)
+projectSchema.index({ code: 1, organization_id: 1 }, { unique: true });
 
 // ===================
 // Project Member Model
@@ -343,7 +346,7 @@ sprintSchema.index({ project_id: 1, start_date: -1 });
 export interface ITag extends Document {
   id: string;
   project_id: string;
-  name: string;
+  label: string;
   color: string;
   created_at: Date;
 }
@@ -351,7 +354,7 @@ export interface ITag extends Document {
 const tagSchema = new Schema<ITag>({
 
   project_id: { type: Schema.Types.Mixed, required: true, index: true },
-  name: { type: String, required: true },
+  label: { type: String, required: true },
   color: { type: String, default: 'gray' },
   created_at: { type: Date, default: Date.now },
 });
@@ -497,7 +500,9 @@ export interface IComment extends Document {
   id: string;
   task_id: string;
   user_id: string;
-  text: string;
+  content: string;
+  parent_comment_id?: string;
+  is_edited: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -506,7 +511,9 @@ const commentSchema = new Schema<IComment>({
 
   task_id: { type: Schema.Types.Mixed, required: true, index: true },
   user_id: { type: Schema.Types.Mixed, required: true, index: true },
-  text: { type: String, required: true },
+  content: { type: String, required: true },
+  parent_comment_id: { type: Schema.Types.Mixed, default: null },
+  is_edited: { type: Boolean, default: false },
   created_at: { type: Date, default: Date.now, index: true },
   updated_at: { type: Date, default: Date.now },
 });

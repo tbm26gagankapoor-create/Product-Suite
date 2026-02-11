@@ -15,35 +15,35 @@ router.get('/', async (req, res) => {
 });
 
 // Get activity for a specific task
-router.get('/task/:taskId', (req, res) => {
-  const activities = activityService.getByTask(req.params.taskId);
+router.get('/task/:taskId', async (req, res) => {
+  const activities = await activityService.getByTask(req.params.taskId);
   res.json({ success: true, data: activities });
 });
 
 // Get activity for a specific project
-router.get('/project/:projectId', (req, res) => {
-  const activities = activityService.getByProject(req.params.projectId);
+router.get('/project/:projectId', async (req, res) => {
+  const activities = await activityService.getByProject(req.params.projectId);
   res.json({ success: true, data: activities });
 });
 
 // Get activity for current user
-router.get('/me', (req: AuthRequest, res) => {
+router.get('/me', async (req: AuthRequest, res) => {
   if (!req.user) {
     return res.status(401).json({ success: false, error: 'Authentication required' });
   }
-  const activities = activityService.getByUser(req.user.id);
+  const activities = await activityService.getByUser(req.user.id);
   res.json({ success: true, data: activities });
 });
 
 // Get recent activity (global)
-router.get('/recent', (req, res) => {
+router.get('/recent', async (req, res) => {
   const limit = parseInt(req.query.limit as string) || 100;
-  const activities = activityService.getRecent(limit);
+  const activities = await activityService.getRecent(limit);
   res.json({ success: true, data: activities });
 });
 
 // Log a new activity (mainly for internal use, but exposed for flexibility)
-router.post('/', (req: AuthRequest, res) => {
+router.post('/', async (req: AuthRequest, res) => {
   const { entity_type, entity_id, action, field_changed, old_value, new_value } = req.body;
 
   if (!entity_type || !entity_id || !action) {
@@ -53,7 +53,7 @@ router.post('/', (req: AuthRequest, res) => {
     });
   }
 
-  const activity = activityService.log({
+  const activity = await activityService.log({
     entity_type,
     entity_id,
     action,

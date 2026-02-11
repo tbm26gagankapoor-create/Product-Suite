@@ -299,28 +299,12 @@ export const projectsService = {
     return { ...project, ...(await getProjectStats(id)) };
   },
 
-  async getByCode(code: string): Promise<Project | null> {
-    return database.findOne<Project>('projects', { code });
-  },
-
   async create(input: CreateProjectInput): Promise<ProjectWithStats> {
-    // Auto-deduplicate code: if "UBE" exists, try "UBE1", "UBE2", etc.
-    let code = input.code;
-    let existing = await this.getByCode(code);
-    if (existing) {
-      let suffix = 1;
-      while (existing) {
-        code = `${input.code}${suffix}`;
-        existing = await this.getByCode(code);
-        suffix++;
-      }
-    }
-
     const projectData: Project = {
       id: generateUUID(),
       name: input.name,
       description: input.description || null,
-      code,
+      code: input.code,
       status: input.status || 'active',
       progress_percentage: 0,
       is_favorite: false,

@@ -46,8 +46,8 @@ export const tagsService = {
       created_at: now(),
     };
 
-    await database.insert('tags', tag);
-    return tag;
+    const saved = await database.insert<Tag>('tags', tag);
+    return saved;
   },
 
   async update(id: string, input: Partial<CreateTagInput>): Promise<Tag | null> {

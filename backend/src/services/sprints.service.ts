@@ -236,8 +236,8 @@ export const sprintsService = {
       updated_at: now(),
     };
 
-    await database.insert('sprints', sprint);
-    return (await this.getById(sprint.id))!;
+    const saved = await database.insert<Sprint>('sprints', sprint);
+    return (await this.getById(saved.id))!;
   },
 
   async update(id: string, input: Partial<CreateSprintInput & { status?: 'planned' | 'active' | 'completed'; velocity?: number }>): Promise<SprintWithStats | null> {

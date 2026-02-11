@@ -4,15 +4,15 @@ import { tagsService } from '../services/tags.service.js';
 const router = Router();
 
 // Get all tags (optionally filtered by project)
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const projectId = req.query.project_id as string | undefined;
-  const tags = tagsService.getAll(projectId);
+  const tags = await tagsService.getAll(projectId);
   res.json({ success: true, data: tags });
 });
 
 // Get tag by ID
-router.get('/:id', (req, res) => {
-  const tag = tagsService.getById(req.params.id);
+router.get('/:id', async (req, res) => {
+  const tag = await tagsService.getById(req.params.id);
   if (!tag) {
     return res.status(404).json({ success: false, error: 'Tag not found' });
   }
@@ -20,7 +20,7 @@ router.get('/:id', (req, res) => {
 });
 
 // Create tag
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { project_id, label, color } = req.body;
 
   if (!project_id || !label || !color) {
@@ -31,7 +31,7 @@ router.post('/', (req, res) => {
   }
 
   try {
-    const tag = tagsService.create({ project_id, label, color });
+    const tag = await tagsService.create({ project_id, label, color });
     res.status(201).json({ success: true, data: tag });
   } catch (error: any) {
     if (error.message?.includes('UNIQUE constraint')) {
@@ -42,8 +42,8 @@ router.post('/', (req, res) => {
 });
 
 // Update tag
-router.patch('/:id', (req, res) => {
-  const tag = tagsService.update(req.params.id, req.body);
+router.patch('/:id', async (req, res) => {
+  const tag = await tagsService.update(req.params.id, req.body);
   if (!tag) {
     return res.status(404).json({ success: false, error: 'Tag not found' });
   }
@@ -51,8 +51,8 @@ router.patch('/:id', (req, res) => {
 });
 
 // Delete tag
-router.delete('/:id', (req, res) => {
-  const deleted = tagsService.delete(req.params.id);
+router.delete('/:id', async (req, res) => {
+  const deleted = await tagsService.delete(req.params.id);
   if (!deleted) {
     return res.status(404).json({ success: false, error: 'Tag not found' });
   }

@@ -76,8 +76,8 @@ export const commentsService = {
       updated_at: now(),
     };
 
-    await database.insert('comments', comment);
-    return enrichComment(comment);
+    const saved = await database.insert<Comment>('comments', comment);
+    return enrichComment(saved);
   },
 
   async update(id: string, content: string): Promise<CommentWithUser | null> {

@@ -47,8 +47,8 @@ async function runTest() {
   // ============================================
   console.log('\n=== STEP 1: Create Project ===');
   const projectRes = await apiCall('POST', '/projects', token, {
-    name: 'Test Charity Project',
-    code: 'CHA',
+    name: 'Test Flow Project',
+    code: 'TFL',
     description: 'A test charity platform',
     owner_ids: [userId],
     organization_id: orgId,

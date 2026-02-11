@@ -192,18 +192,22 @@ export const database = {
   },
 
   // Find by ID (using MongoDB _id)
-  async findById<T>(collection: keyof DatabaseSchema, id: string): Promise<T | null> {
+  async findById<T>(collection: keyof DatabaseSchema, id: string, selectFields?: string): Promise<T | null> {
     const model = models[collection];
     if (!model) throw new Error(`Unknown collection: ${collection}`);
 
-    // Try to find by _id first (ObjectId), fallback to legacy 'id' field
+    // Try to find by _id first (ObjectId)
     let doc = null;
     if (isValidObjectId(id)) {
-      doc = await model.findById(id).lean();
+      const query = model.findById(id);
+      if (selectFields) query.select(selectFields);
+      doc = await query.lean();
     }
-    // Fallback: try finding by legacy 'id' field for backward compatibility
-    if (!doc) {
-      doc = await model.findOne({ id }).lean();
+    // Fallback: try finding by legacy 'id' field ONLY for non-ObjectId strings (UUIDs)
+    if (!doc && !isValidObjectId(id)) {
+      const query = model.findOne({ id });
+      if (selectFields) query.select(selectFields);
+      doc = await query.lean();
     }
 
     if (!doc) return null;
@@ -250,20 +254,23 @@ export const database = {
     const model = models[collection];
     if (!model) throw new Error(`Unknown collection: ${collection}`);
 
+    // Normalize _id-suffixed fields to ObjectId for consistency with inserts/queries
+    const normalizedUpdates = normalizeRecordForInsert(updates);
+
     // Try to update by _id first, fallback to legacy 'id' field
     let doc = null;
     if (isValidObjectId(id)) {
       doc = await model.findByIdAndUpdate(
         id,
-        { $set: updates },
+        { $set: normalizedUpdates },
         { new: true }
       ).lean();
     }
-    // Fallback for legacy 'id' field
-    if (!doc) {
+    // Fallback for legacy 'id' field ONLY for non-ObjectId strings (UUIDs)
+    if (!doc && !isValidObjectId(id)) {
       doc = await model.findOneAndUpdate(
         { id },
-        { $set: updates },
+        { $set: normalizedUpdates },
         { new: true }
       ).lean();
     }
@@ -277,12 +284,12 @@ export const database = {
     const model = models[collection];
     if (!model) throw new Error(`Unknown collection: ${collection}`);
 
-    // Try to delete by _id first, fallback to legacy 'id' field
+    // Try to delete by _id first, fallback to legacy 'id' field for non-ObjectId strings
     let result = { deletedCount: 0 };
     if (isValidObjectId(id)) {
       result = await model.deleteOne({ _id: id });
     }
-    if (result.deletedCount === 0) {
+    if (result.deletedCount === 0 && !isValidObjectId(id)) {
       result = await model.deleteOne({ id });
     }
 
@@ -582,8 +589,8 @@ function normalizeRecordForInsert(record: Record<string, any>): Record<string, a
       normalized[key] = value.map((item: any) =>
         typeof item === 'string' && isValidObjectId(item) ? new mongoose.Types.ObjectId(item) : item
       );
-    } else if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
-      // Recursively normalize nested objects (but not arrays or dates)
+    } else if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date) && !(value instanceof mongoose.Types.ObjectId) && !value._bsontype) {
+      // Recursively normalize nested objects (but not arrays, dates, or ObjectIds)
       normalized[key] = normalizeRecordForInsert(value);
     } else {
       normalized[key] = value;
