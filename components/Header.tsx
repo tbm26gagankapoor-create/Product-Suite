@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Star, MoreHorizontal, UserPlus, AlertCircle, ChevronDown, Zap, Check } from 'lucide-react';
+import { Star, MoreHorizontal, UserPlus, AlertCircle, ChevronDown, Zap, Check, Terminal, Loader2 } from 'lucide-react';
 import { Project } from '../types';
 import { useProjectData } from '../context/ProjectDataContext';
 import ProductIcon from './ProductIcon';
@@ -13,6 +13,8 @@ interface HeaderProps {
   activeProject?: Project;
   onFixDates?: () => void;
   missingDateCount?: number;
+  onExportSpec?: () => void;
+  isExportingSpec?: boolean;
 }
 
 const Header: React.FC<HeaderProps> = ({
@@ -22,7 +24,9 @@ const Header: React.FC<HeaderProps> = ({
   onSprintChange,
   activeProject,
   onFixDates,
-  missingDateCount = 0
+  missingDateCount = 0,
+  onExportSpec,
+  isExportingSpec = false
 }) => {
   const { users, sprints, tasks, currentOrganization } = useProjectData();
   const tabs = ['Overview', 'Documents', 'Sprints', 'Tasks', 'Boards', 'Timeline', 'Calendar', 'Teams', 'Files'];
@@ -222,6 +226,16 @@ const Header: React.FC<HeaderProps> = ({
                     </button>
                 )}
              </div>
+             {onExportSpec && (
+                <button
+                    onClick={onExportSpec}
+                    disabled={isExportingSpec}
+                    className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1F2128] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                >
+                    {isExportingSpec ? <Loader2 size={16} className="animate-spin" /> : <Terminal size={16} />}
+                    Build with Claude
+                </button>
+             )}
              <button className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1F2128] px-3 py-1.5 rounded-lg transition-colors">
                 <UserPlus size={16} />
                 Share

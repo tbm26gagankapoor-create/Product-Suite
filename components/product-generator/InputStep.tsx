@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { User as UserType } from '../../types';
+import ProviderSelector from './ProviderSelector';
 
 interface InputStepProps {
   inputMode: 'scratch' | 'import';
@@ -47,6 +48,11 @@ interface InputStepProps {
   isSavingDraft: boolean;
   isTransitioning: boolean;
   transitionDirection: 'forward' | 'backward';
+  // AI Provider Selection
+  availableProviders: any[];
+  selectedProvider: any | null;
+  onProviderChange: (provider: any) => void;
+  isLoadingProviders: boolean;
 }
 
 // Reusable multi-select owner dropdown component
@@ -188,6 +194,10 @@ const InputStep: React.FC<InputStepProps> = ({
   isSavingDraft,
   isTransitioning,
   transitionDirection,
+  availableProviders,
+  selectedProvider,
+  onProviderChange,
+  isLoadingProviders,
 }) => {
   return (
     <div className={`p-6 space-y-5 overflow-y-auto custom-scrollbar ${
@@ -208,6 +218,15 @@ const InputStep: React.FC<InputStepProps> = ({
                 <FileText size={16} /> Import Document
             </button>
         </div>
+
+        {/* AI Provider Selection */}
+        <ProviderSelector
+            availableProviders={availableProviders}
+            selectedProvider={selectedProvider}
+            onProviderChange={onProviderChange}
+            isLoading={isLoadingProviders}
+            disabled={false}
+        />
 
         {inputMode === 'scratch' ? (
             <div className="space-y-5">

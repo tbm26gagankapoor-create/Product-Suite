@@ -21,6 +21,8 @@ import { useConfig } from '../../context/ConfigContext';
 import { useToast } from '../../context/ToastContext';
 import * as pdfjsLib from 'https://esm.sh/pdfjs-dist@4.0.379';
 import mammoth from 'https://esm.sh/mammoth@1.6.0';
+import { aiProvidersService } from '../../services/ai-providers.service';
+import { createAIClient } from '../../lib/ai-multi-provider';
 
 // Types
 import {
@@ -40,9 +42,14 @@ import {
   cleanJson,
   cleanHtml,
   generateWithRetry,
+  generateWithFallback,
   getUserForRole,
   STEP_ICONS,
 } from './utils';
+
+// Fallback Notification
+import { useFallbackNotification } from '../../hooks/useFallbackNotification';
+import FallbackNotification from './FallbackNotification';
 
 // Step Components
 import InputStep from './InputStep';
@@ -76,6 +83,15 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
   const [step, setStep] = useState<WizardStep>('input');
   const [draftProjectId, setDraftProjectId] = useState<string | null>(draftProject?.id || null);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
+
+  // AI Provider State
+  const [availableProviders, setAvailableProviders] = useState<any[]>([]);
+  const [selectedProvider, setSelectedProvider] = useState<any | null>(null);
+  const [isLoadingProviders, setIsLoadingProviders] = useState(true);
+  const [customAiClient, setCustomAiClient] = useState<any | null>(null);
+
+  // Fallback Notification Hook
+  const { notification, showFallbackNotification, hideNotification } = useFallbackNotification();
 
   // Input Mode
   const [inputMode, setInputMode] = useState<'scratch' | 'import'>('scratch');
@@ -257,6 +273,40 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
     const currentIdx = stepOrder.indexOf(step);
     return currentIdx > 0 ? stepOrder[currentIdx - 1] : 'input';
   };
+
+  // Load available AI providers when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const loadProviders = async () => {
+      try {
+        setIsLoadingProviders(true);
+        const providers = await aiProvidersService.getAvailableProviders();
+        const defaultProvider = await aiProvidersService.getDefaultProvider();
+
+        setAvailableProviders(providers);
+        setSelectedProvider(defaultProvider);
+
+        // Create AI client for default provider
+        const client = createAIClient({ provider: defaultProvider });
+        setCustomAiClient(client);
+
+        console.log('[Product Generator] Loaded AI providers:', {
+          count: providers.length,
+          default: defaultProvider?.display_name
+        });
+      } catch (error) {
+        console.error('[Product Generator] Failed to load providers:', error);
+        // Fallback to default client (SAIF AI)
+        const fallbackClient = createAIClient();
+        setCustomAiClient(fallbackClient);
+      } finally {
+        setIsLoadingProviders(false);
+      }
+    };
+
+    loadProviders();
+  }, [isOpen]);
 
   // Initialize form defaults (only once when modal opens)
   useEffect(() => {
@@ -459,6 +509,14 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
   };
 
   // 1. Initial Generation
+  // Handler: Change AI Provider
+  const handleProviderChange = (provider: any) => {
+    setSelectedProvider(provider);
+    const client = createAIClient({ provider });
+    setCustomAiClient(client);
+    console.log('[Product Generator] Switched to provider:', provider.display_name);
+  };
+
   const handleGenerate = async () => {
       if (inputMode === 'scratch' && !productName) return;
       if (inputMode === 'import' && !uploadedFile) return;
@@ -615,14 +673,24 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
           parts.push({ text: prompt });
           setLoadingStatus('Generating product vision with AI...');
 
-          const response = await generateWithRetry({
+          const fallbackResult = await generateWithFallback({
               model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
               contents: [{ role: 'user', parts }],
               config: {
                   responseMimeType: 'application/json'
               }
-          });
+          }, selectedProvider, 3, 3);
 
+          // Show notification if fallback occurred
+          if (fallbackResult.hadFallback) {
+              showFallbackNotification(
+                  'fallback',
+                  fallbackResult.attempts[0].provider.display_name,
+                  fallbackResult.providerUsed.display_name
+              );
+          }
+
+          const response = fallbackResult.response;
           setLoadingStatus('Processing AI response...');
           const jsonText = cleanJson(response.text || '{}');
           let data;
@@ -689,14 +757,21 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
       `;
 
       try {
-          const response = await generateWithRetry({
+          const fallbackResult = await generateWithFallback({
               model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
               contents: [{ role: 'user', parts: [{ text: prompt }] }],
               config: {
                   responseMimeType: 'application/json'
               }
-          });
+          }, selectedProvider, 3, 3);
 
+          if (fallbackResult.hadFallback) {
+              showFallbackNotification('fallback',
+                  fallbackResult.attempts[0].provider.display_name,
+                  fallbackResult.providerUsed.display_name);
+          }
+
+          const response = fallbackResult.response;
           const text = cleanJson(response.text || '{}');
           const parsed = JSON.parse(text);
 
@@ -778,11 +853,18 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
 
           setLoadingStatus('Generating PRD Requirements...');
 
-          const prdResponse = await generateWithRetry({
+          const prdFallbackResult = await generateWithFallback({
               model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
               contents: [{ role: 'user', parts: [{ text: prdPrompt }] }]
-          });
+          }, selectedProvider, 3, 3);
 
+          if (prdFallbackResult.hadFallback) {
+              showFallbackNotification('fallback',
+                  prdFallbackResult.attempts[0].provider.display_name,
+                  prdFallbackResult.providerUsed.display_name);
+          }
+
+          const prdResponse = prdFallbackResult.response;
           const prdContent = cleanHtml(prdResponse.text || '<p>Error generating PRD</p>');
           setGeneratedDocs(prev => ({ ...prev, prd: prdContent }));
           setDocGenerationProgress(prev => ({ ...prev, prd: 'completed' }));
@@ -821,11 +903,18 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
 
                   await new Promise(r => setTimeout(r, 5000));
 
-                  const res = await generateWithRetry({
+                  const docFallbackResult = await generateWithFallback({
                       model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
                       contents: [{ role: 'user', parts: [{ text: docPrompt }] }]
-                  });
+                  }, selectedProvider, 3, 3);
 
+                  if (docFallbackResult.hadFallback) {
+                      showFallbackNotification('fallback',
+                          docFallbackResult.attempts[0].provider.display_name,
+                          docFallbackResult.providerUsed.display_name);
+                  }
+
+                  const res = docFallbackResult.response;
                   const docContent = cleanHtml(res.text || '<p>Error generating content</p>');
                   setGeneratedDocs(prev => ({ ...prev, [sec.id]: docContent }));
                   setDocGenerationProgress(prev => ({ ...prev, [sec.id]: 'completed' }));
@@ -886,11 +975,18 @@ const ProductGeneratorModal: React.FC<ProductGeneratorModalProps> = ({ isOpen, o
             Output strictly valid HTML using Tailwind CSS classes. No markdown.
           `;
 
-          const res = await generateWithRetry({
+          const retryFallbackResult = await generateWithFallback({
               model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
               contents: [{ role: 'user', parts: [{ text: docPrompt }] }]
-          });
+          }, selectedProvider, 3, 3);
 
+          if (retryFallbackResult.hadFallback) {
+              showFallbackNotification('fallback',
+                  retryFallbackResult.attempts[0].provider.display_name,
+                  retryFallbackResult.providerUsed.display_name);
+          }
+
+          const res = retryFallbackResult.response;
           const docContent = cleanHtml(res.text || '<p>Error generating content</p>');
           setGeneratedDocs(prev => ({ ...prev, [sectionId]: docContent }));
           setDocGenerationProgress(prev => ({ ...prev, [sectionId]: 'completed' }));
@@ -1151,11 +1247,19 @@ Generate comprehensive, production-ready tasks. A real team will build from this
             const batchPromises = batch.map(async (category) => {
               try {
                 const categoryPrompt = generateCategoryPrompt(category, contextToUse);
-                const response = await generateWithRetry({
+                const fallbackResult1 = await generateWithFallback({
                   model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
                   contents: [{ role: 'user', parts: [{ text: categoryPrompt }] }],
                   config: { responseMimeType: "application/json" }
-                });
+                }, selectedProvider, 3, 3);
+
+                if (fallbackResult1.hadFallback) {
+                  showFallbackNotification('fallback',
+                    fallbackResult1.attempts[0].provider.display_name,
+                    fallbackResult1.providerUsed.display_name);
+                }
+
+                const response = fallbackResult1.response;
 
                 const epics = parseEpicsFromResponse(response.text || '');
                 console.log(`Category ${category.name}: generated ${epics.length} epics with ${epics.reduce((acc: number, e: any) => acc + (e.tasks?.length || 0), 0)} tasks`);
@@ -1215,11 +1319,19 @@ Each epic needs 8-12 detailed tasks with descriptions including user story, impl
 OUTPUT ONLY VALID JSON:
 {"epics":[{"title":"Epic","description":"Description","tasks":[{"title":"Task","description":"<p>Details...</p>","type":"task","points":3,"role":"Full-Stack"}]}]}`;
 
-              const fallbackResponse = await generateWithRetry({
+              const fallbackResult2 = await generateWithFallback({
                   model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
                   contents: [{ role: 'user', parts: [{ text: fallbackPrompt }] }],
                   config: { responseMimeType: "application/json" }
-              });
+              }, selectedProvider, 3, 3);
+
+              if (fallbackResult2.hadFallback) {
+                showFallbackNotification('fallback',
+                  fallbackResult2.attempts[0].provider.display_name,
+                  fallbackResult2.providerUsed.display_name);
+              }
+
+              const fallbackResponse = fallbackResult2.response;
 
               const fallbackEpics = parseEpicsFromResponse(fallbackResponse.text || '');
               if (fallbackEpics.length > 0) {
@@ -1348,11 +1460,19 @@ Please check the browser console for detailed logs and try again.`;
             }
           `;
 
-          const response = await generateWithRetry({
+          const fallbackResult3 = await generateWithFallback({
               model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
               contents: [{ role: 'user', parts: [{ text: prompt }] }],
               config: { responseMimeType: 'application/json' }
-          });
+          }, selectedProvider, 3, 3);
+
+          if (fallbackResult3.hadFallback) {
+            showFallbackNotification('fallback',
+              fallbackResult3.attempts[0].provider.display_name,
+              fallbackResult3.providerUsed.display_name);
+          }
+
+          const response = fallbackResult3.response;
 
           let newTasks: any[] = [];
           try {
@@ -1582,11 +1702,18 @@ Please check the browser console for detailed logs and try again.`;
                     Output strictly valid HTML using Tailwind CSS classes. No markdown.
                   `;
 
-                  const res = await generateWithRetry({
+                  const bgFallbackResult = await generateWithFallback({
                       model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
                       contents: [{ role: 'user', parts: [{ text: docPrompt }] }]
-                  });
+                  }, selectedProvider, 3, 3);
 
+                  if (bgFallbackResult.hadFallback) {
+                      showFallbackNotification('fallback',
+                          bgFallbackResult.attempts[0].provider.display_name,
+                          bgFallbackResult.providerUsed.display_name);
+                  }
+
+                  const res = bgFallbackResult.response;
                   if (res.text && onSaveDraft) {
                       const newDoc = cleanHtml(res.text);
                       accumulatedDocs = { ...accumulatedDocs, [doc.id]: newDoc };
@@ -1649,10 +1776,18 @@ Please check the browser console for detailed logs and try again.`;
       try {
           if (step === 'review') {
               const prompt = `Current Vision: "${refinedVision}"\nUser Request: "${userMsg}"\nRewrite the vision statement based on the request. Return only the updated vision text.`;
-              const res = await generateWithRetry({
+              const reviewFallbackResult = await generateWithFallback({
                   model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
                   contents: [{ role: 'user', parts: [{ text: prompt }] }]
-              });
+              }, selectedProvider, 3, 3);
+
+              if (reviewFallbackResult.hadFallback) {
+                  showFallbackNotification('fallback',
+                      reviewFallbackResult.attempts[0].provider.display_name,
+                      reviewFallbackResult.providerUsed.display_name);
+              }
+
+              const res = reviewFallbackResult.response;
               setRefinedVision(res.text || refinedVision);
               setMessages(prev => [...prev, { role: 'ai', text: "Vision updated." }]);
           }
@@ -1666,11 +1801,18 @@ Please check the browser console for detailed logs and try again.`;
 
                 Return the FULL updated HTML for this section based on the request. Do not wrap in markdown.
               `;
-              const res = await generateWithRetry({
+              const prdEditFallbackResult = await generateWithFallback({
                   model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
                   contents: [{ role: 'user', parts: [{ text: prompt }] }]
-              });
+              }, selectedProvider, 3, 3);
 
+              if (prdEditFallbackResult.hadFallback) {
+                  showFallbackNotification('fallback',
+                      prdEditFallbackResult.attempts[0].provider.display_name,
+                      prdEditFallbackResult.providerUsed.display_name);
+              }
+
+              const res = prdEditFallbackResult.response;
               if (res.text) {
                   setGeneratedDocs(prev => ({ ...prev, [activeDocSection]: cleanHtml(res.text) }));
                   if (docContentRef.current) docContentRef.current.innerHTML = cleanHtml(res.text);
@@ -1685,12 +1827,19 @@ Please check the browser console for detailed logs and try again.`;
                 Update the plan structure based on the request (e.g. add a task to all epics, rename epics, remove bugs).
                 Return the FULL updated JSON array of Epics.
               `;
-              const res = await generateWithRetry({
+              const planningFallbackResult = await generateWithFallback({
                   model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
                   contents: [{ role: 'user', parts: [{ text: prompt }] }],
                   config: { responseMimeType: 'application/json' }
-              });
+              }, selectedProvider, 3, 3);
 
+              if (planningFallbackResult.hadFallback) {
+                  showFallbackNotification('fallback',
+                      planningFallbackResult.attempts[0].provider.display_name,
+                      planningFallbackResult.providerUsed.display_name);
+              }
+
+              const res = planningFallbackResult.response;
               const jsonText = cleanJson(res.text || '[]');
               const parsed = JSON.parse(jsonText);
 
@@ -1782,11 +1931,18 @@ Instructions:
 4. Do not wrap in markdown code blocks
 5. Only return the HTML, nothing else`;
 
-              const res = await generateWithRetry({
+              const editFallbackResult = await generateWithFallback({
                   model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
                   contents: [{ role: 'user', parts: [{ text: prompt }] }]
-              });
+              }, selectedProvider, 3, 3);
 
+              if (editFallbackResult.hadFallback) {
+                  showFallbackNotification('fallback',
+                      editFallbackResult.attempts[0].provider.display_name,
+                      editFallbackResult.providerUsed.display_name);
+              }
+
+              const res = editFallbackResult.response;
               if (res.text) {
                   const updatedContent = cleanHtml(res.text);
                   setGeneratedDocs(prev => ({ ...prev, [activeDocSection]: updatedContent }));
@@ -1820,11 +1976,18 @@ STRICT RULES:
 - If not found anywhere, say "Not covered in documentation"
 - Be specific with names, numbers, and facts`;
 
-              const res = await generateWithRetry({
+              const qnaFallbackResult = await generateWithFallback({
                   model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
                   contents: [{ role: 'user', parts: [{ text: prompt }] }]
-              });
+              }, selectedProvider, 3, 3);
 
+              if (qnaFallbackResult.hadFallback) {
+                  showFallbackNotification('fallback',
+                      qnaFallbackResult.attempts[0].provider.display_name,
+                      qnaFallbackResult.providerUsed.display_name);
+              }
+
+              const res = qnaFallbackResult.response;
               setDocChatMessages(prev => [...prev, {
                   id: `msg-${Date.now()}`,
                   role: 'assistant',
@@ -2009,6 +2172,10 @@ STRICT RULES:
                         isSavingDraft={isSavingDraft}
                         isTransitioning={isTransitioning}
                         transitionDirection={transitionDirection}
+                        availableProviders={availableProviders}
+                        selectedProvider={selectedProvider}
+                        onProviderChange={handleProviderChange}
+                        isLoadingProviders={isLoadingProviders}
                     />
                 )}
 
@@ -2345,6 +2512,15 @@ STRICT RULES:
                 </div>
             </div>
         )}
+
+        {/* Fallback Notification */}
+        <FallbackNotification
+            show={notification.show}
+            type={notification.type}
+            primaryProvider={notification.primaryProvider}
+            fallbackProvider={notification.fallbackProvider}
+            onClose={hideNotification}
+        />
     </div>
   );
 };

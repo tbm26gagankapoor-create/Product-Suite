@@ -2,22 +2,37 @@ import { Router } from 'express';
 import authRoutes from './auth.routes.js';
 import oauthRoutes from './oauth.routes.js';
 import usersRoutes from './users.routes.js';
-import projectsRoutes from './projects.routes.js';
-import tasksRoutes from './tasks.routes.js';
-import sprintsRoutes from './sprints.routes.js';
-import tagsRoutes from './tags.routes.js';
-import columnsRoutes from './columns.routes.js';
-import commentsRoutes from './comments.routes.js';
-import activityRoutes from './activity.routes.js';
-import teamsRoutes from './teams.routes.js';
+// ===== TENANT-AWARE ROUTES (migrated) =====
+import projectsRoutes from './projects.routes.TENANT.js';
+import tasksRoutes from './tasks.routes.TENANT.js';
+import sprintsRoutes from './sprints.routes.TENANT.js';
+import tagsRoutes from './tags.routes.TENANT.js';
+import columnsRoutes from './columns.routes.TENANT.js';
+import commentsRoutes from './comments.routes.TENANT.js';
+import activityRoutes from './activity.routes.TENANT.js';
+import teamsRoutes from './teams.routes.TENANT.js';
+import configRoutes from './config.routes.TENANT.js';
+import notificationsRoutes from './notifications.routes.TENANT.js';
+import documentCommentsRoutes from './document-comments.routes.TENANT.js';
+import buildSpecRoutes from './build-spec.routes.TENANT.js';
+// ===== NON-TENANT ROUTES (no migration needed) =====
 import organizationsRoutes from './organizations.routes.js';
 import invitesRoutes from './invites.routes.js';
 import onboardingRoutes from './onboarding.routes.js';
-import configRoutes from './config.routes.js';
-import notificationsRoutes from './notifications.routes.js';
 import githubOAuthRoutes from './github-oauth.routes.js';
 import githubIntegrationRoutes from './github-integration.routes.js';
-import documentCommentsRoutes from './document-comments.routes.js';
+// ===== ADMIN ROUTES =====
+import adminRoutes from './admin.routes.js';
+// ===== PUBLIC AI PROVIDERS =====
+import aiProvidersRoutes from './ai-providers.routes.js';
+// ===== JOB MANAGEMENT =====
+import jobRoutes from './job.routes.js';
+// ===== RESEARCH & WEB SEARCH =====
+import researchRoutes from './research.routes.js';
+// ===== ENTERPRISE SSO =====
+import entraSSORoutes from './entra-sso.routes.js';
+// ===== PROMPT TEMPLATES =====
+import promptTemplatesRoutes from './prompt-templates.routes.js';
 import { microsoftOAuthService } from '../services/microsoft-oauth.service.js';
 import { googleOAuthService } from '../services/google-oauth.service.js';
 import { githubOAuthService } from '../services/github-oauth.service.js';
@@ -102,6 +117,14 @@ router.get('/health/live', (req, res) => {
 // Mount routes
 router.use('/auth', authRoutes);
 router.use('/auth', oauthRoutes);
+router.use('/admin', adminRoutes);
+
+// Public AI Providers (no auth required - for frontend provider selection)
+router.use('/projects/ai-providers', aiProvidersRoutes);
+router.use('/jobs', jobRoutes);
+router.use('/research', researchRoutes);
+router.use('/sso/entra', entraSSORoutes);
+router.use('/prompt-templates', promptTemplatesRoutes);
 router.use('/users', usersRoutes);
 router.use('/projects', projectsRoutes);
 router.use('/tasks', tasksRoutes);
@@ -119,5 +142,6 @@ router.use('/notifications', notificationsRoutes);
 router.use('/auth', githubOAuthRoutes);
 router.use('/', githubIntegrationRoutes);
 router.use('/', documentCommentsRoutes);
+router.use('/projects', buildSpecRoutes);
 
 export default router;

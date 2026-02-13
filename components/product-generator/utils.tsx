@@ -10,6 +10,8 @@ import {
   Layout,
 } from 'lucide-react';
 import { aiClient } from '../../lib/ai';
+import { aiFallbackService, type FallbackResult } from '../../services/ai-fallback.service';
+import type { AIProvider } from '../../services/ai-providers.service';
 
 // Markdown to HTML converter for better readability
 export const renderMarkdown = (markdown: string): string => {
@@ -74,10 +76,18 @@ export const cleanHtml = (text: string) => {
 };
 
 // Helper for exponential backoff retry
-export const generateWithRetry = async (params: any, retries = 5, delay = 2000): Promise<any> => {
+// Now supports custom AI client for multi-provider support
+export const generateWithRetry = async (
+  params: any,
+  retries = 5,
+  delay = 2000,
+  customAiClient?: any
+): Promise<any> => {
+  const client = customAiClient || aiClient;
+
   try {
     console.log('[AI] Calling model:', params.model || 'default');
-    const result = await aiClient.models.generateContent(params);
+    const result = await client.models.generateContent(params);
     console.log('[AI] Response received, length:', result.text?.length || 0);
     return result;
   } catch (error: any) {
@@ -101,7 +111,7 @@ export const generateWithRetry = async (params: any, retries = 5, delay = 2000):
       if (retries > 0) {
         console.warn(`Rate limit or server error hit (Attempt ${6 - retries}/5). Retrying in ${delay}ms...`, error);
         await new Promise(resolve => setTimeout(resolve, delay));
-        return generateWithRetry(params, retries - 1, delay * 2);
+        return generateWithRetry(params, retries - 1, delay * 2, customAiClient);
       } else {
          throw new Error("AI Service is busy or you have exceeded your quota. Please try again later.");
       }
@@ -111,6 +121,32 @@ export const generateWithRetry = async (params: any, retries = 5, delay = 2000):
     const errorDetails = `${error.message || 'Unknown error'}${error.status ? ` (Status: ${error.status})` : ''}`;
     throw new Error(`AI API Error: ${errorDetails}`);
   }
+};
+
+/**
+ * Generate with automatic provider fallback for reliability
+ * If primary provider fails, automatically tries fallback providers
+ *
+ * @param params - AI generation parameters
+ * @param selectedProvider - User's selected provider
+ * @param retries - Number of retries per provider (default: 3)
+ * @param maxFallbacks - Maximum number of fallback providers (default: 3)
+ * @returns FallbackResult with response and metadata
+ */
+export const generateWithFallback = async (
+  params: any,
+  selectedProvider: AIProvider | null,
+  retries: number = 3,
+  maxFallbacks: number = 3
+): Promise<FallbackResult> => {
+  return await aiFallbackService.executeWithFallback(
+    selectedProvider,
+    async (aiClient) => {
+      // Use the existing retry logic for each provider
+      return await generateWithRetry(params, retries, 2000, aiClient);
+    },
+    maxFallbacks
+  );
 };
 
 // Get suggestion icon based on type

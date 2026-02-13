@@ -1,24 +1,10 @@
-# Build stage
-FROM node:20-alpine AS builder
+# Production Dockerfile for Infinia Backend (using tsx)
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
-RUN npm ci
-
-# Copy source
-COPY . .
-
-# Build TypeScript
-RUN npm run build
-
-# Production stage
-FROM node:20-alpine AS production
-
-WORKDIR /app
+# Install PostgreSQL client for pg_isready
+RUN apk add --no-cache postgresql-client
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
@@ -27,11 +13,15 @@ RUN addgroup -g 1001 -S nodejs && \
 # Copy package files
 COPY package*.json ./
 
-# Install production dependencies only
-RUN npm ci --only=production && npm cache clean --force
+# Install ALL dependencies (including dev dependencies for tsx)
+RUN npm ci && npm cache clean --force
 
-# Copy built files
-COPY --from=builder /app/dist ./dist
+# Copy source code
+COPY . .
+
+# Copy and set up entrypoint script
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
 # Set ownership
 RUN chown -R nodejs:nodejs /app
@@ -40,11 +30,11 @@ RUN chown -R nodejs:nodejs /app
 USER nodejs
 
 # Expose port
-EXPOSE 3000
+EXPOSE 3001
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/v1/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3001/api/v1/health || exit 1
 
-# Start server
-CMD ["node", "dist/index.js"]
+# Use entrypoint script
+ENTRYPOINT ["/docker-entrypoint.sh"]

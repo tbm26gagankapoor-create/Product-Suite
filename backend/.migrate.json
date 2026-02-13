@@ -1,0 +1,8 @@
+{
+  "database-url-var": "POSTGRES_URL",
+  "migrations-dir": "migrations",
+  "migrations-table": "pgmigrations",
+  "check-order": true,
+  "ignore-pattern": "\\..*",
+  "migration-file-language": "sql"
+}

@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import database, { now } from '../lib/database.js';
+import { query } from '../db/postgres/client.js';
 import { config } from '../config/index.js';
 
 interface User {
@@ -10,7 +10,7 @@ interface User {
   password_hash?: string;
   avatar_url: string | null;
   designation: string | null;  // Maps to 'role' in frontend, 'designation' in DB
-  organization_id?: string;
+  tenant_id?: string;  // Changed from organization_id to tenant_id
   created_at: string;
   updated_at: string;
   oauth_provider?: 'microsoft' | 'google' | 'github' | null;
@@ -47,30 +47,46 @@ function generateToken(user: User): string {
 export const authService = {
   async register(data: RegisterData): Promise<{ user: Omit<User, 'password_hash'>; token: string }> {
     // Check if user exists
-    const existing = await database.findOne<User>('users', {
-      email: data.email.toLowerCase()
-    });
-    if (existing) {
+    const existingResult = await query<User>(
+      'SELECT id FROM users WHERE email = $1',
+      [data.email.toLowerCase()]
+    );
+
+    if (existingResult.rows.length > 0) {
       throw new Error('Email already registered');
     }
 
     // Hash password
     const passwordHash = await bcrypt.hash(data.password, 12);
 
-    // Create user data
-    const userData = {
-      name: data.name,
-      email: data.email.toLowerCase(),
-      password_hash: passwordHash,
-      avatar_url: `https://avatar.iran.liara.run/public`,
-      designation: 'Member',
-      created_at: now(),
-      updated_at: now(),
-    };
+    // Get first tenant (for simplicity - in production, this should be specified or from domain)
+    const tenantResult = await query<{ id: string }>(
+      'SELECT id FROM tenants WHERE is_active = true ORDER BY created_at LIMIT 1'
+    );
 
-    // Use the returned document which has the correct MongoDB-generated _id
-    const user = await database.insert<User>('users', userData);
+    if (tenantResult.rows.length === 0) {
+      throw new Error('No active tenant found');
+    }
 
+    const tenantId = tenantResult.rows[0].id;
+
+    // Create user
+    const result = await query<User>(
+      `INSERT INTO users (email, password_hash, name, role, tenant_id, status, avatar_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, email, name, role as designation, tenant_id, created_at, updated_at, avatar_url, sso_provider as oauth_provider, sso_subject_id as oauth_provider_id`,
+      [
+        data.email.toLowerCase(),
+        passwordHash,
+        data.name,
+        'member',
+        tenantId,
+        'active',
+        'https://avatar.iran.liara.run/public'
+      ]
+    );
+
+    const user = result.rows[0];
     const token = generateToken(user);
     const { password_hash, ...userWithoutPassword } = user;
 
@@ -78,14 +94,20 @@ export const authService = {
   },
 
   async login(data: LoginData): Promise<{ user: Omit<User, 'password_hash'>; token: string }> {
-    // Get user
-    const user = await database.findOne<User>('users', {
-      email: data.email.toLowerCase()
-    });
+    // Get user from PostgreSQL
+    const result = await query<User>(
+      `SELECT id, email, password_hash, name, role as designation, tenant_id, created_at, updated_at, avatar_url,
+              sso_provider as oauth_provider, sso_subject_id as oauth_provider_id
+       FROM users
+       WHERE email = $1 AND status = 'active'`,
+      [data.email.toLowerCase()]
+    );
 
-    if (!user) {
+    if (result.rows.length === 0) {
       throw new Error('Invalid credentials');
     }
+
+    const user = result.rows[0];
 
     // Verify password
     const isValid = await bcrypt.compare(data.password, user.password_hash || '');
@@ -101,33 +123,51 @@ export const authService = {
   },
 
   async getProfile(userId: string): Promise<Omit<User, 'password_hash'>> {
-    const user = await database.findById<User>('users', userId);
+    const result = await query<User>(
+      `SELECT id, email, name, role as designation, tenant_id, created_at, updated_at, avatar_url, sso_provider as oauth_provider, sso_subject_id as oauth_provider_id
+       FROM users
+       WHERE id = $1 AND status = 'active'`,
+      [userId]
+    );
 
-    if (!user) {
+    if (result.rows.length === 0) {
       throw new Error('User not found');
     }
 
-    const { password_hash, ...userWithoutPassword } = user;
+    const { password_hash, ...userWithoutPassword } = result.rows[0] as any;
     return userWithoutPassword;
   },
 
   async updateProfile(userId: string, data: { name?: string; avatar_url?: string }): Promise<Omit<User, 'password_hash'>> {
-    const updated = await database.update<User>('users', userId, { ...data, updated_at: now() });
+    const result = await query<User>(
+      `UPDATE users
+       SET name = COALESCE($1, name),
+           avatar_url = COALESCE($2, avatar_url),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3 AND status = 'active'
+       RETURNING id, email, name, role as designation, tenant_id, created_at, updated_at, avatar_url, sso_provider as oauth_provider, sso_subject_id as oauth_provider_id`,
+      [data.name, data.avatar_url, userId]
+    );
 
-    if (!updated) {
+    if (result.rows.length === 0) {
       throw new Error('User not found');
     }
 
-    const { password_hash, ...userWithoutPassword } = updated;
+    const { password_hash, ...userWithoutPassword } = result.rows[0] as any;
     return userWithoutPassword;
   },
 
   async changePassword(userId: string, oldPassword: string, newPassword: string): Promise<void> {
-    const user = await database.findById<User>('users', userId);
+    const result = await query<User>(
+      'SELECT id, password_hash FROM users WHERE id = $1 AND status = $2',
+      [userId, 'active']
+    );
 
-    if (!user) {
+    if (result.rows.length === 0) {
       throw new Error('User not found');
     }
+
+    const user = result.rows[0];
 
     // Verify old password
     const isValid = await bcrypt.compare(oldPassword, user.password_hash || '');
@@ -139,60 +179,90 @@ export const authService = {
     // Hash new password
     const passwordHash = await bcrypt.hash(newPassword, 12);
 
-    await database.update<User>('users', userId, { password_hash: passwordHash, updated_at: now() });
+    await query(
+      'UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      [passwordHash, userId]
+    );
   },
 
   async findOrCreateOAuthUser(data: OAuthUserData): Promise<{ user: Omit<User, 'password_hash'>; token: string; isNewUser: boolean }> {
     const normalizedEmail = data.email.toLowerCase();
 
     // First, try to find by OAuth provider ID (exact match for returning OAuth users)
-    let user = await database.findOne<User>('users', {
-      oauth_provider: data.oauthProvider,
-      oauth_provider_id: data.oauthProviderId
-    });
+    let result = await query<User>(
+      `SELECT id, email, name, role as designation, tenant_id, created_at, updated_at, avatar_url, sso_provider as oauth_provider, sso_subject_id as oauth_provider_id
+       FROM users
+       WHERE sso_provider = $1 AND sso_subject_id = $2 AND status = 'active'`,
+      [data.oauthProvider, data.oauthProviderId]
+    );
 
-    if (user) {
+    if (result.rows.length > 0) {
       // User exists with this OAuth account - return token
+      const user = result.rows[0];
       const token = generateToken(user);
-      const { password_hash, ...userWithoutPassword } = user;
+      const { password_hash, ...userWithoutPassword } = user as any;
       return { user: userWithoutPassword, token, isNewUser: false };
     }
 
     // Try to find by email (for account linking)
-    user = await database.findOne<User>('users', { email: normalizedEmail });
+    result = await query<User>(
+      `SELECT id, email, name, role as designation, tenant_id, created_at, updated_at, avatar_url, sso_provider as oauth_provider, sso_subject_id as oauth_provider_id, password_hash
+       FROM users
+       WHERE email = $1 AND status = 'active'`,
+      [normalizedEmail]
+    );
 
-    if (user) {
+    if (result.rows.length > 0) {
       // Existing user found by email - link OAuth account
-      const updated = await database.update<User>('users', user.id, {
-        oauth_provider: data.oauthProvider,
-        oauth_provider_id: data.oauthProviderId,
-        updated_at: now(),
-        avatar_url: user.avatar_url || data.avatarUrl || user.avatar_url,
-      });
+      const user = result.rows[0];
+      const updateResult = await query<User>(
+        `UPDATE users
+         SET sso_provider = $1,
+             sso_subject_id = $2,
+             avatar_url = COALESCE($3, avatar_url),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $4
+         RETURNING id, email, name, role as designation, tenant_id, created_at, updated_at, avatar_url, sso_provider as oauth_provider, sso_subject_id as oauth_provider_id`,
+        [data.oauthProvider, data.oauthProviderId, data.avatarUrl, user.id]
+      );
 
-      const token = generateToken(updated!);
-      const { password_hash, ...userWithoutPassword } = updated!;
+      const updated = updateResult.rows[0];
+      const token = generateToken(updated);
+      const { password_hash, ...userWithoutPassword } = updated as any;
       return { user: userWithoutPassword, token, isNewUser: false };
     }
 
     // No existing user - create new OAuth user
-    const newUserData = {
-      name: data.name,
-      email: normalizedEmail,
-      password_hash: undefined,
-      avatar_url: data.avatarUrl || `https://avatar.iran.liara.run/public`,
-      designation: 'Member',
-      oauth_provider: data.oauthProvider,
-      oauth_provider_id: data.oauthProviderId,
-      created_at: now(),
-      updated_at: now(),
-    };
+    // Get first tenant
+    const tenantResult = await query<{ id: string }>(
+      'SELECT id FROM tenants WHERE is_active = true ORDER BY created_at LIMIT 1'
+    );
 
-    // Use the returned document which has the correct MongoDB-generated _id
-    const newUser = await database.insert<User>('users', newUserData);
+    if (tenantResult.rows.length === 0) {
+      throw new Error('No active tenant found');
+    }
 
+    const tenantId = tenantResult.rows[0].id;
+
+    const newUserResult = await query<User>(
+      `INSERT INTO users (email, name, role, tenant_id, status, avatar_url, sso_provider as oauth_provider, sso_subject_id as oauth_provider_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, email, name, role as designation, tenant_id, created_at, updated_at, avatar_url, sso_provider as oauth_provider, sso_subject_id as oauth_provider_id`,
+      [
+        normalizedEmail,
+        data.name,
+        'member',
+        tenantId,
+        'active',
+        data.avatarUrl || 'https://avatar.iran.liara.run/public',
+        data.oauthProvider,
+        data.oauthProviderId
+      ]
+    );
+
+    const newUser = newUserResult.rows[0];
     const token = generateToken(newUser);
-    const { password_hash, ...userWithoutPassword } = newUser;
+    const { password_hash, ...userWithoutPassword } = newUser as any;
     return { user: userWithoutPassword, token, isNewUser: true };
   },
 };

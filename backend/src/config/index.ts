@@ -41,13 +41,23 @@ export const config = {
     name: getDatabaseName(),
   },
 
+  // PostgreSQL Configuration (for system/admin data)
+  postgres: {
+    url: process.env.POSTGRES_URL || process.env.DATABASE_URL || 'postgresql://localhost:5432/infinia_system',
+    max: parseInt(process.env.POSTGRES_MAX_CONNECTIONS || '20', 10),
+    idleTimeoutMillis: parseInt(process.env.POSTGRES_IDLE_TIMEOUT_MS || '30000', 10),
+    connectionTimeoutMillis: parseInt(process.env.POSTGRES_CONNECTION_TIMEOUT_MS || '2000', 10),
+  },
+
   jwt: {
     secret: process.env.JWT_SECRET || 'infinia-dev-secret-key-change-in-production',
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   },
 
   cors: {
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: process.env.CORS_ORIGIN
+      ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+      : '*',
   },
 
   rateLimit: {

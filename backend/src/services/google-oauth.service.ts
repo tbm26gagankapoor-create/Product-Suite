@@ -7,6 +7,7 @@
 import crypto from 'crypto';
 import database, { generateUUID, now } from '../lib/database.js';
 import { config } from '../config/index.js';
+import { ssoProviderService } from './sso-provider.service.js';
 
 // OAuth State interface for CSRF protection
 interface OAuthState {
@@ -64,6 +65,12 @@ export const googleOAuthService = {
    * Creates and stores a state token for CSRF protection
    */
   async generateAuthUrl(): Promise<{ authUrl: string; state: string }> {
+    // Get provider config from database (fallback to env if not configured)
+    const provider = await ssoProviderService.getProviderByType('google_workspace');
+    const clientId = provider?.client_id || config.google.clientId;
+    const redirectUri = provider?.redirect_uri || config.google.redirectUri;
+    const scopes = provider?.scopes || config.google.scopes;
+
     // Clean up expired states periodically
     await cleanupExpiredStates();
 
@@ -83,10 +90,10 @@ export const googleOAuthService = {
 
     // Build authorization URL
     const params = new URLSearchParams({
-      client_id: config.google.clientId,
+      client_id: clientId,
       response_type: 'code',
-      redirect_uri: config.google.redirectUri,
-      scope: config.google.scopes.join(' '),
+      redirect_uri: redirectUri,
+      scope: scopes.join(' '),
       state,
       access_type: 'offline',
       prompt: 'select_account', // Always show account picker
@@ -126,13 +133,19 @@ export const googleOAuthService = {
    * Exchange authorization code for access token
    */
   async exchangeCodeForToken(code: string): Promise<TokenResponse> {
+    // Get provider config from database (fallback to env if not configured)
+    const provider = await ssoProviderService.getProviderByType('google_workspace');
+    const clientId = provider?.client_id || config.google.clientId;
+    const clientSecret = provider?.client_secret || config.google.clientSecret;
+    const redirectUri = provider?.redirect_uri || config.google.redirectUri;
+
     const tokenUrl = 'https://oauth2.googleapis.com/token';
 
     const params = new URLSearchParams({
-      client_id: config.google.clientId,
-      client_secret: config.google.clientSecret,
+      client_id: clientId,
+      client_secret: clientSecret,
       code,
-      redirect_uri: config.google.redirectUri,
+      redirect_uri: redirectUri,
       grant_type: 'authorization_code',
     });
 
@@ -175,7 +188,14 @@ export const googleOAuthService = {
   /**
    * Check if Google OAuth is configured
    */
-  isConfigured(): boolean {
+  async isConfigured(): Promise<boolean> {
+    // Check database first
+    const isDbConfigured = await ssoProviderService.isProviderConfigured('google_workspace');
+    if (isDbConfigured) {
+      return true;
+    }
+
+    // Fallback to environment variables
     return !!(config.google.clientId && config.google.clientSecret);
   },
 };

@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "baseUrl": "./src",
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/lib/openfga.ts",
+    "src/lib/supabase.ts",
+    "src/scripts/init-db.ts",
+    "src/scripts/setup-openfga.ts",
+    "src/routes/tenants.routes.ts",
+    "src/routes/workspaces.routes.ts",
+    "src/routes/tasks.routes.ts",
+    "src/services/task-links.service.ts"
+  ]
+}

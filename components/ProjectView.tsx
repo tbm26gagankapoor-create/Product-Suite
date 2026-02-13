@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Header from './Header';
 import KanbanBoard from './KanbanBoard';
 import ListView from './ListView';
@@ -12,6 +12,8 @@ import PRDView from './prd/PRDView';
 import DateFixerModal from './DateFixerModal';
 import { Project, Task } from '../types';
 import { useProjectData } from '../context/ProjectDataContext';
+import { useToast } from '../context/ToastContext';
+import api from '../services/api';
 
 interface ProjectViewProps {
   activeProject: Project;
@@ -20,7 +22,9 @@ interface ProjectViewProps {
 const ProjectView: React.FC<ProjectViewProps> = ({ activeProject }) => {
   const [activeTab, setActiveTab] = useState('Overview');
   const { tasks, updateTask, updateProject, sprints } = useProjectData();
+  const toast = useToast();
   const [isDateFixerOpen, setIsDateFixerOpen] = useState(false);
+  const [isExportingSpec, setIsExportingSpec] = useState(false);
   
   // Global Sprint State - Initialize safely even if project is loading
   const [globalSprintId, setGlobalSprintId] = useState<string>('');
@@ -57,6 +61,18 @@ const ProjectView: React.FC<ProjectViewProps> = ({ activeProject }) => {
   const handleProjectUpdate = (updatedProject: Project) => {
       updateProject(updatedProject);
   };
+
+  const handleExportSpec = useCallback(async () => {
+    setIsExportingSpec(true);
+    try {
+      const result = await api.buildSpec.launchClaudeCode(activeProject.id);
+      toast.success('Claude Code opened', result.projectDir);
+    } catch (err: any) {
+      toast.error('Launch failed', err.message || 'Could not open Claude Code');
+    } finally {
+      setIsExportingSpec(false);
+    }
+  }, [activeProject.id, toast]);
 
   const handleBatchDateUpdate = (updates: { taskId: string; date: string }[]) => {
       updates.forEach(({ taskId, date }) => {
@@ -111,6 +127,8 @@ const ProjectView: React.FC<ProjectViewProps> = ({ activeProject }) => {
         activeProject={activeProject}
         onFixDates={() => setIsDateFixerOpen(true)}
         missingDateCount={tasksWithoutDates.length}
+        onExportSpec={handleExportSpec}
+        isExportingSpec={isExportingSpec}
       />
       <div className="flex-1 overflow-hidden relative">
         {renderContent()}

@@ -1,5 +1,5 @@
 // API Client for Vulcan Products Backend
-const API_BASE = '/api/v1';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -555,6 +555,28 @@ export const configApi = {
   },
 };
 
+// ============================================
+// BUILD SPEC API (Launch Claude Code with project spec)
+// ============================================
+const buildSpecApi = {
+  async launchClaudeCode(projectId: string): Promise<{ projectDir: string; projectName: string; message: string }> {
+    const response = await fetch(`${API_BASE}/projects/${projectId}/build-spec`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+    });
+
+    const json = await response.json();
+    if (!response.ok) {
+      throw new Error(json.error || `HTTP ${response.status}`);
+    }
+
+    return json.data;
+  },
+};
+
 // Default export with all APIs
 export default {
   users: usersApi,
@@ -569,4 +591,5 @@ export default {
   notifications: notificationsApi,
   config: configApi,
   github: githubApi,
+  buildSpec: buildSpecApi,
 };

@@ -7,6 +7,7 @@
 import crypto from 'crypto';
 import database, { generateUUID, now } from '../lib/database.js';
 import { config } from '../config/index.js';
+import { ssoProviderService } from './sso-provider.service.js';
 
 // OAuth State interface for CSRF protection
 interface OAuthState {
@@ -62,6 +63,13 @@ export const microsoftOAuthService = {
    * Creates and stores a state token for CSRF protection
    */
   async generateAuthUrl(): Promise<{ authUrl: string; state: string }> {
+    // Get provider config from database (fallback to env if not configured)
+    const provider = await ssoProviderService.getProviderByType('entra_id');
+    const clientId = provider?.client_id || config.microsoft.clientId;
+    const tenantId = provider?.tenant_id || config.microsoft.tenantId;
+    const redirectUri = provider?.redirect_uri || config.microsoft.redirectUri;
+    const scopes = provider?.scopes || config.microsoft.scopes;
+
     // Clean up expired states periodically
     await cleanupExpiredStates();
 
@@ -81,16 +89,16 @@ export const microsoftOAuthService = {
 
     // Build authorization URL
     const params = new URLSearchParams({
-      client_id: config.microsoft.clientId,
+      client_id: clientId,
       response_type: 'code',
-      redirect_uri: config.microsoft.redirectUri,
+      redirect_uri: redirectUri,
       response_mode: 'query',
-      scope: config.microsoft.scopes.join(' '),
+      scope: scopes.join(' '),
       state,
       prompt: 'select_account', // Always show account picker
     });
 
-    const authUrl = `https://login.microsoftonline.com/${config.microsoft.tenantId}/oauth2/v2.0/authorize?${params.toString()}`;
+    const authUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?${params.toString()}`;
 
     return { authUrl, state };
   },
@@ -124,15 +132,23 @@ export const microsoftOAuthService = {
    * Exchange authorization code for access token
    */
   async exchangeCodeForToken(code: string): Promise<TokenResponse> {
-    const tokenUrl = `https://login.microsoftonline.com/${config.microsoft.tenantId}/oauth2/v2.0/token`;
+    // Get provider config from database (fallback to env if not configured)
+    const provider = await ssoProviderService.getProviderByType('entra_id');
+    const clientId = provider?.client_id || config.microsoft.clientId;
+    const clientSecret = provider?.client_secret || config.microsoft.clientSecret;
+    const tenantId = provider?.tenant_id || config.microsoft.tenantId;
+    const redirectUri = provider?.redirect_uri || config.microsoft.redirectUri;
+    const scopes = provider?.scopes || config.microsoft.scopes;
+
+    const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
 
     const params = new URLSearchParams({
-      client_id: config.microsoft.clientId,
-      client_secret: config.microsoft.clientSecret,
+      client_id: clientId,
+      client_secret: clientSecret,
       code,
-      redirect_uri: config.microsoft.redirectUri,
+      redirect_uri: redirectUri,
       grant_type: 'authorization_code',
-      scope: config.microsoft.scopes.join(' '),
+      scope: scopes.join(' '),
     });
 
     const response = await fetch(tokenUrl, {
@@ -174,7 +190,14 @@ export const microsoftOAuthService = {
   /**
    * Check if Microsoft OAuth is configured
    */
-  isConfigured(): boolean {
+  async isConfigured(): Promise<boolean> {
+    // Check database first
+    const isDbConfigured = await ssoProviderService.isProviderConfigured('entra_id');
+    if (isDbConfigured) {
+      return true;
+    }
+
+    // Fallback to environment variables
     return !!(config.microsoft.clientId && config.microsoft.clientSecret);
   },
 };

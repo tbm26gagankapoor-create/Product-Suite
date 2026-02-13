@@ -239,7 +239,7 @@ describe('AuthService', () => {
 
       await authService.updatePassword('newPassword123');
 
-      expect(httpClient.post).toHaveBeenCalledWith('/auth/update-password', { password: 'newPassword123' });
+      expect(httpClient.post).toHaveBeenCalledWith('/auth/update-password', { password: 'newPassword123' }, undefined);
     });
   });
 

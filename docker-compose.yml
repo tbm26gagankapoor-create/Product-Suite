@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database (System Data)
+  postgres:
+    image: postgres:16-alpine
+    container_name: infinia-postgres
+    environment:
+      - POSTGRES_USER=infinia
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-infinia_secure_password}
+      - POSTGRES_DB=infinia_system
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./backend/migrations:/migrations
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U infinia -d infinia_system"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - infinia-network
+    restart: unless-stopped
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: infinia-backend
+    ports:
+      - "3001:3001"
+    environment:
+      # Server
+      - NODE_ENV=production
+      - PORT=3001
+
+      # Database
+      - MONGODB_URI=${MONGODB_URI}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=infinia
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-infinia_secure_password}
+      - POSTGRES_DB=infinia_system
+      - DATABASE_URL=postgresql://infinia:${POSTGRES_PASSWORD:-infinia_secure_password}@postgres:5432/infinia_system
+
+      # Security
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=7d
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+
+      # CORS
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
+
+      # Email (optional)
+      - RESEND_API_KEY=${RESEND_API_KEY}
+
+      # OAuth (optional)
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - MICROSOFT_CLIENT_ID=${MICROSOFT_CLIENT_ID}
+      - MICROSOFT_CLIENT_SECRET=${MICROSOFT_CLIENT_SECRET}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - infinia-network
+    restart: unless-stopped
+    # Health check inherited from Dockerfile
+
+  # Frontend (React + Vite)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: infinia-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_API_URL=http://localhost:3001/api/v1
+    depends_on:
+      - backend
+    networks:
+      - infinia-network
+    restart: unless-stopped
+
+networks:
+  infinia-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    driver: local

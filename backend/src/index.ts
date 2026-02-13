@@ -46,7 +46,12 @@ const apiLimiter = rateLimit({
     },
   },
   skip: (req) => {
-    // Skip rate limiting for health checks
+    // Skip rate limiting for health checks and auth routes in development
+    if (config.isDev) {
+      return req.path.startsWith('/api/v1/health') ||
+             req.path.startsWith('/api/v1/auth') ||
+             req.path.startsWith('/api/v1/oauth');
+    }
     return req.path.startsWith('/api/v1/health');
   },
 });

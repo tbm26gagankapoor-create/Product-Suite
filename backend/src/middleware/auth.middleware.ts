@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config/index.js';
-import database from '../lib/database.js';
+import { query } from '../db/postgres/client.js';
 
 export interface AuthUser {
   id: string;
@@ -42,13 +42,15 @@ function setCachedUser(userId: string, user: AuthUser): void {
   }
 }
 
-// Auth-specific fields: skip large fields like avatar_url to reduce transfer time
-const AUTH_USER_FIELDS = 'name email designation organization_id';
-
-// Helper: DB lookup with timeout to prevent hanging requests
+// Helper: PostgreSQL DB lookup with timeout to prevent hanging requests
 async function findUserWithTimeout(userId: string, timeoutMs: number = 15000): Promise<any> {
   return Promise.race([
-    database.findById<any>('users', userId, AUTH_USER_FIELDS),
+    query<any>(
+      `SELECT id, email, name, role as designation, tenant_id as organization_id
+       FROM users
+       WHERE id = $1 AND status = 'active'`,
+      [userId]
+    ).then(result => result.rows[0] || null),
     new Promise<null>((_, reject) =>
       setTimeout(() => reject(new Error(`User lookup timed out after ${timeoutMs}ms`)), timeoutMs)
     ),
